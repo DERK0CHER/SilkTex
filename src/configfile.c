@@ -37,6 +37,7 @@
 #include "utils.h"
 
 
+
 const gchar default_config[] =
 "[General]\n"
 "config_version = "C_PACKAGE_VERSION"\n"
@@ -95,6 +96,8 @@ const gchar default_config[] =
 
 GKeyFile *key_file = NULL;
 gchar *conf_filepath = 0;
+
+
 
 
 void config_init () {
@@ -233,6 +236,7 @@ gboolean config_value_as_str_equals (const gchar* group, const gchar* key, gchar
     return FALSE;
 }
 
+
 void config_set_string (const gchar *group, const gchar *key, gchar* value) {
     g_key_file_set_string (key_file, group, key, value);
 }
@@ -245,7 +249,7 @@ void config_set_integer (const gchar *group, const gchar *key, gint value) {
     g_key_file_set_integer (key_file, group, key, value);
 }
 
-void config_load_defaults () {
+void config_load_defaults (GKeyFile* key_file) {
     g_autoptr(GError) error = NULL;
 
     g_key_file_load_from_data (key_file, default_config, strlen(default_config),

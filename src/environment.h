@@ -53,6 +53,7 @@
  *
  * Stores Gummi main context.
  */
+ 
 #define GUMMI(x) ((Gummi*)x)
 typedef struct _Gummi Gummi;
 

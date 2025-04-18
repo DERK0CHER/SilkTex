@@ -34,7 +34,9 @@
 
 
 void config_init ();
-void config_load_defaults ();
+
+void config_load_defaults();
+
 void config_save ();
 
 // config get functions:
@@ -54,5 +56,6 @@ void config_set_integer (const gchar *group, const gchar *key, gint value);
 
 // comparison functions:
 gboolean config_value_as_str_equals (const gchar* group, const gchar* key, gchar* input);
+
 
 #endif /* __GUMMI_CONFIGFILE__ */

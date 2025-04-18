@@ -193,22 +193,29 @@ PangoFontMask font_mask;
 
     // add font slant styling:
     if (font_mask & PANGO_FONT_MASK_STYLE) {
-        switch (pango_font_description_get_style (font_desc)) {
+        switch (pango_font_description_get_style(font_desc)) {
             case PANGO_STYLE_NORMAL:  val = "normal";  break;
             case PANGO_STYLE_OBLIQUE: val = "oblique"; break;
             case PANGO_STYLE_ITALIC:  val = "italic";  break;
+            default:                  val = "normal";  break; // or "unknown"
         }
-        result = css_add (result, "font-style", val);
+        result = css_add(result, "font-style", val);
     }
 
-    // add font capitalization variant:
-    if (font_mask & PANGO_FONT_MASK_VARIANT) {
-        switch (pango_font_description_get_variant (font_desc)) {
-            case PANGO_VARIANT_NORMAL:     val = "normal";     break;
-            case PANGO_VARIANT_SMALL_CAPS: val = "small-caps"; break;
-        }
-        result = css_add (result, "font-variant", val);
+// add font capitalization variant:
+if (font_mask & PANGO_FONT_MASK_VARIANT) {
+    switch (pango_font_description_get_variant(font_desc)) {
+        case PANGO_VARIANT_NORMAL:            val = "normal";         break;
+        case PANGO_VARIANT_SMALL_CAPS:        val = "small-caps";     break;
+        case PANGO_VARIANT_ALL_SMALL_CAPS:    val = "all-small-caps"; break;
+        case PANGO_VARIANT_PETITE_CAPS:       val = "petite-caps";    break;
+        case PANGO_VARIANT_ALL_PETITE_CAPS:   val = "all-petite-caps";break;
+        case PANGO_VARIANT_UNICASE:           val = "unicase";        break;
+        case PANGO_VARIANT_TITLE_CAPS:        val = "title-caps";     break;
+        default:                               val = "normal";         break;
     }
+    result = css_add(result, "font-variant", val);
+}
 
     // add font boldness / weight:
     if (font_mask & PANGO_FONT_MASK_WEIGHT) {

@@ -34,16 +34,21 @@ project_dependencies = [
 
 build_args = [
   '-Wl,--export-dynamic',
-  '-DGUMMI_DATA=' + '"' + join_paths(prefix, gummidir) + '"',
+  '-DGUMMI_DATA=' + '"' + join_paths(meson.source_root(), 'data') + '"',
   '-DGUMMI_LIBS=' + '"' + join_paths(prefix, libdir, meson.project_name()) + '"',
   '-DGUMMI_LOCALES=' + '"' + join_paths(prefix, localesdir) + '"',
 ]
 
-add_project_arguments([
-        '-DGETTEXT_PACKAGE=\"@0@\"'.format(meson.project_name())
-    ],
-    language: 'c',
+add_project_arguments(
+  ['-DGETTEXT_PACKAGE=\\"@0@\\""'.format(meson.project_name())],
+  language: 'c'
 )
+
+#add_project_arguments([
+ #       '-DGETTEXT_PACKAGE="@0@"'.format(meson.project_name())
+  #  ],
+   # language: 'c',
+#)
 
 i18n = import('i18n')
 
@@ -53,7 +58,8 @@ conf_data.set('PACKAGE', meson.project_name())
 conf_data.set_quoted('GETTEXT_PACKAGE', meson.project_name())
 conf_data.set_quoted('LOCALEDIR', join_paths(get_option('prefix'), get_option('localedir')))
 
-install_data(['COPYING',], install_dir: join_paths(datadir,'licences/gummi/'))
+#install_data(['COPYING',], install_dir: join_paths(datadir,'licences/gummi/'))
+install_data('COPYING', install_dir: join_paths(datadir, 'licenses', 'gummi'))
 
 subdir('src')
 subdir('data')

@@ -63,12 +63,20 @@ static void set_tab_miscellaneous_settings (GuPrefsGui* prefs);
 
 
 GuPrefsGui* prefsgui_init (GtkWindow* mainwindow) {
+
     GuPrefsGui* p = g_new0 (GuPrefsGui, 1);
     GtkBuilder* builder = gtk_builder_new ();
     gchar* ui = g_build_filename (GUMMI_DATA, "ui", "prefs.glade", NULL);
     gtk_builder_add_from_file (builder, ui, NULL);
     gtk_builder_set_translation_domain (builder, C_PACKAGE);
     g_free (ui);
+
+    //debug function
+    if (!g_file_test(ui, G_FILE_TEST_EXISTS)) {
+        g_printerr("prefs.glade NOT FOUND at path: %s\n", ui);
+    } else {
+        g_print("Loaded prefs.glade from: %s\n", ui);
+    }
 
     p->prefwindow =
         GTK_WIDGET (gtk_builder_get_object (builder, "prefwindow"));
