@@ -87,7 +87,7 @@ int main (int argc, char *argv[]) {
 
     GError* ui_error = NULL;
     GtkBuilder* builder = gtk_builder_new ();
-    gchar* ui = g_build_filename (GUMMI_DATA, "ui", "gummi.glade", NULL);
+    gchar* ui = g_build_filename (GUMMI_DATA, "ui", "gummi.ui", NULL);
 
     // Exit program when gummi.glade can not be located:
     if (!g_file_test (ui, G_FILE_TEST_EXISTS)) {
