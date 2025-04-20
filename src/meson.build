@@ -1,72 +1,61 @@
+pkgdatadir = join_paths(get_option('prefix'), get_option('datadir'), meson.project_name())
+moduledir = join_paths(pkgdatadir, 'gummi')
 
-source_files = files(
-    'biblio.c',
-    'biblio.h',
-    'compile/latexmk.c',
-    'compile/latexmk.h',
-    'compile/rubber.c',
-    'compile/rubber.h',
-    'compile/texlive.c',
-    'compile/texlive.h',
-    'configfile.c',
-    'configfile.h',
-    'constants.h',
-    'editor.c',
-    'editor.h',
-    'environment.c',
-    'environment.h',
-    'external.c',
-    'external.h',
-    'gui/gui-import.c',
-    'gui/gui-import.h',
-    'gui/gui-infoscreen.c',
-    'gui/gui-infoscreen.h',
-    'gui/gui-main.c',
-    'gui/gui-main.h',
-    'gui/gui-menu.c',
-    'gui/gui-menu.h',
-    'gui/gui-prefs.c',
-    'gui/gui-prefs.h',
-    'gui/gui-preview.c',
-    'gui/gui-preview.h',
-    'gui/gui-project.c',
-    'gui/gui-project.h',
-    'gui/gui-search.c',
-    'gui/gui-search.h',
-    'gui/gui-snippets.c',
-    'gui/gui-snippets.h',
-    'gui/gui-tabmanager.c',
-    'gui/gui-tabmanager.h',
-    'importer.c',
-    'importer.h',
-    'iofunctions.c',
-    'iofunctions.h',
-    'latex.c',
-    'latex.h',
-    'main.c',
-    'motion.c',
-    'motion.h',
-    'project.c',
-    'project.h',
-    'signals.c',
-    'signals.h',
-    'snippets.c',
-    'snippets.h',
-    'tabmanager.c',
-    'tabmanager.h',
-    'template.c',
-    'template.h',
-    'utils.c',
-    'utils.h',
+# Python sources
+python_sources = [
+  'biblio.py',
+  'configfile.py',
+  'constants.py',
+  'editor.py',
+  'environment.py',
+  'external.py',
+  'importer.py',
+  'iofunctions.py',
+  'latex.py',
+  'main.py',
+  'motion.py',
+  'project.py',
+  'signals.py',
+  'snippets.py',
+  'tabmanager.py',
+  'template.py',
+  'utils.py',
+]
+
+# Install Python modules
+install_data(python_sources, install_dir: moduledir)
+
+# Configure constants.py with build information
+constants_conf = configuration_data()
+constants_conf.set('VERSION', meson.project_version())
+constants_conf.set('DATADIR', pkgdatadir)
+constants_conf.set('LOCALEDIR', join_paths(get_option('prefix'), get_option('localedir')))
+
+configure_file(
+  input: 'constants.py',
+  output: 'constants.py',
+  configuration: constants_conf,
+  install: true,
+  install_dir: moduledir
 )
 
+# Create executable script
+bin_conf = configuration_data()
+bin_conf.set('PYTHON', python.find_installation('python3').path())
+bin_conf.set('pkgdatadir', pkgdatadir)
 
-
-project_target = executable(
-  meson.project_name(),
-  source_files,
-  dependencies: project_dependencies,
-  install : true,
-  link_args: '-rdynamic',
-  c_args : build_args,
+configure_file(
+  input: 'main.py',
+  output: 'gummi',
+  configuration: bin_conf,
+  install: true,
+  install_dir: get_option('bindir')
 )
+
+# Install typesetters
+install_data('compile/rubber.py', install_dir: join_paths(moduledir, 'compile'))
+install_data('compile/latexmk.py', install_dir: join_paths(moduledir, 'compile'))
+install_data('compile/texlive.py', install_dir: join_paths(moduledir, 'compile'))
+
+# Install GUI modules
+subdir('gui')

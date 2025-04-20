@@ -1,69 +1,54 @@
-project(
-    'gummi',
-    'c',
-    version: '0.8.3',
-    license: 'MIT',
-    meson_version: '>=0.50.0'
+project('gummi', 'c',
+  version: '0.8.3',
+  license: 'MIT',
+  meson_version: '>= 0.59.0',
+  default_options: [
+    'warning_level=2',
+  ],
+)
+python = import('python')
+i18n = import('i18n')
+gnome = import('gnome')
+
+# Check for Python dependencies
+py_installation = python.find_installation('python3')
+
+# Alternative method to check for Python modules
+python_check = run_command(py_installation,
+  '-c', 'import gi; print("Python modules found")',
+  check: false
 )
 
-i18n = import('i18n')
+# GObject introspection dependencies
+dependency('gtk4', version: '>= 4.0.0')
+dependency('gtksourceview-5', version: '>= 5.0.0')
 
+# Configure data
+conf = configuration_data()
+conf.set('VERSION', meson.project_version())
+conf.set('PACKAGE_NAME', meson.project_name())
+conf.set('PACKAGE_VERSION', meson.project_version())
+conf.set('PREFIX', get_option('prefix'))
+conf.set('DATADIR', join_paths(get_option('prefix'), get_option('datadir')))
+conf.set('LOCALEDIR', join_paths(get_option('prefix'), get_option('localedir')))
 
-#dependency('setconf')
-
-prefix = get_option('prefix')
-bindir = get_option('bindir')
-datadir = get_option('datadir')
-libdir = get_option('libdir')
-localesdir = get_option('localedir')
-appdir = join_paths(datadir, 'applications')
-policydir = join_paths(datadir, 'polkit-1/actions')
-icondir = join_paths(datadir, 'icons/hicolor/')
-schemadir = join_paths(datadir, 'glib-2.0/schemas')
-mandir = join_paths(datadir, 'man/man1/')
-gummidir = join_paths(datadir, meson.project_name())
-
-project_dependencies = [
-    dependency('gtk+-3.0'),
-    dependency('glib-2.0'),
-    dependency('gtksourceview-3.0'),
-    dependency('gtkspell3-3.0'),
-    dependency('poppler-glib'),
-    dependency('synctex'),
-]
-
-build_args = [
-  '-Wl,--export-dynamic',
-  '-DGUMMI_DATA=' + '"' + join_paths(meson.source_root(), 'data') + '"',
-  '-DGUMMI_LIBS=' + '"' + join_paths(prefix, libdir, meson.project_name()) + '"',
-  '-DGUMMI_LOCALES=' + '"' + join_paths(prefix, localesdir) + '"',
-]
-
-add_project_arguments(
-  ['-DGETTEXT_PACKAGE=\\"@0@\\""'.format(meson.project_name())],
-  language: 'c'
-)
-
-#add_project_arguments([
- #       '-DGETTEXT_PACKAGE="@0@"'.format(meson.project_name())
-  #  ],
-   # language: 'c',
-#)
-
-i18n = import('i18n')
-
-conf_data = configuration_data()
-conf_data.set('PACKAGE_NAME', 'Gummi')
-conf_data.set('PACKAGE', meson.project_name())
-conf_data.set_quoted('GETTEXT_PACKAGE', meson.project_name())
-conf_data.set_quoted('LOCALEDIR', join_paths(get_option('prefix'), get_option('localedir')))
-
-#install_data(['COPYING',], install_dir: join_paths(datadir,'licences/gummi/'))
-install_data('COPYING', install_dir: join_paths(datadir, 'licenses', 'gummi'))
-
-subdir('src')
 subdir('data')
-subdir('lib')
+subdir('src')
 subdir('po')
 
+# Post install script
 meson.add_install_script('meson-post-install.py')
+
+# Summary
+summary = [
+  '',
+  '------',
+  'Gummi @0@'.format(meson.project_version()),
+  '',
+  'Prefix:        @0@'.format(get_option('prefix')),
+  'Data dir:      @0@'.format(join_paths(get_option('prefix'), get_option('datadir'))),
+  'Compiler:      @0@'.format(meson.get_compiler('c').get_id()),
+  '------',
+]
+
+message('\n'.join(summary))

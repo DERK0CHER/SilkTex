@@ -1,73 +1,29 @@
+pkgdatadir = join_paths(get_option('prefix'), get_option('datadir'), meson.project_name())
+moduledir = join_paths(pkgdatadir, 'gummi')
+guidir = join_paths(moduledir, 'gui')
 
-source_files = files(
-    'biblio.c',
-    'biblio.h',
-    'compile/latexmk.c',
-    'compile/latexmk.h',
-    'compile/rubber.c',
-    'compile/rubber.h',
-    'compile/texlive.c',
-    'compile/texlive.h',
-    'configfile.c',
-    'configfile.h',
-    'constants.h',
-    'editor.c',
-    'editor.h',
-    'environment.c',
-    'environment.h',
-    'external.c',
-    'external.h',
-    'gui/gui-import.c',
-    'gui/gui-import.h',
-    'gui/gui-infoscreen.c',
-    'gui/gui-infoscreen.h',
-    'gui/gui-main.c',
-    'gui/gui-main.h',
-    'gui/gui-menu.c',
-    'gui/gui-menu.h',
-    'gui/gui-prefs.c',
-    'gui/gui-prefs.h',
-    'gui/gui-preview.c',
-    'gui/gui-preview.h',
-    'gui/gui-project.c',
-    'gui/gui-project.h',
-    'gui/gui-search.c',
-    'gui/gui-search.h',
-    'gui/gui-snippets.c',
-    'gui/gui-snippets.h',
-    'gui/gui-tabmanager.c',
-    'gui/gui-tabmanager.h',
-    'importer.c',
-    'importer.h',
-    'iofunctions.c',
-    'iofunctions.h',
-    'latex.c',
-    'latex.h',
-    'main.c',
-    'motion.c',
-    'motion.h',
-    'project.c',
-    'project.h',
-    'signals.c',
-    'signals.h',
-    'snippets.c',
-    'snippets.h',
-    'tabmanager.c',
-    'tabmanager.h',
-    'template.c',
-    'template.h',
-    'utils.c',
-    'utils.h',
+# GUI Python modules
+gui_sources = [
+  'gui-import.py',
+  'gui-infoscreen.py',
+  'gui-main.py',
+  'gui-menu.py',
+  'gui-prefs.py',
+  'gui-preview.py',
+  'gui-project.py',
+  'gui-search.py',
+  'gui-snippets.py',
+  'gui-tabmanager.py',
+  'gui_menu.py',
+]
+
+# Install GUI modules
+install_data(gui_sources, install_dir: guidir)
+
+# Create __init__.py to make the directory a proper Python package
+configure_file(
+  output: '__init__.py',
+  configuration: configuration_data(),
+  install: true,
+  install_dir: guidir
 )
-
-
-
-project_target = executable(
-  meson.project_name(),
-  source_files,
-  dependencies: project_dependencies,
-  install : true,
-  link_args: '-rdynamic',
-  c_args : build_args,
-)
-
