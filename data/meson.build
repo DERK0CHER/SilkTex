@@ -48,7 +48,8 @@ blueprint_compiler = find_program('blueprint-compiler', required: true)
 blueprint_sources = [
     'silktex',
     'main',
-    'toolbar'
+    'toolbar',
+    'window'
 ]
 
 ui_targets = []

@@ -1,2 +1,181 @@
-using GTK 4.0;
+using Gtk 4.0;
+using Adw 1;
 
+template $SilkTexWindow : Adw.ApplicationWindow {
+  title: _("SilkTex");
+  default-width: 1000;
+  default-height: 700;
+
+  Box {
+    orientation: vertical;
+
+    Adw.HeaderBar {
+      [title]
+      Adw.WindowTitle {
+        title: _("SilkTex");
+        subtitle: _("LaTeX Editor");
+      }
+
+      [end]
+      Box {
+        orientation: horizontal;
+        spacing: 6;
+
+        Button compile_button {
+          icon-name: "media-playback-start-symbolic";
+          tooltip-text: _("Compile Document");
+          clicked => $on_compile_clicked();
+        }
+
+        Button {
+          icon-name: "document-save-symbolic";
+          tooltip-text: _("Save");
+          clicked => $on_save_clicked();
+        }
+
+        MenuButton {
+          icon-name: "open-menu-symbolic";
+          tooltip-text: _("Main Menu");
+          menu-model: primary_menu;
+        }
+      }
+    }
+
+    Paned main_paned {
+      orientation: horizontal;
+      shrink-start-child: false;
+      shrink-end-child: false;
+      resize-start-child: true;
+      resize-end-child: true;
+      position: 700;
+
+      Box {
+        orientation: vertical;
+
+        ScrolledWindow {
+          hexpand: true;
+          vexpand: true;
+
+          child: TextView editor_view {
+            monospace: true;
+            wrap-mode: word;
+            left-margin: 10;
+            right-margin: 10;
+            top-margin: 10;
+            bottom-margin: 10;
+            buffer: TextBuffer {
+              text: "% Start typing your LaTeX document here\n\\documentclass{article}\n\\begin{document}\n\\section{Introduction}\nHello World!\n\\end{document}";
+            };
+          };
+        }
+
+        ActionBar {
+          Box {
+            orientation: horizontal;
+            spacing: 6;
+
+            Label {
+              label: _("Line:");
+            }
+
+            Label line_number_label {
+              label: "1";
+            }
+
+            Label {
+              label: _("Col:");
+            }
+
+            Label col_number_label {
+              label: "1";
+            }
+          }
+        }
+      }
+
+      Box {
+        orientation: vertical;
+
+        Adw.ViewSwitcher {
+          policy: wide;
+
+          Stack preview_stack {
+            transition-type: crossfade;
+
+            Adw.ViewStackPage {
+              name: "preview";
+              title: _("PDF Preview");
+              icon-name: "document-print-preview-symbolic";
+
+              child: ScrolledWindow {
+                Box {
+                  orientation: vertical;
+                  valign: center;
+                  halign: center;
+
+                  Label {
+                    label: _("PDF Preview");
+                    styles ["title-1"]
+                  }
+
+                  Image preview_image {
+                    icon-name: "document-print-preview-symbolic";
+                    pixel-size: 128;
+                    margin-top: 24;
+                    margin-bottom: 24;
+                  }
+
+                  Label {
+                    label: _("Compile your document to see the preview");
+                    styles ["dim-label"]
+                  }
+                }
+              };
+            }
+
+            Adw.ViewStackPage {
+              name: "log";
+              title: _("Compilation Log");
+              icon-name: "utilities-terminal-symbolic";
+
+              child: ScrolledWindow {
+                child: TextView log_view {
+                  editable: false;
+                  cursor-visible: true;
+                  monospace: true;
+                  wrap-mode: word;
+                  left-margin: 10;
+                  right-margin: 10;
+                  top-margin: 10;
+                  bottom-margin: 10;
+                  buffer: TextBuffer {
+                    text: "Compilation log will appear here.";
+                  };
+                };
+              };
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+menu primary_menu {
+  section {
+    item {
+      label: _("_Preferences");
+      action: "app.preferences";
+    }
+
+    item {
+      label: _("_Keyboard Shortcuts");
+      action: "win.show-help-overlay";
+    }
+
+    item {
+      label: _("_About SilkTex");
+      action: "app.about";
+    }
+  }
+}
