@@ -4,7 +4,6 @@ gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, Gdk, GLib
 import os
 import configparser
-import json
 
 class SilktexSettings:
     def __init__(self):
@@ -86,27 +85,27 @@ class SilktexSettings:
         """Get a boolean setting value"""
         if section not in self.config:
             return self.get_default(section, key)
-        
+
         try:
             return self.config.getboolean(section, key, fallback=fallback)
         except ValueError:
             return self.get_default(section, key)
-    
+
     def get_integer(self, section, key, fallback=None):
         """Get an integer setting value"""
         if section not in self.config:
             return self.get_default(section, key)
-        
+
         try:
             return self.config.getint(section, key, fallback=fallback)
         except ValueError:
             return self.get_default(section, key)
-    
+
     def get_float(self, section, key, fallback=None):
         """Get a float setting value"""
         if section not in self.config:
             return self.get_default(section, key)
-        
+
         try:
             return self.config.getfloat(section, key, fallback=fallback)
         except ValueError:
@@ -117,7 +116,7 @@ class SilktexSettings:
         if section in self.defaults and key in self.defaults[section]:
             return self.defaults[section][key]
         return None
-    
+
     # Set methods with validation
     def set_string(self, section, key, value):
         """Set a string setting value"""
@@ -147,23 +146,20 @@ class SilktexSettings:
 # Create a singleton instance for global access
 settings = SilktexSettings()
 
-# Example usage:
+# Helper functions
 def apply_editor_settings(editor):
     """Apply editor settings to a GtkTextView"""
-    # Line numbers (would need a GtkSourceView, but shown for illustration)
-    # editor.set_show_line_numbers(settings.get_boolean("Editor", "line_numbers"))
-
     # Text wrapping
     if settings.get_boolean("Editor", "wrap_text"):
         editor.set_wrap_mode(Gtk.WrapMode.WORD)
     else:
         editor.set_wrap_mode(Gtk.WrapMode.NONE)
 
-    # Tab width - would need proper implementation
-    # editor.set_tab_width(settings.get_integer("Editor", "tab_width"))
-
-    # Font size would need CSS styling
-    # (would be implemented as needed)
+    # Set margins based on settings
+    editor.set_top_margin(10)
+    editor.set_bottom_margin(10)
+    editor.set_left_margin(10)
+    editor.set_right_margin(10)
 
 def get_latex_command():
     """Get the configured LaTeX command with any additional arguments"""

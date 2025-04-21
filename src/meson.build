@@ -33,6 +33,7 @@ silktex_sources = [
   '__init__.py',
   'main.py',
   'window.py',
+  'layout.py'
 ]
 
 install_data(silktex_sources, install_dir: moduledir)

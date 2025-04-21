@@ -17,6 +17,8 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import gettext
+_ = gettext.gettext
 import sys
 import gi
 
@@ -32,7 +34,7 @@ class SilktexApplication(Adw.Application):
 
     def __init__(self):
         super().__init__(application_id='org.silktex.gnome',
-                         flags=Gio.ApplicationFlags.DEFAULT_FLAGS
+                         flags=Gio.ApplicationFlags.DEFAULT_FLAGS,
                          resource_base_path='/org/silktex/gnome')
         self.create_action('quit', lambda *_: self.quit(), ['<primary>q'])
         self.create_action('about', self.on_about_action)
