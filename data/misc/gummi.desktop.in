@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Gummi
+GenericName=LaTeX Editor
+Comment=Simple LaTeX editor for GTK4
+Keywords=latex;editor;pdf;gtk4;
+Icon=com.github.gummi_editor
+Exec=gummi %f
+Terminal=false
+Categories=Office;Publishing;GTK;
+MimeType=text/x-tex;application/x-tex;
+StartupNotify=true

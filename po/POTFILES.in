@@ -1,0 +1,8 @@
+# List of source files containing translatable strings.
+# Please keep this file sorted alphabetically.
+data/org.silktex.gnome.desktop.in
+data/org.silktex.gnome.metainfo.xml.in
+data/org.silktex.gnome.gschema.xml
+src/main.py
+src/window.py
+src/window.ui

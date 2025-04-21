@@ -1,0 +1,414 @@
+using Gtk 4.0;
+
+template GummiWindow : Gtk.ApplicationWindow {
+  title: _("Gummi - LaTeX Editor");
+  default-width: 800;
+  default-height: 600;
+
+  notify::close-request => on_menu_quit_activate();
+
+  [titlebar]
+  Box header_box {
+    MenuBar menu_bar {
+      // File Menu
+      MenuItem menu_file {
+        label: _("_File");
+        use-underline: true;
+
+        MenuModel file_menu {
+          ImageMenuItem menu_new {
+            action: "win.new";
+            accel: "<Control>n";
+            label: "gtk-new";
+            use-stock: true;
+          }
+
+          ImageMenuItem menu_template {
+            action: "win.new-from-template";
+            label: _("New from _Template");
+            use-underline: true;
+            Icon icon { icon-name: "document-new" }
+          }
+
+          ImageMenuItem menu_open {
+            action: "win.open";
+            accel: "<Control>o";
+            label: _("_Open...");
+            use-underline: true;
+            Icon icon { icon-name: "document-open" }
+          }
+
+          SeparatorMenuItem {}
+
+          ImageMenuItem menu_save {
+            action: "win.save";
+            accel: "<Control>s";
+            label: "gtk-save";
+            use-stock: true;
+          }
+
+          ImageMenuItem menu_saveas {
+            action: "win.save-as";
+            accel: "<Shift><Control>s";
+            label: _("Save _As...");
+            use-underline: true;
+            Icon icon { icon-name: "document-save-as" }
+          }
+
+          ImageMenuItem menu_export {
+            action: "win.export";
+            accel: "<Control>e";
+            label: _("_Export to PDF");
+            use-underline: true;
+            Icon icon { icon-name: "emblem-documents" }
+          }
+
+          SeparatorMenuItem {}
+
+          // Recent files submenu
+          MenuItem {
+            visible: false;
+            label: _("Recent Files");
+
+            MenuModel {
+              MenuItem menu_recent1 {
+                visible: false;
+                action: "win.recent";
+                target: int 1;
+              }
+              MenuItem menu_recent2 {
+                visible: false;
+                action: "win.recent";
+                target: int 2;
+              }
+              MenuItem menu_recent3 {
+                visible: false;
+                action: "win.recent";
+                target: int 3;
+              }
+              MenuItem menu_recent4 {
+                visible: false;
+                action: "win.recent";
+                target: int 4;
+              }
+              MenuItem menu_recent5 {
+                visible: false;
+                action: "win.recent";
+                target: int 5;
+              }
+            }
+          }
+
+          SeparatorMenuItem {}
+
+          ImageMenuItem menu_close {
+            action: "win.close";
+            accel: "<Control>w";
+            label: "gtk-close";
+            use-stock: true;
+          }
+
+          ImageMenuItem menu_quit {
+            action: "win.quit";
+            accel: "<Control>q";
+            label: "gtk-quit";
+            use-stock: true;
+          }
+        }
+      }
+
+      // Edit Menu
+      MenuItem menu_edit {
+        label: _("_Edit");
+        use-underline: true;
+
+        MenuModel edit_menu {
+          ImageMenuItem menu_undo {
+            action: "win.undo";
+            accel: "<Control>z";
+            label: "gtk-undo";
+            use-stock: true;
+          }
+
+          ImageMenuItem menu_redo {
+            action: "win.redo";
+            accel: "<Shift><Control>z";
+            label: "gtk-redo";
+            use-stock: true;
+          }
+
+          SeparatorMenuItem {}
+
+          ImageMenuItem menu_cut {
+            action: "win.cut";
+            accel: "<Control>x";
+            label: "gtk-cut";
+            use-stock: true;
+          }
+
+          ImageMenuItem menu_copy {
+            action: "win.copy";
+            accel: "<Control>c";
+            label: "gtk-copy";
+            use-stock: true;
+          }
+
+          ImageMenuItem menu_paste {
+            action: "win.paste";
+            accel: "<Control>v";
+            label: "gtk-paste";
+            use-stock: true;
+          }
+
+          ImageMenuItem menu_delete {
+            action: "win.delete";
+            label: "gtk-delete";
+            use-stock: true;
+          }
+
+          SeparatorMenuItem {}
+
+          ImageMenuItem menu_selectall {
+            action: "win.select-all";
+            accel: "<Control>a";
+            label: "gtk-select-all";
+            use-stock: true;
+          }
+
+          SeparatorMenuItem {}
+
+          ImageMenuItem menu_preferences {
+            action: "win.preferences";
+            label: "gtk-preferences";
+            use-stock: true;
+          }
+        }
+      }
+
+      // View Menu
+      MenuItem menu_view {
+        label: _("_View");
+        use-underline: true;
+
+        MenuModel view_menu {
+          CheckMenuItem menu_statusbar {
+            action: "win.show-statusbar";
+            label: _("_Statusbar");
+            use-underline: true;
+          }
+
+          CheckMenuItem menu_toolbar {
+            action: "win.show-toolbar";
+            label: _("_Toolbar");
+            use-underline: true;
+          }
+
+          CheckMenuItem menu_rightpane {
+            action: "win.show-rightpane";
+            label: _("_Right pane");
+            use-underline: true;
+            accel: "F8";
+          }
+
+          SeparatorMenuItem {}
+
+          CheckMenuItem menu_fullscreen {
+            action: "win.fullscreen";
+            label: _("_Fullscreen");
+            use-underline: true;
+            accel: "F11";
+          }
+        }
+      }
+
+      // Main content area
+      Box main_box {
+        orientation: vertical;
+
+        // Toolbar
+        Box toolbar {
+          styles ["toolbar"]
+          visible: bind menu_toolbar.active
+
+          // Common editing buttons
+          Button tool_new {
+            icon-name: "document-new";
+            tooltip-text: _("New");
+            clicked => on_menu_new_activate();
+          }
+
+          Button tool_open {
+            icon-name: "document-open";
+            tooltip-text: _("Open");
+            clicked => on_menu_open_activate();
+          }
+
+          Button tool_save {
+            icon-name: "document-save";
+            tooltip-text: _("Save");
+            clicked => on_menu_save_activate();
+          }
+
+          Separator {}
+
+          // Text formatting buttons
+          Button tool_bold {
+            icon-name: "format-text-bold";
+            clicked => on_tool_textstyle_bold_activate();
+          }
+
+          Button tool_italic {
+            icon-name: "format-text-italic";
+            clicked => on_tool_textstyle_italic_activate();
+          }
+
+          Button tool_underline {
+            icon-name: "format-text-underline";
+            clicked => on_tool_textstyle_underline_activate();
+          }
+
+          Separator {}
+
+          // Alignment buttons
+          Button tool_left {
+            icon-name: "format-justify-left";
+            clicked => on_tool_textstyle_left_activate();
+          }
+
+          Button tool_center {
+            icon-name: "format-justify-center";
+            clicked => on_tool_textstyle_center_activate();
+          }
+
+          Button tool_right {
+            icon-name: "format-justify-right";
+            clicked => on_tool_textstyle_right_activate();
+          }
+
+          Separator {}
+
+          Separator tool_separator_expand {
+            hexpand: true;
+          }
+        }
+
+        // Main content panels
+        Paned hpaned {
+          // Editor side
+          Box editor_box {
+            orientation: vertical;
+
+            Notebook tab_notebook {
+              scrollable: true;
+              show-border: false;
+              notify::switch-page => on_tab_notebook_switch_page();
+            }
+
+            Box importers {
+              orientation: vertical;
+              visible: bind template.has_tabs;
+
+              Box import_panel {}
+
+              Box toolbar {
+                styles ["toolbar"]
+
+                Button imp_minimize {
+                  label: "  ";
+                  clicked => on_imp_minimize_clicked();
+                }
+
+                Button imp_panel_image {
+                  label: _("Image");
+                  clicked => on_imp_panel_image_clicked();
+                }
+
+                Button imp_panel_table {
+                  label: _("Table");
+                  clicked => on_imp_panel_table_clicked();
+                }
+
+                Button imp_panel_matrix {
+                  label: _("Matrix");
+                  clicked => on_imp_panel_matrix_clicked();
+                }
+
+                Button imp_panel_biblio {
+                  label: _("Bibliography");
+                  clicked => on_imp_panel_biblio_clicked();
+                }
+              }
+            }
+          }
+
+          // Preview side
+          Box preview_box {
+            visible: bind menu_rightpane.active;
+
+            Notebook right_notebook {
+              notify::switch-page => on_right_notebook_switch_page();
+
+              [tab]
+              Label previewgui_label {
+                label: _("Preview Pane");
+              }
+
+              ScrolledWindow preview_scrollw {
+                border-width: 4;
+                shadow-type: etched-in;
+
+                DrawingArea preview_draw {}
+              }
+
+              Box preview_toolbar {
+                styles ["toolbar"]
+
+                Button page_prev {
+                  label: _("Previous");
+                  sensitive: false;
+                }
+
+                Button page_next {
+                  label: _("Next");
+                  sensitive: false;
+                }
+
+                Separator {}
+
+                Entry page_input {
+                  placeholder-text: "0";
+                  width-chars: 6;
+                }
+
+                Label page_label {
+                  label: _("of 0");
+                }
+
+                Separator {}
+
+                ComboBoxText combo_preview_size {
+                  model: model_preview_size;
+                  active: 1;
+                }
+
+                Separator {
+                  hexpand: true;
+                }
+
+                ToggleButton preview_pause {
+                  icon-name: "media-playback-pause";
+                  toggled => on_preview_pause_toggled();
+                }
+              }
+            }
+          }
+        }
+
+        // Statusbar
+        Statusbar statusbar {
+          visible: bind menu_statusbar.active
+        }
+      }
+    }
+  }
+}
