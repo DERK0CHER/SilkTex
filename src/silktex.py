@@ -290,7 +290,7 @@ class LatexCompletionProvider(GObject.GObject, GtkSource.CompletionProvider):
             def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.set_orientation(Gtk.Orientation.VERTICAL)
-
+        
         # Create a title
         title = Gtk.Label()
         title.set_markup("<b>Document Structure</b>")
@@ -299,27 +299,27 @@ class LatexCompletionProvider(GObject.GObject, GtkSource.CompletionProvider):
         title.set_margin_top(10)
         title.set_margin_start(10)
         self.append(title)
-
+        
         # Create a scrolled window
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
-
+        
         # Create a tree view for document structure
         self.structure_store = Gtk.TreeStore(str, str, int)  # Text, Type, Line number
         self.structure_view = Gtk.TreeView(model=self.structure_store)
         self.structure_view.set_headers_visible(False)
-
+        
         renderer = Gtk.CellRendererText()
         column = Gtk.TreeViewColumn("Section", renderer, text=0)
         self.structure_view.append_column(column)
-
+        
         # Connect to selection change
         select = self.structure_view.get_selection()
         select.connect("changed", self.on_selection_changed)
-
+        
         scrolled.set_child(self.structure_view)
         self.append(scrolled)
-
+        
         # Add a button box at the bottom
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         button_box.set_margin_top(10)
@@ -327,28 +327,28 @@ class LatexCompletionProvider(GObject.GObject, GtkSource.CompletionProvider):
         button_box.set_margin_start(10)
         button_box.set_margin_end(10)
         button_box.set_spacing(5)
-
+        
         refresh_button = Gtk.Button(label="Refresh")
         refresh_button.set_hexpand(True)
         refresh_button.connect("clicked", self.on_refresh_clicked)
         button_box.append(refresh_button)
-
+        
         self.append(button_box)
-
+        
         # Store reference to source view
         self.source_view = None
-
-            def set_source_view(self, source_view):
-        """Set the source view to navigate to when an item is selected"""
-        self.source_view = source_view
-
-            def on_selection_changed(self, selection):
-        """Navigate to the selected section in the document"""
-        if not self.source_view:
+            
+                def set_source_view(self, source_view):
+                    """Set the source view to navigate to when an item is selected"""
+                    self.source_view = source_view
+                
+                def on_selection_changed(self, selection):
+                    """Navigate to the selected section in the document"""
+                    if not self.source_view:
             return
-
-        model, treeiter = selection.get_selected()
-        if treeiter is not None:
+                    
+                    model, treeiter = selection.get_selected()
+                    if treeiter is not None:
             line_num = model[treeiter][2]
             if line_num >= 0:
                 # Navigate to the line in the source view
@@ -356,8 +356,8 @@ class LatexCompletionProvider(GObject.GObject, GtkSource.CompletionProvider):
                 line_iter = buffer.get_iter_at_line(line_num)
                 buffer.place_cursor(line_iter)
                 self.source_view.scroll_to_iter(line_iter, 0.25, False, 0.0, 0.0)
-
-            def on_refresh_clicked(self, button):
+                
+                def on_refresh_clicked(self, button):
         """Refresh the document structure"""
         if self.source_view:
             buffer = self.source_view.get_buffer()
@@ -365,8 +365,8 @@ class LatexCompletionProvider(GObject.GObject, GtkSource.CompletionProvider):
             end_iter = buffer.get_end_iter()
             text = buffer.get_text(start_iter, end_iter, False)
             self.update_structure(text)
-
-            def update_structure(self, tex_content):
+            
+                def update_structure(self, tex_content):
         """Update the document structure based on LaTeX content"""
         self.structure_store.clear()
 
@@ -388,10 +388,526 @@ class LatexCompletionProvider(GObject.GObject, GtkSource.CompletionProvider):
 # silktex.py - Main application class
 import os
 import gi
+#!/usr/bin/env python3
+# silktex.py - Main application module for SilkTex
 
+import os
+import sys
+import gi
+
+# Set up required GObject Introspection libraries
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
+try:
+    gi.require_version('GtkSource', '5')
+except ValueError:
+    print("Warning: GtkSource 5 not available")
 
+from gi.repository import Gtk, Adw, Gio, GLib
+
+# Initialize Adwaita
+Adw.init()
+
+class SilkTexWindow(Adw.ApplicationWindow):
+    """Main application window for SilkTex"""
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        
+        # Basic window setup
+        self.set_default_size(1000, 700)
+        self.set_title("SilkTex")
+        
+        # Create a toast overlay and a box for content
+        self.toast_overlay = Adw.ToastOverlay()
+        self.set_content(self.toast_overlay)
+        
+        self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.toast_overlay.set_child(self.main_box)
+        
+        # Create a header bar
+        self.header = Adw.HeaderBar()
+        self.main_box.append(self.header)
+        
+        # Add a menu button
+        menu = Gio.Menu.new()
+        menu.append("New", "app.new")
+        menu.append("Open", "app.open")
+        menu.append("Save", "app.save")
+        menu.append("Save As", "app.save-as")
+        menu.append("Preferences", "app.preferences")
+        menu.append("About", "app.about")
+        menu.append("Quit", "app.quit")
+        
+        menu_button = Gtk.MenuButton()
+        menu_button.set_icon_name("open-menu-symbolic")
+        menu_button.set_menu_model(menu)
+        self.header.pack_end(menu_button)
+        
+        # Create toolbar buttons
+        new_button = Gtk.Button()
+        new_button.set_icon_name("document-new-symbolic")
+        new_button.set_tooltip_text("New Document")
+        new_button.set_action_name("app.new")
+        self.header.pack_start(new_button)
+        
+        open_button = Gtk.Button()
+        open_button.set_icon_name("document-open-symbolic")
+        open_button.set_tooltip_text("Open Document")
+        open_button.set_action_name("app.open")
+        self.header.pack_start(open_button)
+        
+        save_button = Gtk.Button()
+        save_button.set_icon_name("document-save-symbolic")
+        save_button.set_tooltip_text("Save Document")
+        save_button.set_action_name("app.save")
+        self.header.pack_start(save_button)
+        
+        # Main content area
+        self.welcome_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        self.welcome_box.set_margin_top(50)
+        self.welcome_box.set_margin_bottom(50)
+        self.welcome_box.set_margin_start(50)
+        self.welcome_box.set_margin_end(50)
+        self.welcome_box.set_vexpand(True)
+        self.welcome_box.set_hexpand(True)
+        self.welcome_box.set_valign(Gtk.Align.CENTER)
+        self.welcome_box.set_halign(Gtk.Align.CENTER)
+        
+        # Add a logo or title
+        title = Gtk.Label()
+        title.set_markup("<span size='xx-large' weight='bold'>SilkTex</span>")
+        self.welcome_box.append(title)
+        
+        subtitle = Gtk.Label()
+        subtitle.set_markup("<span size='large'>LaTeX Editor with Live Preview</span>")
+        self.welcome_box.append(subtitle)
+        
+        # Add some space
+        spacer = Gtk.Box()
+        spacer.set_size_request(-1, 20)
+        self.welcome_box.append(spacer)
+        
+        # Add buttons for common actions
+        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        button_box.set_halign(Gtk.Align.CENTER)
+        
+        new_btn = Gtk.Button(label="New Document")
+        new_btn.set_action_name("app.new")
+        button_box.append(new_btn)
+        
+        open_btn = Gtk.Button(label="Open Document")
+        open_btn.set_action_name("app.open")
+        button_box.append(open_btn)
+        
+        self.welcome_box.append(button_box)
+        
+        # Add the welcome box to the main box
+        self.main_box.append(self.welcome_box)
+    
+    def show_preferences(self):
+        """Show preferences dialog"""
+        toast = Adw.Toast(title="Preferences not implemented yet")
+        self.toast_overlay.add_toast(toast)
+    
+    def new_document(self):
+        """Create a new document"""
+        toast = Adw.Toast(title="New document feature not implemented yet")
+        self.toast_overlay.add_toast(toast)
+    
+    def open_document(self):
+        """Open a document"""
+        dialog = Gtk.FileDialog()
+        dialog.set_title("Open LaTeX Document")
+        
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        
+        filter_tex = Gtk.FileFilter()
+        filter_tex.set_name("LaTeX Files")
+        filter_tex.add_pattern("*.tex")
+        filters.append(filter_tex)
+        
+        filter_all = Gtk.FileFilter()
+        filter_all.set_name("All Files")
+        filter_all.add_pattern("*")
+        filters.append(filter_all)
+        
+        dialog.set_filters(filters)
+        
+        # Use a lambda to capture self
+        dialog.open(self, None, lambda dialog, result: self.on_open_dialog_response(dialog, result))
+    
+    def on_open_dialog_response(self, dialog, result):
+        """Handle file open dialog response"""
+        try:
+            file = dialog.open_finish(result)
+            if file:
+                toast = Adw.Toast(title=f"Opening: {file.get_path()}")
+                self.toast_overlay.add_toast(toast)
+        except GLib.Error as error:
+            print(f"Error opening file: {error.message}")
+    
+    def save_document(self):
+        """Save the current document"""
+        toast = Adw.Toast(title="Save feature not implemented yet")
+        self.toast_overlay.add_toast(toast)
+    
+    def save_document_as(self):
+        """Save the current document as a new file"""
+        toast = Adw.Toast(title="Save As feature not implemented yet")
+        self.toast_overlay.add_toast(toast)
+
+
+class SilkTexApplication(Adw.Application):
+    """Main application class for SilkTex"""
+    
+    def __init__(self, version=None):
+        super().__init__(application_id='org.example.silktex',
+                         flags=Gio.ApplicationFlags.FLAGS_NONE)
+        
+        self.version = version or "0.1.0"
+        
+        # Set up actions
+        self.create_action('quit', self.on_quit_action, ['<primary>q'])
+        self.create_action('about', self.on_about_action)
+        self.create_action('preferences', self.on_preferences_action)
+        self.create_action('new', self.on_new_action, ['<primary>n'])
+        self.create_action('open', self.on_open_action, ['<primary>o'])
+        self.create_action('save', self.on_save_action, ['<primary>s'])
+        self.create_action('save-as', self.on_save_as_action, ['<primary><shift>s'])
+        
+    def do_activate(self):
+        """Handle application activation"""
+        # Get the active window or create a new one
+        win = self.props.active_window
+        if not win:
+            win = SilkTexWindow(application=self)
+        
+        # Present the window
+        win.present()
+    
+    def on_quit_action(self, widget, _):
+        """Handle quit action"""
+        self.quit()
+    
+    def on_about_action(self, widget, _):
+        """Show about dialog"""
+        about = Adw.AboutWindow(transient_for=self.props.active_window,
+                           application_name='SilkTex',
+                           application_icon='org.example.silktex',
+                           developer_name='Developer',
+                           version='0.1.0',
+                           developers=['Your Name'],
+                           copyright='© 2023 Your Name')
+        about.present()
+    
+    def on_preferences_action(self, widget, _):
+        """Show preferences dialog"""
+        window = self.props.active_window
+        if window:
+            window.show_preferences()
+    
+    def on_new_action(self, widget, _):
+        """Create a new document"""
+        window = self.props.active_window
+        if window:
+            window.new_document()
+    
+    def on_open_action(self, widget, _):
+        """Open a document"""
+        window = self.props.active_window
+        if window:
+            window.open_document()
+    
+    def on_save_action(self, widget, _):
+        """Save the current document"""
+        window = self.props.active_window
+        if window:
+            window.save_document()
+    
+    def on_save_as_action(self, widget, _):
+        """Save the current document as a new file"""
+        window = self.props.active_window
+        if window:
+            window.save_document_as()
+    
+    def create_action(self, name, callback, shortcuts=None):
+        """Helper to create an action"""
+        action = Gio.SimpleAction.new(name, None)
+        action.connect("activate", callback)
+        self.add_action(action)
+        if shortcuts:
+            self.set_accels_for_action(f"app.{name}", shortcuts)
+gi.require_version('Gtk', '4.0')
+gi.require_version('Adw', '1')
+#!/usr/bin/env python3
+# silktex.py - Main application module for SilkTex
+
+import os
+import sys
+import gi
+
+# Set up required GObject Introspection libraries
+gi.require_version('Gtk', '4.0')
+gi.require_version('Adw', '1')
+try:
+    gi.require_version('GtkSource', '5')
+except ValueError:
+    print("Warning: GtkSource 5 not available")
+
+try:
+    gi.require_version('WebKit', '6.0')
+except ValueError:
+    print("Warning: WebKit 6 not available")
+
+from gi.repository import Gtk, Adw, Gio, GLib
+
+# Initialize Adwaita
+Adw.init()
+
+class SilkTexWindow(Adw.ApplicationWindow):
+    """Main application window for SilkTex"""
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        
+        # Basic window setup
+        self.set_default_size(1000, 700)
+        self.set_title("SilkTex")
+        
+        # Create a toast overlay and a box for content
+        self.toast_overlay = Adw.ToastOverlay()
+        self.set_content(self.toast_overlay)
+        
+        self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.toast_overlay.set_child(self.main_box)
+        
+        # Create a header bar
+        self.header = Adw.HeaderBar()
+        self.main_box.append(self.header)
+        
+        # Add a menu button
+        menu = Gio.Menu.new()
+        menu.append("New", "app.new")
+        menu.append("Open", "app.open")
+        menu.append("Save", "app.save")
+        menu.append("Save As", "app.save-as")
+        menu.append("Preferences", "app.preferences")
+        menu.append("About", "app.about")
+        menu.append("Quit", "app.quit")
+        
+        menu_button = Gtk.MenuButton()
+        menu_button.set_icon_name("open-menu-symbolic")
+        menu_button.set_menu_model(menu)
+        self.header.pack_end(menu_button)
+        
+        # Create toolbar buttons
+        new_button = Gtk.Button()
+        new_button.set_icon_name("document-new-symbolic")
+        new_button.set_tooltip_text("New Document")
+        new_button.set_action_name("app.new")
+        self.header.pack_start(new_button)
+        
+        open_button = Gtk.Button()
+        open_button.set_icon_name("document-open-symbolic")
+        open_button.set_tooltip_text("Open Document")
+        open_button.set_action_name("app.open")
+        self.header.pack_start(open_button)
+        
+        save_button = Gtk.Button()
+        save_button.set_icon_name("document-save-symbolic")
+        save_button.set_tooltip_text("Save Document")
+        save_button.set_action_name("app.save")
+        self.header.pack_start(save_button)
+        
+        # Main content area
+        self.welcome_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        self.welcome_box.set_margin_top(50)
+        self.welcome_box.set_margin_bottom(50)
+        self.welcome_box.set_margin_start(50)
+        self.welcome_box.set_margin_end(50)
+        self.welcome_box.set_vexpand(True)
+        self.welcome_box.set_hexpand(True)
+        self.welcome_box.set_valign(Gtk.Align.CENTER)
+        self.welcome_box.set_halign(Gtk.Align.CENTER)
+        
+        # Add a logo or title
+        title = Gtk.Label()
+        title.set_markup("<span size='xx-large' weight='bold'>SilkTex</span>")
+        self.welcome_box.append(title)
+        
+        subtitle = Gtk.Label()
+        subtitle.set_markup("<span size='large'>LaTeX Editor with Live Preview</span>")
+        self.welcome_box.append(subtitle)
+        
+        # Add some space
+        spacer = Gtk.Box()
+        spacer.set_size_request(-1, 20)
+        self.welcome_box.append(spacer)
+        
+        # Add buttons for common actions
+        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        button_box.set_halign(Gtk.Align.CENTER)
+        
+        new_btn = Gtk.Button(label="New Document")
+        new_btn.set_action_name("app.new")
+        button_box.append(new_btn)
+        
+        open_btn = Gtk.Button(label="Open Document")
+        open_btn.set_action_name("app.open")
+        button_box.append(open_btn)
+        
+        self.welcome_box.append(button_box)
+        
+        # Add the welcome box to the main box
+        self.main_box.append(self.welcome_box)
+    
+    def show_preferences(self):
+        """Show preferences dialog"""
+        toast = Adw.Toast(title="Preferences not implemented yet")
+        self.toast_overlay.add_toast(toast)
+    
+    def new_document(self):
+        """Create a new document"""
+        toast = Adw.Toast(title="New document feature not implemented yet")
+        self.toast_overlay.add_toast(toast)
+    
+    def open_document(self):
+        """Open a document"""
+        dialog = Gtk.FileDialog()
+        dialog.set_title("Open LaTeX Document")
+        
+        filters = Gio.ListStore.new(Gtk.FileFilter)
+        
+        filter_tex = Gtk.FileFilter()
+        filter_tex.set_name("LaTeX Files")
+        filter_tex.add_pattern("*.tex")
+        filters.append(filter_tex)
+        
+        filter_all = Gtk.FileFilter()
+        filter_all.set_name("All Files")
+        filter_all.add_pattern("*")
+        filters.append(filter_all)
+        
+        dialog.set_filters(filters)
+        
+        # Use a lambda to capture self
+        dialog.open(self, None, lambda dialog, result: self.on_open_dialog_response(dialog, result))
+    
+    def on_open_dialog_response(self, dialog, result):
+        """Handle file open dialog response"""
+        try:
+            file = dialog.open_finish(result)
+            if file:
+                toast = Adw.Toast(title=f"Opening: {file.get_path()}")
+                self.toast_overlay.add_toast(toast)
+        except GLib.Error as error:
+            print(f"Error opening file: {error.message}")
+    
+    def save_document(self):
+        """Save the current document"""
+        toast = Adw.Toast(title="Save feature not implemented yet")
+        self.toast_overlay.add_toast(toast)
+    
+    def save_document_as(self):
+        """Save the current document as a new file"""
+        toast = Adw.Toast(title="Save As feature not implemented yet")
+        self.toast_overlay.add_toast(toast)
+    
+    def compile_document(self):
+        """Compile the current document"""
+        toast = Adw.Toast(title="Compile feature not implemented yet")
+        self.toast_overlay.add_toast(toast)
+
+
+class SilkTexApplication(Adw.Application):
+    """Main application class for SilkTex"""
+    
+    def __init__(self, version=None):
+        super().__init__(application_id='org.example.silktex',
+                         flags=Gio.ApplicationFlags.FLAGS_NONE)
+        
+        self.version = version or "0.1.0"
+        
+        # Set up actions
+        self.create_action('quit', self.on_quit_action, ['<primary>q'])
+        self.create_action('about', self.on_about_action)
+        self.create_action('preferences', self.on_preferences_action, ['<primary>comma'])
+        self.create_action('new', self.on_new_action, ['<primary>n'])
+        self.create_action('open', self.on_open_action, ['<primary>o'])
+        self.create_action('save', self.on_save_action, ['<primary>s'])
+        self.create_action('save-as', self.on_save_as_action, ['<primary><shift>s'])
+        self.create_action('compile', self.on_compile_action, ['F5'])
+        
+    def do_activate(self):
+        """Handle application activation"""
+        # Get the active window or create a new one
+        win = self.props.active_window
+        if not win:
+            win = SilkTexWindow(application=self)
+        
+        # Present the window
+        win.present()
+    
+    def on_quit_action(self, widget, _):
+        """Handle quit action"""
+        self.quit()
+    
+    def on_about_action(self, widget, _):
+        """Show about dialog"""
+        about = Adw.AboutWindow(transient_for=self.props.active_window,
+                           application_name='SilkTex',
+                           application_icon='org.example.silktex',
+                           developer_name='SilkTex Team',
+                           version=self.version,
+                           developers=['SilkTex Team'],
+                           copyright='© 2023 SilkTex Team',
+                           license_type=Gtk.License.GPL_3_0)
+        about.present()
+    
+    def on_preferences_action(self, widget, _):
+        """Show preferences dialog"""
+        window = self.props.active_window
+        if window:
+            window.show_preferences()
+    
+    def on_new_action(self, widget, _):
+        """Create a new document"""
+        window = self.props.active_window
+        if window:
+            window.new_document()
+    
+    def on_open_action(self, widget, _):
+        """Open a document"""
+        window = self.props.active_window
+        if window:
+            window.open_document()
+    
+    def on_save_action(self, widget, _):
+        """Save the current document"""
+        window = self.props.active_window
+        if window:
+            window.save_document()
+    
+    def on_save_as_action(self, widget, _):
+        """Save the current document as a new file"""
+        window = self.props.active_window
+        if window:
+            window.save_document_as()
+    
+    def on_compile_action(self, widget, _):
+        """Compile the current document"""
+        window = self.props.active_window
+        if window:
+            window.compile_document()
+    
+    def create_action(self, name, callback, shortcuts=None):
+        """Helper to create an action"""
+        action = Gio.SimpleAction.new(name, None)
+        action.connect("activate", callback)
+        self.add_action(action)
+        if shortcuts:
+            self.set_accels_for_action(f"app.{name}", shortcuts)
 from gi.repository import Gtk, Adw, Gio, GLib
 
 from window import SilkTexWindow
@@ -493,7 +1009,7 @@ class SilkTexApp(Adw.Application):
         self.add_action(action)
         if shortcuts:
             self.set_accels_for_action(f"app.{name}", shortcuts)
-            # Check if we're still in preamble (before document begins)
+                        # Check if we're still in preamble (before document begins)
             if document_node is None and not preamble_node and ('\\documentclass' in line or '\\usepackage' in line):
                 preamble_node = self.structure_store.append(None, ["Preamble", "preamble", 0])
 
@@ -565,6 +1081,30 @@ class SilkTexApp(Adw.Application):
                         if '\\end{figure}' in lines[j]:
                             break
                 elif '\\begin{table}' in line:
+                    parent = document_node if document_node else None
+                    table_node = self.structure_store.append(parent, ["Table", "table", i])
+                    # Search for caption in next few lines
+                    for j in range(i+1, min(i+15, len(lines))):
+                        if '\\caption{' in lines[j]:
+                            caption_match = re.search(r'\\caption\{(.*?)\}', lines[j])
+                            if caption_match:
+                                self.structure_store.set_value(table_node, 0, f"Table: {caption_match.group(1)}")
+                            break
+                        if '\\end{table}' in lines[j]:
+                            break
+                
+                # Detect bibliography
+                elif '\\bibliography{' in line or '\\begin{thebibliography}' in line:
+                    parent = document_node if document_node else None
+                    self.structure_store.append(parent, ["Bibliography", "bibliography", i])
+                
+                # Detect appendix
+                elif line == '\\appendix':
+                    parent = document_node if document_node else None
+                    self.structure_store.append(parent, ["Appendices", "appendix", i])
+                    
+                            # Expand all nodes
+                            self.structure_view.expand_all()
 
 
 class LaTeXSnippets:
@@ -999,178 +1539,7 @@ class LaTeXSnippets:
         context.add_proposals(self, proposals, True)
         
         
-        class DocumentStructure(Gtk.Box):
-            def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.set_orientation(Gtk.Orientation.VERTICAL)
-        
-        # Create a title
-        title = Gtk.Label()
-        title.set_markup("<b>Document Structure</b>")
-        title.set_halign(Gtk.Align.START)
-        title.set_margin_bottom(10)
-        title.set_margin_top(10)
-        title.set_margin_start(10)
-        self.append(title)
-        
-        # Create a scrolled window
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_vexpand(True)
-        
-        # Create a tree view for document structure
-        self.structure_store = Gtk.TreeStore(str, str, int)  # Text, Type, Line number
-        self.structure_view = Gtk.TreeView(model=self.structure_store)
-        self.structure_view.set_headers_visible(False)
-        
-        renderer = Gtk.CellRendererText()
-        column = Gtk.TreeViewColumn("Section", renderer, text=0)
-        self.structure_view.append_column(column)
-        
-        # Connect to selection change
-        select = self.structure_view.get_selection()
-        select.connect("changed", self.on_selection_changed)
-        
-        scrolled.set_child(self.structure_view)
-        self.append(scrolled)
-        
-        # Add a button box at the bottom
-        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        button_box.set_margin_top(10)
-        button_box.set_margin_bottom(10)
-        button_box.set_margin_start(10)
-        button_box.set_margin_end(10)
-        button_box.set_spacing(5)
-        
-        refresh_button = Gtk.Button(label="Refresh")
-        refresh_button.set_hexpand(True)
-        refresh_button.connect("clicked", self.on_refresh_clicked)
-        button_box.append(refresh_button)
-        
-        self.append(button_box)
-        
-        # Store reference to source view
-        self.source_view = None
-            
-            def set_source_view(self, source_view):
-        """Set the source view to navigate to when an item is selected"""
-        self.source_view = source_view
-            
-            def on_selection_changed(self, selection):
-        """Navigate to the selected section in the document"""
-        if not self.source_view:
-            return
-            
-        model, treeiter = selection.get_selected()
-        if treeiter is not None:
-            line_num = model[treeiter][2]
-            if line_num >= 0:
-                # Navigate to the line in the source view
-                buffer = self.source_view.get_buffer()
-                line_iter = buffer.get_iter_at_line(line_num)
-                buffer.place_cursor(line_iter)
-                self.source_view.scroll_to_iter(line_iter, 0.25, False, 0.0, 0.0)
-            
-            def on_refresh_clicked(self, button):
-        """Refresh the document structure"""
-        if self.source_view:
-            buffer = self.source_view.get_buffer()
-            start_iter = buffer.get_start_iter()
-            end_iter = buffer.get_end_iter()
-            text = buffer.get_text(start_iter, end_iter, False)
-            self.update_structure(text)
-            
-            def update_structure(self, tex_content):
-        """Update the document structure based on LaTeX content"""
-        self.structure_store.clear()
-        
-        # Simple regex-based parsing of LaTeX structure
-        lines = tex_content.split('\n')
-        section_stack = [None]  # Root
-        document_node = None
-        preamble_node = None
-        
-        for i, line in enumerate(lines):
-            line = line.strip()
-            
-            # Check for document environment
-            if '\\begin{document}' in line:
-                document_node = self.structure_store.append(None, ["Document", "document", i])
-                if preamble_node is None:
-                    preamble_node = self.structure_store.append(None, ["Preamble", "preamble", 0])
-                continue
-                
-            # Check if we're still in preamble (before document begins)
-            if document_node is None and not preamble_node and ('\\documentclass' in line or '\\usepackage' in line):
-                preamble_node = self.structure_store.append(None, ["Preamble", "preamble", 0])
-            
-            # If we're in preamble, add important preamble commands
-            if document_node is None and preamble_node and not '\\begin{document}' in line:
-                if '\\documentclass' in line:
-                    self.structure_store.append(preamble_node, ["Document Class", "command", i])
-                elif '\\usepackage' in line:
-                    package_match = re.search(r'\\usepackage(?:\[.*?\])?\{(.*?)\}', line)
-                    if package_match:
-                        package_name = package_match.group(1)
-                        self.structure_store.append(preamble_node, [f"Package: {package_name}", "package", i])
-                elif '\\title' in line:
-                    title_match = re.search(r'\\title\{(.*?)\}', line)
-                    if title_match:
-                        title_text = title_match.group(1)
-                        self.structure_store.append(preamble_node, [f"Title: {title_text}", "title", i])
-                elif '\\author' in line:
-                    author_match = re.search(r'\\author\{(.*?)\}', line)
-                    if author_match:
-                        author_text = author_match.group(1)
-                        self.structure_store.append(preamble_node, [f"Author: {author_text}", "author", i])
-            
-            # Check for section commands (only process these after \begin{document})
-            if document_node is not None:
-                if line.startswith('\\chapter{'):
-                    title_match = re.search(r'\\chapter\{(.*?)\}', line)
-                    if title_match:
-                        title = title_match.group(1)
-                        node = self.structure_store.append(document_node, [f"Chapter: {title}", "chapter", i])
-                        section_stack = [document_node, node]
-                elif line.startswith('\\section{'):
-                    title_match = re.search(r'\\section\{(.*?)\}', line)
-                    if title_match:
-                        title = title_match.group(1)
-                        if document_node:
-                            node = self.structure_store.append(document_node, [f"Section: {title}", "section", i])
-                            section_stack = [document_node, node]
-                        else:
-                            node = self.structure_store.append(None, [f"Section: {title}", "section", i])
-                            section_stack = [None, node]
-                elif line.startswith('\\subsection{'):
-                    title_match = re.search(r'\\subsection\{(.*?)\}', line)
-                    if title_match:
-                        title = title_match.group(1)
-                        if len(section_stack) >= 2:
-                            node = self.structure_store.append(section_stack[1], [f"Subsection: {title}", "subsection", i])
-                        else:
-                            node = self.structure_store.append(document_node, [f"Subsection: {title}", "subsection", i])
-                elif line.startswith('\\subsubsection{'):
-                    title_match = re.search(r'\\subsubsection\{(.*?)\}', line)
-                    if title_match:
-                        title = title_match.group(1)
-                        if len(section_stack) >= 2:
-                            node = self.structure_store.append(section_stack[1], [f"Subsubsection: {title}", "subsubsection", i])
-                        else:
-                            node = self.structure_store.append(document_node, [f"Subsubsection: {title}", "subsubsection", i])
-                # Detect figure and table environments
-                elif '\\begin{figure}' in line:
-                    parent = document_node if document_node else None
-                    figure_node = self.structure_store.append(parent, ["Figure", "figure", i])
-                    # Search for caption in next few lines
-                    for j in range(i+1, min(i+10, len(lines))):
-                        if '\\caption{' in lines[j]:
-                            caption_match = re.search(r'\\caption\{(.*?)\}', lines[j])
-                            if caption_match:
-                                self.structure_store.set_value(figure_node, 0, f"Figure: {caption_match.group(1)}")
-                            break
-                        if '\\end{figure}' in lines[j]:
-                            break
-                elif '\\begin{table}' in line:
+        # Removed duplicate DocumentStructure class
                     parent = document_node if document_node else None
                     table_node = self.structure_store.append(parent, ["Table", "table", i])
                     # Search for caption in next few lines
@@ -1598,7 +1967,7 @@ class LaTeXPreview(Gtk.Box):
                 buffer.place_cursor(line_iter)
                 self.source_view.scroll_to_iter(line_iter, 0.25, False, 0.0, 0.0)
 
-            def on_refresh_clicked(self, button):
+                def on_refresh_clicked(self, button):
         """Refresh the document structure"""
         if self.source_view:
             buffer = self.source_view.get_buffer()
@@ -1607,7 +1976,7 @@ class LaTeXPreview(Gtk.Box):
             text = buffer.get_text(start_iter, end_iter, False)
             self.update_structure(text)
 
-            def update_structure(self, tex_content):
+                def update_structure(self, tex_content):
         """Update the document structure based on LaTeX content"""
         self.structure_store.clear()
 
@@ -1701,34 +2070,134 @@ class LaTeXPreview(Gtk.Box):
                 elif '\\begin{table}' in line:
 
 
+#!/usr/bin/env python3
+# silktex.py - Main application class for SilkTex
+
+import os
+import sys
+import gi
+
+# Set up required GObject Introspection libraries
+gi.require_version('Gtk', '4.0')
+gi.require_version('Adw', '1')
+gi.require_version('GtkSource', '5')
+try:
+    gi.require_version('WebKit', '6.0')
+except ValueError:
+    # WebKit is recommended but technically optional
+    pass
+
+from gi.repository import Gtk, Adw, Gio, GLib
+
+# Try to import from the same directory
+try:
+    from window import SilkTexWindow
+    from config import ConfigManager
+except ImportError:
+    # If that fails, use qualified imports
+    try:
+        from .window import SilkTexWindow
+        from .config import ConfigManager
+    except ImportError:
+        print("Error: Could not import required modules.")
+        sys.exit(1)
+
 class SilkTexApplication(Adw.Application):
-    def __init__(self):
+    """Main SilkTex application class"""
+    
+    def __init__(self, version="0.1.0"):
         super().__init__(application_id='org.example.silktex',
                          flags=Gio.ApplicationFlags.FLAGS_NONE)
-        self.create_action('quit', self.quit, ['<primary>q'])
+        
+        self.version = version
+        
+        # Initialize application actions
+        self.create_action('quit', self.on_quit_action, ['<primary>q'])
+        self.create_action('new', self.on_new_action, ['<primary>n'])
+        self.create_action('open', self.on_open_action, ['<primary>o'])
+        self.create_action('save', self.on_save_action, ['<primary>s'])
+        self.create_action('save-as', self.on_save_as_action, ['<primary><shift>s'])
         self.create_action('about', self.on_about_action)
-        self.create_action('preferences', self.on_preferences_action)
+        self.create_action('preferences', self.on_preferences_action, ['<primary>comma'])
+        
+        # Load configuration
+        try:
+            self.config = ConfigManager()
+        except Exception as e:
+            print(f"Warning: Could not load configuration: {e}")
+        
+        # Set application styles
+        self.style_manager = Adw.StyleManager.get_default()
+        try:
+            color_scheme = self.config.get_string('color-scheme', 'default')
+            if color_scheme == 'light':
+                self.style_manager.set_color_scheme(Adw.ColorScheme.FORCE_LIGHT)
+            elif color_scheme == 'dark':
+                self.style_manager.set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+            else:
+                self.style_manager.set_color_scheme(Adw.ColorScheme.DEFAULT)
+        except Exception:
+            # Default to system theme if config fails
+            self.style_manager.set_color_scheme(Adw.ColorScheme.DEFAULT)
 
     def do_activate(self):
+        """Handle application activation"""
+        # Get the active window or create one
         win = self.props.active_window
         if not win:
             win = SilkTexWindow(application=self)
         win.present()
-
+    
+    def on_quit_action(self, widget, _):
+        """Quit the application"""
+        self.quit()
+    
+    def on_new_action(self, widget, _):
+        """Create a new document"""
+        win = self.props.active_window
+        if win:
+            win.new_document()
+    
+    def on_open_action(self, widget, _):
+        """Open a document"""
+        win = self.props.active_window
+        if win:
+            win.open_document()
+    
+    def on_save_action(self, widget, _):
+        """Save the current document"""
+        win = self.props.active_window
+        if win:
+            win.save_document()
+    
+    def on_save_as_action(self, widget, _):
+        """Save the current document with a new name"""
+        win = self.props.active_window
+        if win:
+            win.save_document_as()
+    
     def on_about_action(self, widget, _):
+        """Show the about dialog"""
         about = Adw.AboutWindow(transient_for=self.props.active_window,
-                                application_name='SilkTex',
-                                application_icon='org.example.silktex',
-                                developer_name='Developer',
-                                version='0.1.0',
-                                developers=['Your Name'],
-                                copyright='© 2023 Your Name')
+                               application_name='SilkTex',
+                               application_icon='org.example.silktex',
+                               developer_name='SilkTex Team',
+                               version=self.version,
+                               developers=['SilkTex Team'],
+                               copyright='© 2023 SilkTex Team',
+                               license_type=Gtk.License.MIT_X11,
+                               website='https://github.com/yourusername/silktex',
+                               issue_url='https://github.com/yourusername/silktex/issues')
         about.present()
-
+    
     def on_preferences_action(self, widget, _):
-        self.props.active_window.main_stack.set_visible_child_name('settings')
-
+        """Show the preferences dialog"""
+        win = self.props.active_window
+        if win:
+            win.show_preferences()
+    
     def create_action(self, name, callback, shortcuts=None):
+        """Create a GAction and add it to the application"""
         action = Gio.SimpleAction.new(name, None)
         action.connect("activate", callback)
         self.add_action(action)

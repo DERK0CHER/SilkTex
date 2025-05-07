@@ -1,7 +1,426 @@
 #!/usr/bin/env python3
 """
 editor.py - Editor component for Gummi
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+SilkTex - Editor component
 
+This module defines the editor component with syntax highlighting
+and LaTeX-specific features for the SilkTex application.
+"""
+
+import os
+import gi
+
+gi.require_version('Gtk', '4.0')
+gi.require_version('GtkSource', '5')
+from gi.repository import Gtk, GtkSource, GObject, Gdk, Pango
+
+class SilkTexEditor(Gtk.Box):
+    """
+    LaTeX editor component with syntax highlighting and code completion.
+    
+    This class wraps a GtkSource.View to provide LaTeX-specific editing
+    features including syntax highlighting, code completion, and 
+    LaTeX snippets.
+    """
+    
+    def __init__(self, parent_window=None):
+        """Initialize the editor component."""
+        super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        
+        self.parent_window = parent_window
+        self.current_file = None
+        
+        # Set up container for editor
+        self.setup_ui()
+        
+        # Connect signals
+        self.source_buffer.connect("changed", self.on_buffer_changed)
+        self.source_buffer.connect("modified-changed", self.on_modified_changed)
+        
+        # Set initial content
+        self.new_document()
+    
+    def setup_ui(self):
+        """Set up the editor UI components."""
+        # Create scrolled window
+        scrolled_window = Gtk.ScrolledWindow()
+        scrolled_window.set_vexpand(True)
+        scrolled_window.set_hexpand(True)
+        
+        # Set up source view with GtkSource
+        self.source_buffer = GtkSource.Buffer()
+        self.source_view = GtkSource.View(buffer=self.source_buffer)
+        
+        # Configure source view
+        self.source_view.set_show_line_numbers(True)
+        self.source_view.set_highlight_current_line(True)
+        self.source_view.set_monospace(True)
+        self.source_view.set_tab_width(2)
+        self.source_view.set_indent_on_tab(True)
+        self.source_view.set_auto_indent(True)
+        self.source_view.set_smart_backspace(True)
+        self.source_view.set_insert_spaces_instead_of_tabs(True)
+        
+        # Set up font
+        font_desc = Pango.FontDescription("Monospace 10")
+        self.source_view.override_font(font_desc)
+        
+        # Set up syntax highlighting
+        language_manager = GtkSource.LanguageManager.get_default()
+        latex_lang = language_manager.get_language("latex")
+        if latex_lang:
+            self.source_buffer.set_language(latex_lang)
+            self.source_buffer.set_highlight_syntax(True)
+        
+        # Set up style scheme
+        style_manager = GtkSource.StyleSchemeManager.get_default()
+        scheme = style_manager.get_scheme("tango")
+        if scheme:
+            self.source_buffer.set_style_scheme(scheme)
+        
+        # Add editor to scrolled window
+        scrolled_window.set_child(self.source_view)
+        
+        # Add toolbar with editing buttons
+        toolbar = self.create_toolbar()
+        
+        # Add components to the box
+        self.append(toolbar)
+        self.append(scrolled_window)
+        
+        # Set up completion provider
+        self.setup_completion()
+    
+    def create_toolbar(self):
+        """Create a toolbar with LaTeX editing buttons."""
+        toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        toolbar.set_spacing(4)
+        toolbar.set_margin_start(4)
+        toolbar.set_margin_end(4)
+        toolbar.set_margin_top(4)
+        toolbar.set_margin_bottom(4)
+        
+        # Bold button
+        bold_button = Gtk.Button()
+        bold_button.set_icon_name("format-text-bold-symbolic")
+        bold_button.set_tooltip_text("Bold (\\textbf{...})")
+        bold_button.connect("clicked", self.on_bold_clicked)
+        toolbar.append(bold_button)
+        
+        # Italic button
+        italic_button = Gtk.Button()
+        italic_button.set_icon_name("format-text-italic-symbolic")
+        italic_button.set_tooltip_text("Italic (\\textit{...})")
+        italic_button.connect("clicked", self.on_italic_clicked)
+        toolbar.append(italic_button)
+        
+        # Add a separator
+        separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        toolbar.append(separator)
+        
+        # Section button
+        section_button = Gtk.Button(label="§")
+        section_button.set_tooltip_text("Insert Section")
+        section_button.connect("clicked", self.on_section_clicked)
+        toolbar.append(section_button)
+        
+        # Math button
+        math_button = Gtk.Button(label="$")
+        math_button.set_tooltip_text("Insert Math")
+        math_button.connect("clicked", self.on_math_clicked)
+        toolbar.append(math_button)
+        
+        # Add a separator
+        separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        toolbar.append(separator)
+        
+        # Itemize button
+        itemize_button = Gtk.Button()
+        itemize_button.set_icon_name("view-list-symbolic")
+        itemize_button.set_tooltip_text("Itemize List")
+        itemize_button.connect("clicked", self.on_itemize_clicked)
+        toolbar.append(itemize_button)
+        
+        # Enumerate button
+        enumerate_button = Gtk.Button()
+        enumerate_button.set_icon_name("view-list-ordered-symbolic")
+        enumerate_button.set_tooltip_text("Enumerate List")
+        enumerate_button.connect("clicked", self.on_enumerate_clicked)
+        toolbar.append(enumerate_button)
+        
+        # Add a separator
+        separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        toolbar.append(separator)
+        
+        # Figure button
+        figure_button = Gtk.Button()
+        figure_button.set_icon_name("insert-image-symbolic")
+        figure_button.set_tooltip_text("Insert Figure")
+        figure_button.connect("clicked", self.on_figure_clicked)
+        toolbar.append(figure_button)
+        
+        # Table button
+        table_button = Gtk.Button()
+        table_button.set_icon_name("insert-table-symbolic")
+        table_button.set_tooltip_text("Insert Table")
+        table_button.connect("clicked", self.on_table_clicked)
+        toolbar.append(table_button)
+        
+        return toolbar
+    
+    def setup_completion(self):
+        """Set up code completion for LaTeX commands."""
+        # Create completion provider
+        self.completion = self.source_view.get_completion()
+        
+        # Enable the completion
+        if self.completion:
+            # We'll implement a custom completion provider in a future version
+            pass
+    
+    def new_document(self):
+        """Create a new document with default LaTeX template."""
+        template = """\\documentclass{article}
+\\usepackage{amsmath}
+\\usepackage{graphicx}
+\\usepackage{hyperref}
+\\usepackage[utf8]{inputenc}
+\\usepackage[english]{babel}
+
+\\title{Document Title}
+\\author{Author Name}
+\\date{\\today}
+
+\\begin{document}
+
+\\maketitle
+
+\\begin{abstract}
+This is the abstract of your document.
+\\end{abstract}
+
+\\section{Introduction}
+Write your introduction here.
+
+\\section{Methods}
+Describe your methods here.
+
+\\section{Results}
+Present your results here.
+
+\\section{Discussion}
+Discuss your findings here.
+
+\\section{Conclusion}
+Conclude your document here.
+
+\\begin{thebibliography}{9}
+\\bibitem{example}
+Author, A. (Year). Title of the work. Publisher.
+\\end{thebibliography}
+
+\\end{document}
+"""
+        self.set_text(template)
+        self.current_file = None
+        self.source_buffer.set_modified(False)
+        
+        # Emit signal that content has changed
+        self.emit("buffer-changed")
+    
+    def load_file(self, file_path):
+        """Load content from a file."""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                self.set_text(content)
+                self.current_file = file_path
+                self.source_buffer.set_modified(False)
+                
+                # Emit signal that content has changed
+                self.emit("buffer-changed")
+                return True
+        except Exception as e:
+            print(f"Error loading file: {e}")
+            return False
+    
+    def save_file(self):
+        """Save content to the current file."""
+        if self.current_file:
+            return self.save_file_as(self.current_file)
+        return False
+    
+    def save_file_as(self, file_path):
+        """Save content to a specific file."""
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                text = self.get_text()
+                f.write(text)
+                self.current_file = file_path
+                self.source_buffer.set_modified(False)
+                
+                # Emit signal that content has changed
+                self.emit("buffer-changed")
+                return True
+        except Exception as e:
+            print(f"Error saving file: {e}")
+            return False
+    
+    def get_text(self):
+        """Get the entire text content."""
+        start_iter = self.source_buffer.get_start_iter()
+        end_iter = self.source_buffer.get_end_iter()
+        return self.source_buffer.get_text(start_iter, end_iter, False)
+    
+    def set_text(self, text):
+        """Set the entire text content."""
+        self.source_buffer.set_text(text)
+    
+    def get_file_path(self):
+        """Get the current file path."""
+        return self.current_file
+    
+    def is_modified(self):
+        """Check if the buffer has been modified."""
+        return self.source_buffer.get_modified()
+    
+    def insert_text_at_cursor(self, text):
+        """Insert text at the current cursor position."""
+        self.source_buffer.insert_at_cursor(text)
+    
+    def get_selected_text(self):
+        """Get the currently selected text."""
+        bounds = self.source_buffer.get_selection_bounds()
+        if bounds:
+            start, end = bounds
+            return self.source_buffer.get_text(start, end, False)
+        return ""
+    
+    def wrap_selection_with_tags(self, before, after):
+        """Wrap the selection with LaTeX tags."""
+        bounds = self.source_buffer.get_selection_bounds()
+        if bounds:
+            start, end = bounds
+            selected_text = self.source_buffer.get_text(start, end, False)
+            
+            # Begin user action for undo support
+            self.source_buffer.begin_user_action()
+            
+            # Delete the selection
+            self.source_buffer.delete(start, end)
+            
+            # Insert the wrapped text
+            self.source_buffer.insert(start, f"{before}{selected_text}{after}")
+            
+            # End user action
+            self.source_buffer.end_user_action()
+        else:
+            # If no selection, just insert the tags with cursor in between
+            cursor = self.source_buffer.get_insert()
+            iter_at_cursor = self.source_buffer.get_iter_at_mark(cursor)
+            
+            # Begin user action for undo support
+            self.source_buffer.begin_user_action()
+            
+            # Insert the tags
+            self.source_buffer.insert(iter_at_cursor, f"{before}{after}")
+            
+            # Move cursor between the tags
+            iter_at_cursor = self.source_buffer.get_iter_at_mark(cursor)
+            iter_at_cursor.backward_chars(len(after))
+            self.source_buffer.place_cursor(iter_at_cursor)
+            
+            # End user action
+            self.source_buffer.end_user_action()
+    
+    def insert_environment(self, env_name):
+        """Insert a LaTeX environment."""
+        env_text = f"\\begin{{{env_name}}}\n    \n\\end{{{env_name}}}"
+        
+        # Begin user action for undo support
+        self.source_buffer.begin_user_action()
+        
+        # Insert the environment
+        self.source_buffer.insert_at_cursor(env_text)
+        
+        # Move cursor to the middle line
+        cursor = self.source_buffer.get_insert()
+        iter_at_cursor = self.source_buffer.get_iter_at_mark(cursor)
+        iter_at_cursor.backward_chars(len(f"\n\\end{{{env_name}}}"))
+        self.source_buffer.place_cursor(iter_at_cursor)
+        
+        # End user action
+        self.source_buffer.end_user_action()
+    
+    def on_buffer_changed(self, buffer):
+        """Handle buffer content changes."""
+        # Emit signal that content has changed
+        self.emit("buffer-changed")
+    
+    def on_modified_changed(self, buffer):
+        """Handle modified state changes."""
+        # Emit signal that content has changed
+        self.emit("buffer-changed")
+    
+    def on_bold_clicked(self, button):
+        """Handle bold button click."""
+        self.wrap_selection_with_tags("\\textbf{", "}")
+    
+    def on_italic_clicked(self, button):
+        """Handle italic button click."""
+        self.wrap_selection_with_tags("\\textit{", "}")
+    
+    def on_section_clicked(self, button):
+        """Handle section button click."""
+        self.wrap_selection_with_tags("\\section{", "}")
+    
+    def on_math_clicked(self, button):
+        """Handle math button click."""
+        self.wrap_selection_with_tags("$", "$")
+    
+    def on_itemize_clicked(self, button):
+        """Handle itemize button click."""
+        self.insert_environment("itemize")
+        self.insert_text_at_cursor("\\item ")
+    
+    def on_enumerate_clicked(self, button):
+        """Handle enumerate button click."""
+        self.insert_environment("enumerate")
+        self.insert_text_at_cursor("\\item ")
+    
+    def on_figure_clicked(self, button):
+        """Handle figure button click."""
+        figure = """\\begin{figure}[htbp]
+    \\centering
+    \\includegraphics[width=0.8\\textwidth]{example-image}
+    \\caption{Figure caption}
+    \\label{fig:example}
+\\end{figure}"""
+        self.insert_text_at_cursor(figure)
+    
+    def on_table_clicked(self, button):
+        """Handle table button click."""
+        table = """\\begin{table}[htbp]
+    \\centering
+    \\begin{tabular}{|c|c|c|}
+        \\hline
+        Header 1 & Header 2 & Header 3 \\\\
+        \\hline
+        Cell 1 & Cell 2 & Cell 3 \\\\
+        Cell 4 & Cell 5 & Cell 6 \\\\
+        \\hline
+    \\end{tabular}
+    \\caption{Table caption}
+    \\label{tab:example}
+\\end{table}"""
+        self.insert_text_at_cursor(table)
+
+# Register GObject signals
+GObject.type_register(SilkTexEditor)
+GObject.signal_new("buffer-changed", SilkTexEditor, GObject.SignalFlags.RUN_LAST, None, ())
 Copyright (C) 2025 Gummi Developers
 All Rights reserved.
 
@@ -446,7 +865,169 @@ class GuEditor:
             self.buffer.end_user_action()
             self.buffer.end_not_undoable_action()
             self.buffer.set_modified(True)
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+SilkTex - Editor module
 
+This module implements the LaTeX editor component using GtkSourceView.
+"""
+
+import os
+import gi
+
+gi.require_version('Gtk', '4.0')
+gi.require_version('GtkSource', '5')
+from gi.repository import Gtk, Gdk, GLib, GtkSource, GObject
+
+class SilkTexEditor(Gtk.Box):
+    """
+    LaTeX editor component using GtkSourceView.
+    
+    This class implements the text editor with LaTeX syntax highlighting,
+    line numbering, and other editor features.
+    """
+    
+    __gsignals__ = {
+        'buffer-changed': (GObject.SignalFlags.RUN_FIRST, None, ()),
+    }
+    
+    def __init__(self, window):
+        """Initialize the editor component."""
+        super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        
+        self.window = window
+        self.file_path = None
+        self.last_save_content = ""
+        
+        self.setup_source_view()
+        self.setup_ui()
+        
+        # Set initial content
+        self.new_document()
+    
+    def setup_source_view(self):
+        """Set up the GtkSourceView for LaTeX editing."""
+        # Create source buffer with LaTeX language
+        language_manager = GtkSource.LanguageManager.get_default()
+        self.buffer = GtkSource.Buffer()
+        
+        # Try to get LaTeX language
+        latex_lang = language_manager.get_language("latex")
+        if latex_lang:
+            self.buffer.set_language(latex_lang)
+        
+        # Set up source view
+        self.source_view = GtkSource.View(
+            buffer=self.buffer,
+            show_line_numbers=True,
+            monospace=True,
+            auto_indent=True,
+            insert_spaces_instead_of_tabs=True,
+            tab_width=2,
+            highlight_current_line=True,
+            wrap_mode=Gtk.WrapMode.WORD
+        )
+        
+        # Connect buffer change signals
+        self.buffer.connect("changed", self.on_buffer_changed)
+        
+        # Enable code highlighting
+        self.buffer.set_highlight_syntax(True)
+        
+        # Set styling
+        self.source_view.add_css_class("editor")
+    
+    def setup_ui(self):
+        """Set up the editor UI components."""
+        # Create scrolled window for the source view
+        scrolled_window = Gtk.ScrolledWindow()
+        scrolled_window.set_hexpand(True)
+        scrolled_window.set_vexpand(True)
+        scrolled_window.set_child(self.source_view)
+        
+        # Add to main container
+        self.append(scrolled_window)
+    
+    def on_buffer_changed(self, buffer):
+        """Handle changes to the buffer content."""
+        self.emit('buffer-changed')
+    
+    def new_document(self):
+        """Create a new, empty document."""
+        self.file_path = None
+        self.buffer.set_text("\\documentclass{article}\n\n\\title{New Document}\n\\author{Author}\n\\date{\\today}\n\n\\begin{document}\n\n\\maketitle\n\n\\section{Introduction}\n\nYour content here.\n\n\\end{document}\n")
+        self.buffer.set_modified(False)
+        self.last_save_content = self.get_text()
+        self.window.update_title()
+    
+    def load_file(self, file_path):
+        """Load a file into the editor."""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            self.buffer.set_text(content)
+            self.file_path = file_path
+            self.buffer.set_modified(False)
+            self.last_save_content = content
+            
+            # Scroll to the beginning
+            self.source_view.scroll_to_iter(self.buffer.get_start_iter(), 0.0, False, 0.0, 0.0)
+            
+            self.window.update_status(f"Loaded {os.path.basename(file_path)}")
+            return True
+        except Exception as e:
+            self.window.update_status(f"Error loading file: {e}")
+            return False
+    
+    def save_file(self):
+        """Save the current document to its file."""
+        if self.file_path:
+            return self.save_file_as(self.file_path)
+        return False
+    
+    def save_file_as(self, file_path):
+        """Save the current document to the specified file."""
+        try:
+            content = self.get_text()
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            self.file_path = file_path
+            self.buffer.set_modified(False)
+            self.last_save_content = content
+            
+            self.window.update_status(f"Saved to {os.path.basename(file_path)}")
+            return True
+        except Exception as e:
+            self.window.update_status(f"Error saving file: {e}")
+            return False
+    
+    def get_text(self):
+        """Get the current document text."""
+        return self.buffer.get_text(
+            self.buffer.get_start_iter(),
+            self.buffer.get_end_iter(),
+            False  # Include hidden chars
+        )
+    
+    def get_file_path(self):
+        """Get the current file path."""
+        return self.file_path
+    
+    def is_modified(self):
+        """Check if the document has been modified since the last save."""
+        return self.buffer.get_modified()
+    
+    def get_cursor_position(self):
+        """Get the current cursor position as (line, column)."""
+        cursor_iter = self.buffer.get_iter_at_mark(self.buffer.get_insert())
+        return (cursor_iter.get_line(), cursor_iter.get_line_offset())
+    
+    def insert_text_at_cursor(self, text):
+        """Insert text at the current cursor position."""
+        self.buffer.insert_at_cursor(text, len(text))
     def set_selection_textstyle(self, style_type):
         """Apply LaTeX styling to selected text
         

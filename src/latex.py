@@ -1,10 +1,506 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+SilkTex - LaTeX compilation module
 
+This module handles the compilation of LaTeX documents to PDF
+for both preview and export purposes.
+"""
+
+import os
+import subprocess
+import tempfile
+import threading
+import re
+import gi
+
+gi.require_version('Gtk', '4.0')
+from gi.repository import Gtk, GLib
+
+class LaTeXCompiler:
+    """
+    LaTeX compilation handler.
+    
+    This class handles compiling LaTeX documents to PDF format,
+    managing errors, and providing feedback to the user.
+    """
+    
+    def __init__(self, window):
+        """Initialize the LaTeX compiler."""
+        self.window = window
+        self.compile_thread = None
+        self.last_compiled_text = ""
+        self.compile_in_progress = False
+        self.temp_dir = tempfile.TemporaryDirectory(prefix="silktex_")
+        self.log_errors = []
+    
+    def compile_for_preview(self):
+        """Compile the current document for preview."""
+        # Don't run multiple compilations at once
+        if self.compile_in_progress:
+            return
+        
+        # Get the current document text
+        current_text = self.window.editor.get_text()
+        
+        # Skip if no changes since last compilation
+        if current_text == self.last_compiled_text:
+            return
+        
+        # Compile in a separate thread to keep UI responsive
+        self.compile_in_progress = True
+        self.window.update_status("Compiling...")
+        
+        # Start compilation in a separate thread
+        self.compile_thread = threading.Thread(
+            target=self._run_compilation,
+            args=(current_text, False)
+        )
+        self.compile_thread.daemon = True
+        self.compile_thread.start()
+    
+    def compile_and_save_pdf(self):
+        """Compile and save the PDF to a user-chosen location."""
+        # Check if file is saved first
+        if self.window.editor.get_file_path() is None:
+            dialog = Gtk.MessageDialog(
+                transient_for=self.window,
+                message_type=Gtk.MessageType.INFO,
+                buttons=Gtk.ButtonsType.OK,
+                text="Please save your document first."
+            )
+            dialog.format_secondary_text(
+                "The document needs to be saved before exporting to PDF."
+            )
+            dialog.connect("response", lambda d, r: d.destroy())
+            dialog.present()
+            return
+        
+        # Get the output file path
+        dialog = Gtk.FileChooserDialog(
+            title="Export to PDF",
+            parent=self.window,
+            action=Gtk.FileChooserAction.SAVE
+        )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Export", Gtk.ResponseType.ACCEPT)
+        dialog.set_do_overwrite_confirmation(True)
+        
+        # Set default file name based on the input file
+        input_file = self.window.editor.get_file_path()
+        default_name = os.path.basename(input_file)
+        if default_name.endswith('.tex'):
+            default_name = default_name[:-4] + '.pdf'
+        else:
+            default_name += '.pdf'
+        
+        dialog.set_current_name(default_name)
+        
+        # Add file filter for PDF files
+        pdf_filter = Gtk.FileFilter()
+        pdf_filter.set_name("PDF files")
+        pdf_filter.add_pattern("*.pdf")
+        dialog.add_filter(pdf_filter)
+        
+        # Add filter for all files
+        all_filter = Gtk.FileFilter()
+        all_filter.set_name("All files")
+        all_filter.add_pattern("*")
+        dialog.add_filter(all_filter)
+        
+        dialog.connect("response", self._on_export_dialog_response)
+        dialog.present()
+    
+    def _on_export_dialog_response(self, dialog, response):
+        """Handle response from the export dialog."""
+        if response == Gtk.ResponseType.ACCEPT:
+            output_file = dialog.get_file().get_path()
+            
+            # Add .pdf extension if none provided
+            if not output_file.endswith('.pdf'):
+                output_file += '.pdf'
+            
+            # Get the current document text
+            current_text = self.window.editor.get_text()
+            
+            # Compile and save the PDF
+            self.compile_in_progress = True
+            self.window.update_status("Exporting to PDF...")
+            
+            # Start compilation in a separate thread
+            self.compile_thread = threading.Thread(
+                target=self._run_compilation,
+                args=(current_text, True, output_file)
+            )
+            self.compile_thread.daemon = True
+            self.compile_thread.start()
+        
+        dialog.destroy()
+    
+    def _run_compilation(self, text, export=False, output_file=None):
+        """Run the LaTeX compilation process.
+        
+        Args:
+            text: The LaTeX document text to compile
+            export: Whether this is an export operation
+            output_file: The output PDF file path for export
+        """
+        try:
+            # Create a temporary file for compilation
+            temp_dir = self.temp_dir.name
+            tex_file = os.path.join(temp_dir, "temp.tex")
+            
+            # Write the document to the temporary file
+            with open(tex_file, 'w', encoding='utf-8') as f:
+                f.write(text)
+            
+            # Set up the compilation command
+            latex_cmd = 'pdflatex'
+            
+            # Check if xelatex is available and the document uses it
+            if 'xelatex' in text or '\\usepackage{fontspec}' in text:
+                latex_cmd = 'xelatex'
+            
+            # Run LaTeX compilation
+            args = [
+                latex_cmd,
+                '-interaction=nonstopmode',
+                '-halt-on-error',
+                '-file-line-error',
+                '-output-directory=' + temp_dir,
+                tex_file
+            ]
+            
+            # Run first pass
+            process = subprocess.Popen(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            stdout, stderr = process.communicate()
+            
+            # Check for errors
+            log_file = os.path.join(temp_dir, "temp.log")
+            self.log_errors = self._parse_latex_errors(log_file)
+            
+            # If there are bibliography commands, run BibTeX
+            if '\\bibliography{' in text or '\\addbibresource{' in text:
+                bibtex_args = ['bibtex', os.path.join(temp_dir, "temp")]
+                process = subprocess.Popen(
+                    bibtex_args,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                process.communicate()
+                
+                # Run LaTeX again after BibTeX
+                process = subprocess.Popen(
+                    args,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                process.communicate()
+            
+            # Run second pass to resolve references
+            process = subprocess.Popen(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            process.communicate()
+            
+            # Get the generated PDF file
+            pdf_file = os.path.join(temp_dir, "temp.pdf")
+            
+            # Copy to the output location if exporting
+            if export and output_file and os.path.exists(pdf_file):
+                import shutil
+                shutil.copy2(pdf_file, output_file)
+                
+                # Update UI from the main thread
+                GLib.idle_add(self._update_ui_after_export, output_file)
+            elif os.path.exists(pdf_file):
+                # Load the PDF into the preview if not exporting
+                GLib.idle_add(self._update_preview, pdf_file)
+            else:
+                # Update UI to show compilation error
+                GLib.idle_add(self._show_compilation_error)
+            
+            # Save the compiled text to avoid unnecessary recompilation
+            self.last_compiled_text = text
+            
+        except Exception as e:
+            GLib.idle_add(self._show_error, str(e))
+        
+        finally:
+            self.compile_in_progress = False
+    
+    def _update_preview(self, pdf_file):
+        """Update the preview with the compiled PDF.
+        
+        Args:
+            pdf_file: The path to the compiled PDF file
+        """
+        self.window.update_status("Compilation successful")
+        self.window.preview.load_pdf(pdf_file)
+        
+        # Highlight error lines if any
+        if self.log_errors:
+            # TODO: Add error highlighting in the editor
+            error_count = len(self.log_errors)
+            self.window.update_status(f"Compilation finished with {error_count} errors")
+    
+    def _update_ui_after_export(self, output_file):
+        """Update UI after exporting PDF.
+        
+        Args:
+            output_file: The path to the exported PDF file
+        """
+        self.window.update_status(f"Exported to {os.path.basename(output_file)}")
+        
+        # Show success dialog
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.OK,
+            text="PDF Export Complete"
+        )
+        dialog.format_secondary_text(f"The PDF has been exported to {output_file}")
+        dialog.connect("response", lambda d, r: d.destroy())
+        dialog.present()
+    
+    def _show_compilation_error(self):
+        """Show compilation error in the UI."""
+        self.window.update_status("Compilation failed. See log for details.")
+        
+        # Show error dialog
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK,
+            text="LaTeX Compilation Error"
+        )
+        
+        if self.log_errors:
+            error_text = "\n".join([f"Line {err[0]}: {err[1]}" for err in self.log_errors[:5]])
+            if len(self.log_errors) > 5:
+                error_text += f"\n\n(Plus {len(self.log_errors) - 5} more errors.)"
+            dialog.format_secondary_text(error_text)
+        else:
+            dialog.format_secondary_text("Unknown error during compilation. Check your LaTeX syntax.")
+        
+        dialog.connect("response", lambda d, r: d.destroy())
+        dialog.present()
+    
+    def _show_error(self, error_message):
+        """Show a general error message in the UI.
+        
+        Args:
+            error_message: The error message to display
+        """
+        self.window.update_status("Error during compilation")
+        
+        # Show error dialog
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK,
+            text="Error"
+        )
+        dialog.format_secondary_text(error_message)
+        dialog.connect("response", lambda d, r: d.destroy())
+        dialog.present()
+    
+    def _parse_latex_errors(self, log_file):
+        """Parse LaTeX log file for errors.
+        
+        Args:
+            log_file: The path to the LaTeX log file
+            
+        Returns:
+            A list of tuples (line_number, error_message)
+        """
+        errors = []
+        if not os.path.exists(log_file):
+            return errors
+        
+        try:
+            with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                log_content = f.read()
+            
+            # Extract errors from the log
+            # Pattern matches lines like: ./temp.tex:10: LaTeX Error: ...
+            pattern = r'.*:(\d+):\s+(.*)'
+            for match in re.finditer(pattern, log_content):
+                line_num = int(match.group(1))
+                error_msg = match.group(2).strip()
+                errors.append((line_num, error_msg))
+            
+            return errors
+        
+        except Exception as e:
+            print(f"Error parsing LaTeX log: {e}")
+            return []
 """
 @file   latex.py
 @brief  LaTeX compilation handler for Gummi
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+SilkTex - LaTeX Compiler module
 
+This module defines the LaTeX compiler for SilkTex.
+"""
+
+import os
+import subprocess
+import tempfile
+import threading
+import gi
+
+gi.require_version('Gtk', '4.0')
+gi.require_version('Adw', '1')
+from gi.repository import Gtk, GLib, Adw
+
+class LaTeXCompiler:
+    """
+    LaTeX compiler for SilkTex.
+    
+    This class manages the compilation of LaTeX documents to PDF.
+    """
+    
+    def __init__(self, window):
+        """Initialize the LaTeX compiler.
+        
+        Args:
+            window: The main application window
+        """
+        self.window = window
+        self.current_engine = "pdflatex"
+        self.is_compiling = False
+    
+    def compile_document(self, document, engine=None):
+        """Compile a LaTeX document.
+        
+        Args:
+            document: The Document object to compile
+            engine: The LaTeX engine to use (pdflatex, xelatex, lualatex)
+            
+        Returns:
+            bool: True if compilation was successful
+        """
+        if not document or not document.get_filename():
+            return False
+            
+        # Use specified engine or default
+        engine = engine or self.current_engine
+        
+        # Start compilation in a separate thread
+        self.is_compiling = True
+        self.window.update_status(f"Compiling with {engine}...")
+        
+        # Run compilation in a separate thread to avoid blocking the UI
+        compile_thread = threading.Thread(
+            target=self._compile_thread,
+            args=(document, engine)
+        )
+        compile_thread.daemon = True
+        compile_thread.start()
+        
+        return True
+    
+    def _compile_thread(self, document, engine):
+        """Run compilation in a separate thread.
+        
+        Args:
+            document: The Document object to compile
+            engine: The LaTeX engine to use
+        """
+        try:
+            success, log = document.compile(engine)
+            
+            # Update UI in the main thread
+            GLib.idle_add(self._compilation_finished, document, success, log)
+            
+        except Exception as e:
+            # Handle exceptions
+            GLib.idle_add(
+                self._compilation_error,
+                document,
+                f"Compilation error: {str(e)}"
+            )
+    
+    def _compilation_finished(self, document, success, log):
+        """Handle completion of compilation.
+        
+        Args:
+            document: The Document object
+            success: Whether compilation was successful
+            log: Compilation log output
+        """
+        self.is_compiling = False
+        
+        if success:
+            self.window.update_status("Compilation successful")
+            
+            # Show success toast
+            toast = Adw.Toast.new("Document compiled successfully")
+            self.window.toast_overlay.add_toast(toast)
+            
+            # Update preview
+            if hasattr(self.window, "preview"):
+                self.window.preview.set_document(document)
+                
+        else:
+            self.window.update_status("Compilation failed")
+            
+            # Show error toast with action to view log
+            toast = Adw.Toast.new("Compilation failed. See error log for details.")
+            toast.set_button_label("View Log")
+            toast.connect("button-clicked", self._show_error_log, document)
+            self.window.toast_overlay.add_toast(toast)
+        
+        return False  # Required for GLib.idle_add
+    
+    def _compilation_error(self, document, error_message):
+        """Handle compilation error.
+        
+        Args:
+            document: The Document object
+            error_message: Error message to display
+        """
+        self.is_compiling = False
+        self.window.update_status("Compilation error")
+        
+        # Show error toast
+        toast = Adw.Toast.new(error_message)
+        self.window.toast_overlay.add_toast(toast)
+        
+        return False  # Required for GLib.idle_add
+    
+    def _show_error_log(self, toast, document):
+        """Show the error log.
+        
+        Args:
+            toast: The toast that triggered this action
+            document: The Document object
+        """
+        if hasattr(self.window, "preview"):
+            self.window.preview.show_error_log()
+    
+    def set_engine(self, engine):
+        """Set the LaTeX compiler engine.
+        
+        Args:
+            engine: The LaTeX engine to use (pdflatex, xelatex, lualatex)
+        """
+        self.current_engine = engine
 Copyright (C) 2009 Gummi Developers
 All Rights reserved.
 

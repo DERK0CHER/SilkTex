@@ -33,71 +33,87 @@ if hasattr(gettext, 'bindtextdomain'):
 
 # Import and run
 if __name__ == '__main__':
-    # Fix the Python path
-    if pkgdatadir not in sys.path:
-        sys.path.insert(0, pkgdatadir)
+    # Let's create a very reliable method to find our main script
+    main_files = [
+        os.path.join(pkgdatadir, 'main.py'),
+        os.path.join(moduledir, '..', 'main.py'),
+        os.path.join(moduledir, 'main.py'),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'main.py')
+    ]
     
-    # Add parent of moduledir to path to help locate modules
-    parent_dir = os.path.dirname(moduledir)
-    if parent_dir not in sys.path:
-        sys.path.insert(0, parent_dir)
-    
-    # Try direct execution of main.py if it exists
-    main_path = os.path.join(pkgdatadir, 'main.py')
-    if os.path.exists(main_path):
-        try:
-            # Simply execute the main.py file directly
-            with open(main_path) as f:
-                print(f"Executing {main_path} directly")
-                code = compile(f.read(), main_path, 'exec')
-                globals_dict = {'__file__': main_path}
-                exec(code, globals_dict)
-                if 'main' in globals_dict:
-                    sys.exit(globals_dict['main']('@VERSION@'))
-        except Exception as e:
-            print(f"Error executing main.py directly: {e}")
-    
-    # If direct execution failed, try proper imports
-    try:
-        print("Attempting imports...")
-        # Try various import patterns
-        try:
-            # Try to import directly
-            import main
-            print("Imported main directly")
-            sys.exit(main.main('@VERSION@'))
-        except ImportError:
-            # Try from a package
+    # Try each possible location
+    for main_file in main_files:
+        if os.path.exists(main_file):
+            print(f"Found main.py at {main_file}")
             try:
-                from silktex import main
-                print("Imported main from silktex package")
-                sys.exit(main.main('@VERSION@'))
-            except ImportError:
-                # Try importing from src
-                import src.main as main_module
-                print("Imported main from src package")
-                sys.exit(main_module.main('@VERSION@'))
-    except ImportError as e:
-        print(f"Error: Could not import SilkTex modules: {e}")
-        print(f"Python path: {sys.path}")
+                # Execute the script directly
+                with open(main_file) as f:
+                    print(f"Executing {main_file} directly")
+                    exec_globals = {'__file__': main_file}
+                    code = compile(f.read(), main_file, 'exec')
+                    exec(code, exec_globals)
+                    if 'main' in exec_globals:
+                        sys.exit(exec_globals['main']('@VERSION@'))
+            except Exception as e:
+                print(f"Error executing {main_file}: {e}")
+    
+    # If we get here, we couldn't find or execute main.py
+    # Create a basic application as a fallback
+    print("No main.py found, creating minimal app")
+    
+    # Basic imports
+    import gi
+    gi.require_version('Gtk', '4.0')
+    gi.require_version('Adw', '1')
+    from gi.repository import Gtk, Adw, Gio, GLib
+    
+    # Initialize Adw
+    Adw.init()
+    
+    # Create a basic window and application
+    class MinimalWindow(Adw.ApplicationWindow):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.set_default_size(600, 400)
+            self.set_title("SilkTex - Error Recovery Mode")
+            
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            self.set_content(box)
+            
+            header = Adw.HeaderBar()
+            box.append(header)
+            
+            content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+            content.set_margin_top(20)
+            content.set_margin_bottom(20)
+            content.set_margin_start(20)
+            content.set_margin_end(20)
+            box.append(content)
+            
+            title = Gtk.Label()
+            title.set_markup("<span size='xx-large' weight='bold'>SilkTex</span>")
+            content.append(title)
+            
+            error_label = Gtk.Label()
+            error_label.set_markup("<span color='red'>Error: Could not start SilkTex normally</span>")
+            content.append(error_label)
+            
+            info = Gtk.Label(label="SilkTex is running in emergency mode.")
+            content.append(info)
+            
+            paths = Gtk.Label(label=f"Module directory: {moduledir}\nPackage directory: {pkgdatadir}")
+            paths.set_margin_top(10)
+            content.append(paths)
+    
+    class MinimalApp(Adw.Application):
+        def __init__(self):
+            super().__init__(application_id='org.example.silktex',
+                             flags=Gio.ApplicationFlags.FLAGS_NONE)
         
-        # Final fallback: print debug info and exit
-        print("\nDEBUG INFORMATION:")
-        print(f"Module directory: {moduledir}")
-        print(f"Package data directory: {pkgdatadir}")
-        print("\nDIRECTORY CONTENTS:")
-        if os.path.exists(pkgdatadir):
-            print(f"Contents of {pkgdatadir}:")
-            for item in os.listdir(pkgdatadir):
-                print(f"  - {item}")
-        else:
-            print(f"{pkgdatadir} does not exist")
-        
-        if os.path.exists(moduledir):
-            print(f"Contents of {moduledir}:")
-            for item in os.listdir(moduledir):
-                print(f"  - {item}")
-        else:
-            print(f"{moduledir} does not exist")
-        
-        sys.exit(1)
+        def do_activate(self):
+            win = MinimalWindow(application=self)
+            win.present()
+    
+    # Run the minimal app
+    app = MinimalApp()
+    sys.exit(app.run(sys.argv))

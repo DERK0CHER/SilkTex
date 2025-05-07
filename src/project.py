@@ -30,7 +30,179 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('GtkSource', '5')
 from gi.repository import Gtk, GtkSource, GLib
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+SilkTex - Project Manager
 
+This module provides project management functionality for SilkTex.
+"""
+
+import os
+import gi
+
+gi.require_version('Gtk', '4.0')
+from gi.repository import Gtk, Gio, GLib
+
+class ProjectManager:
+    """
+    Project manager for SilkTex.
+    
+    This class provides project management functionality, including
+    displaying files in the current project and opening files.
+    """
+    
+    def __init__(self, window):
+        """Initialize the project manager."""
+        self.window = window
+        self.current_directory = None
+    
+    def set_project_directory(self, directory):
+        """Set the current project directory.
+        
+        Args:
+            directory: The directory to set as the project root
+        """
+        if not os.path.isdir(directory):
+            return False
+            
+        self.current_directory = directory
+        return True
+    
+    def get_project_files(self):
+        """Get a list of all files in the project.
+        
+        Returns:
+            list: List of file paths in the project
+        """
+        if not self.current_directory:
+            return []
+            
+        files = []
+        
+        for root, dirs, filenames in os.walk(self.current_directory):
+            for filename in filenames:
+                # Filter for relevant file types
+                if self.is_relevant_file(filename):
+                    files.append(os.path.join(root, filename))
+                    
+        return files
+    
+    def is_relevant_file(self, filename):
+        """Check if a file is relevant to a LaTeX project.
+        
+        Args:
+            filename: The filename to check
+            
+        Returns:
+            bool: True if the file is relevant
+        """
+        # File extensions for relevant files
+        relevant_extensions = [
+            '.tex', '.bib', '.cls', '.sty', '.pdf', '.png', 
+            '.jpg', '.jpeg', '.eps', '.svg', '.csv', '.txt'
+        ]
+        
+        # Check if the file has a relevant extension
+        _, ext = os.path.splitext(filename.lower())
+        return ext in relevant_extensions
+    
+    def get_file_icon(self, filename):
+        """Get an icon for a file based on its type.
+        
+        Args:
+            filename: The filename
+            
+        Returns:
+            str: Icon name for the file type
+        """
+        _, ext = os.path.splitext(filename.lower())
+        
+        # Map file extensions to icon names
+        icon_map = {
+            '.tex': 'text-x-tex-symbolic',
+            '.bib': 'text-x-bibtex-symbolic',
+            '.cls': 'text-x-tex-symbolic',
+            '.sty': 'text-x-tex-symbolic',
+            '.pdf': 'application-pdf-symbolic',
+            '.png': 'image-x-generic-symbolic',
+            '.jpg': 'image-x-generic-symbolic',
+            '.jpeg': 'image-x-generic-symbolic',
+            '.eps': 'image-x-generic-symbolic',
+            '.svg': 'image-x-generic-symbolic',
+            '.csv': 'x-office-spreadsheet-symbolic',
+            '.txt': 'text-x-generic-symbolic'
+        }
+        
+        return icon_map.get(ext, 'text-x-generic-symbolic')
+    
+    def build_project_tree(self):
+        """Build a tree model for the project files.
+        
+        Returns:
+            Gtk.TreeModel: Tree model of project files
+        """
+        # Create tree store with columns for:
+        # - Display name
+        # - File path
+        # - Icon name
+        tree_store = Gtk.TreeStore(str, str, str)
+        
+        if not self.current_directory:
+            return tree_store
+            
+        # Add project files to the tree store
+        self._add_directory_to_tree(tree_store, None, self.current_directory)
+        
+        return tree_store
+    
+    def _add_directory_to_tree(self, tree_store, parent_iter, directory):
+        """Add a directory and its contents to the tree.
+        
+        Args:
+            tree_store: The tree store to add to
+            parent_iter: Parent iterator or None for root
+            directory: The directory to add
+        """
+        # Get directory name
+        dir_name = os.path.basename(directory)
+        
+        # Create a directory iter if this isn't the root
+        if parent_iter is not None:
+            dir_iter = tree_store.append(parent_iter, [dir_name, directory, 'folder-symbolic'])
+        else:
+            dir_iter = None
+            
+        # Get directory contents
+        try:
+            entries = os.listdir(directory)
+            
+            # Sort by type (directories first) and then by name
+            dirs = sorted([e for e in entries if os.path.isdir(os.path.join(directory, e))])
+            files = sorted([e for e in entries if os.path.isfile(os.path.join(directory, e)) and self.is_relevant_file(e)])
+            
+            # Add directories
+            for dirname in dirs:
+                # Skip hidden directories
+                if dirname.startswith('.'):
+                    continue
+                    
+                path = os.path.join(directory, dirname)
+                self._add_directory_to_tree(tree_store, dir_iter or parent_iter, path)
+            
+            # Add files
+            for filename in files:
+                # Skip hidden files
+                if filename.startswith('.'):
+                    continue
+                    
+                path = os.path.join(directory, filename)
+                icon_name = self.get_file_icon(filename)
+                tree_store.append(dir_iter or parent_iter, [filename, path, icon_name])
+                
+        except OSError:
+            # Handle directory access errors
+            pass
 import os
 import logging
 

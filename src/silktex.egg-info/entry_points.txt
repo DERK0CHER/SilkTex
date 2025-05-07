@@ -1,0 +1,2 @@
+[console_scripts]
+silktex = silktex:main

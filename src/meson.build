@@ -32,6 +32,9 @@ run_command('mkdir', '-p', package_dir, check: false)
 # Install Python modules into the silktex package
 install_data(silktex_sources, install_dir: package_dir)
 
+# Also install main.py directly to the module dir for direct import
+install_data('main.py', install_dir: moduledir)
+
 # Create an __init__.py in the silktex package
 configure_file(
   output: '__init__.py',

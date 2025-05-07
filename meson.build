@@ -98,7 +98,99 @@ manpage = configure_file(
   capture: false,
 )
 install_data(manpage, install_dir: join_paths(get_option('mandir'), 'man1'))
+project('silktex',
+  version: '0.1.0',
+  license: 'MIT',
+  meson_version: '>= 0.59.0',
+)
 
+# Project options
+python = import('python')
+py_installation = python.find_installation('python3')
+
+# Dependencies - check for both gtksourceview-5 and gtksourceview5
+# as package names can vary between distributions
+deps = [
+  dependency('gtk4'),
+  dependency('libadwaita-1', version: '>= 1.0.0'),
+]
+
+# Check for gtksourceview5 with both common package naming schemes
+gtksource_dep = dependency('gtksourceview-5', required: false)
+if not gtksource_dep.found()
+  gtksource_dep = dependency('gtksourceview5', required: true)
+endif
+
+# Python module dependencies
+py_deps = [
+  'PyGObject>=3.42.0',
+  'pycairo>=1.20.0',
+  'pypdf>=3.0.0',
+  'pyenchant>=3.2.0',
+  'watchdog>=2.1.0',
+]
+
+# Set program name and application ID
+app_id = 'org.silktex.SilkTex'
+prefix = get_option('prefix')
+bindir = join_paths(prefix, get_option('bindir'))
+datadir = join_paths(prefix, get_option('datadir'))
+pkgdatadir = join_paths(datadir, meson.project_name())
+
+# Install Python files
+py_installation.install_sources([
+  'src/silktex/main.py',
+  'src/silktex/app.py',
+  'src/silktex/window.py',
+  'src/silktex/editor.py',
+  'src/silktex/preview.py',
+  'src/silktex/latex.py',
+  'src/silktex/templates.py',
+  'src/silktex/snippets.py',
+  'src/silktex/config.py',
+  'src/silktex/project.py',
+  'src/silktex/spell_checker.py',
+  'src/silktex/stats.py',
+], subdir: 'silktex')
+
+# Install application resources
+install_data('data/org.silktex.SilkTex.desktop', install_dir: join_paths(datadir, 'applications'))
+install_data('data/org.silktex.SilkTex.appdata.xml', install_dir: join_paths(datadir, 'metainfo'))
+install_data('data/org.silktex.SilkTex.gschema.xml', install_dir: join_paths(datadir, 'glib-2.0', 'schemas'))
+
+# Install icons
+icondir = join_paths(datadir, 'icons', 'hicolor')
+install_data('data/icons/org.silktex.SilkTex.svg', install_dir: join_paths(icondir, 'scalable', 'apps'))
+install_data('data/icons/org.silktex.SilkTex-symbolic.svg', install_dir: join_paths(icondir, 'symbolic', 'apps'))
+
+# Install UI files
+install_data(
+  'data/ui/window.ui',
+  'data/ui/preferences.ui',
+  'data/ui/template_dialog.ui',
+  'data/ui/snippet_dialog.ui',
+  install_dir: join_paths(pkgdatadir, 'ui')
+)
+
+# Install LaTeX templates
+install_subdir('data/templates', install_dir: pkgdatadir)
+
+# Install syntax highlighting files
+install_subdir('data/language-specs', install_dir: pkgdatadir)
+
+# Compile schemas
+meson.add_install_script('build-aux/meson/postinstall.py')
+
+# Create executable shell script
+configure_file(
+  input: 'src/silktex.in',
+  output: 'silktex',
+  configuration: {
+    'PYTHON': py_installation.path(),
+    'PREFIX': prefix,
+  },
+  install_dir: bindir
+)
 # Install templates and resources
 install_subdir('data/templates',
   install_dir: join_paths(get_option('datadir'), 'silktex')

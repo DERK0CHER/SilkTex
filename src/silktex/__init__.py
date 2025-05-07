@@ -1,49 +1,87 @@
-# __init__.py - Package initialization for silktex module
-"""SilkTex - A lightweight LaTeX editor"""
+#!/usr/bin/env python3
+# silktex/__init__.py - Package initialization
+
 """
 SilkTex - LaTeX editor with live preview
 """
 
-# Import main classes for easy access
-from ..main import main
+import sys
+import os
 
-# Create the SilkTexApp class that's referenced in the main.py file
-from gi.repository import Gtk, Adw, Gio, GLib
+# Version information
+__version__ = "0.1.0"
 
-class SilkTexApp(Adw.Application):
-    """Main application class for SilkTex"""
+# Create a main function that we can call from setup.py entry_point
+def main():
+    """Main entry point for the application"""
+    try:
+        from silktex.application import SilkTexApplication
+        app = SilkTexApplication(version=__version__)
+        return app.run(sys.argv)
+    except ImportError as e:
+        print(f"Error starting SilkTex: {e}")
+        print("Make sure all dependencies are installed.")
+        return 1
+
+# Export all relevant classes
+try:
+    # Import necessary modules
+    from silktex.application import SilkTexApplication
+    # For backward compatibility
+    SilkTexApp = SilkTexApplication
     
-    def __init__(self, application_id):
-        super().__init__(application_id=application_id,
-                         flags=Gio.ApplicationFlags.FLAGS_NONE)
-        self.window = None
-        self.version = "0.1.0"  # Default version
+    # Export classes
+    __all__ = [
+        'SilkTexApplication',
+        'SilkTexApp',
+        'main',
+        '__version__'
+    ]
+    
+except ImportError as e:
+    import gi
+    gi.require_version('Gtk', '4.0')
+    gi.require_version('Adw', '1')
+    from gi.repository import Gtk, Adw, Gio
+    
+    print(f"Warning: Failed to import SilkTex modules: {e}")
+    
+    # Create placeholder classes for better error handling
+    class SilkTexApplication(Adw.Application):
+        """Placeholder SilkTex application class"""
+        def __init__(self, version="0.1.0"):
+            super().__init__(application_id='org.example.silktex',
+                             flags=Gio.ApplicationFlags.FLAGS_NONE)
+            
+            # Show error on startup
+            self.connect('activate', self._show_error)
         
-    def do_activate(self):
-        """Handle application activation"""
-        try:
-            # Try to import the window class
-            from .window import SilkTexWindow
-            self.window = SilkTexWindow(application=self)
-            self.window.present()
-        except ImportError:
-            # If window class is not available, show a basic window
-            self.window = Gtk.ApplicationWindow(application=self, title="SilkTex")
-            self.window.set_default_size(800, 600)
+        def _show_error(self, app):
+            """Show error dialog on startup"""
+            window = Adw.ApplicationWindow(application=self)
+            window.set_default_size(400, 200)
+            window.set_title("SilkTex Error")
             
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-            box.set_margin_top(50)
-            box.set_margin_bottom(50)
-            box.set_margin_start(50)
-            box.set_margin_end(50)
+            box.set_margin_top(20)
+            box.set_margin_bottom(20)
+            box.set_margin_start(20)
+            box.set_margin_end(20)
             
             label = Gtk.Label()
-            label.set_markup("<span size='xx-large'>SilkTex</span>")
+            label.set_markup("<b>Error loading SilkTex</b>\n\nOne or more required modules could not be imported.")
             box.append(label)
             
-            info_label = Gtk.Label(label="LaTeX editor with live preview")
-            box.append(info_label)
-            
-            self.window.set_child(box)
-            self.window.present()
-__version__ = "0.1.0"
+            window.set_content(box)
+            window.present()
+    
+    # For backward compatibility
+    SilkTexApp = SilkTexApplication
+    
+    # Export classes
+    __all__ = [
+        'SilkTexApplication',
+        'SilkTexApp',
+        'main',
+        '__version__'
+    ]

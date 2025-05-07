@@ -280,3 +280,331 @@
         """Show preferences dialog"""
         dialog = PreferencesDialog(self)
         dialog.present()
+#!/usr/bin/env python3
+# window.py - Window implementation for SilkTex
+
+import gi
+
+gi.require_version('Gtk', '4.0')
+gi.require_version('Adw', '1')
+from gi.repository import Gtk, Adw, Gio, GLib
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+SilkTex - Main window module
+
+This module defines the main application window and UI setup.
+"""
+
+import os
+import gi
+
+gi.require_version('Gtk', '4.0')
+gi.require_version('Adw', '1')
+gi.require_version('GtkSource', '5')
+from gi.repository import Gtk, Adw, Gio, GLib, GtkSource
+
+from editor import SilkTexEditor
+from preview import PDFPreview
+from latex import LaTeXCompiler
+from template import TemplateManager
+from snippets import SnippetManager
+from project import ProjectManager
+from spell_checker import SpellChecker
+from document_structure import DocumentStatistics
+
+class SilkTexWindow(Adw.ApplicationWindow):
+    """
+    Main window for the SilkTex application.
+    
+    This class implements the main window which contains the editor,
+    preview, and all UI elements.
+    """
+    
+    def __init__(self, **kwargs):
+        """Initialize the window and set up UI components."""
+        super().__init__(**kwargs)
+        
+        # Window setup
+        self.application = kwargs.get('application')
+        self.set_default_size(1200, 800)
+        self.set_title("SilkTex")
+        
+        # Initialize components
+        self.setup_ui()
+        self.setup_actions()
+        
+        # Create main components
+        self.editor = SilkTexEditor(self)
+        self.preview = PDFPreview(self)
+        self.latex_compiler = LaTeXCompiler(self)
+        self.template_manager = TemplateManager(self)
+        self.snippet_manager = SnippetManager(self)
+        self.project_manager = ProjectManager(self)
+        self.spell_checker = SpellChecker(self)
+        self.document_statistics = DocumentStatistics(self)
+        
+        # Set up paned view for editor and preview
+        self.editor_preview_paned.set_start_child(self.editor)
+        self.editor_preview_paned.set_end_child(self.preview)
+        self.editor_preview_paned.set_position(600)
+        
+        # Connect signals
+        self.editor.connect("buffer-changed", self.on_buffer_changed)
+    
+    def setup_ui(self):
+        """Set up the user interface components."""
+        # Create main container
+        self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        
+        # Header bar
+        self.header = Adw.HeaderBar()
+        self.main_box.append(self.header)
+        
+        # Menu button
+        self.menu_button = Gtk.MenuButton()
+        self.menu_button.set_icon_name("open-menu-symbolic")
+        self.header.pack_end(self.menu_button)
+        
+        # Build main menu
+        builder = Gtk.Builder.new_from_resource("/org/example/silktex/menu.ui")
+        menu = builder.get_object("app-menu")
+        self.menu_button.set_menu_model(menu)
+        
+        # Add document statistics button
+        self.stats_button = Gtk.Button()
+        self.stats_button.set_icon_name("accessories-calculator-symbolic")
+        self.stats_button.set_tooltip_text("Document Statistics")
+        self.stats_button.connect("clicked", self.on_stats_button_clicked)
+        self.header.pack_end(self.stats_button)
+        
+        # Add template button
+        self.template_button = Gtk.Button()
+        self.template_button.set_icon_name("document-new-symbolic")
+        self.template_button.set_tooltip_text("New from Template")
+        self.template_button.connect("clicked", self.on_template_button_clicked)
+        self.header.pack_start(self.template_button)
+        
+        # Main view (paned view for editor and preview)
+        self.editor_preview_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        self.main_box.append(self.editor_preview_paned)
+        
+        # Status bar
+        self.status_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self.status_bar.add_css_class("statusbar")
+        self.status_label = Gtk.Label(label="Ready")
+        self.status_bar.append(self.status_label)
+        self.main_box.append(self.status_bar)
+        
+        # Set content
+        self.set_content(self.main_box)
+    
+    def setup_actions(self):
+        """Set up application actions."""
+        # File actions
+        action_group = Gio.SimpleActionGroup()
+        
+        # New file
+        new_action = Gio.SimpleAction.new("new", None)
+        new_action.connect("activate", self.on_new)
+        action_group.add_action(new_action)
+        
+        # Open file
+        open_action = Gio.SimpleAction.new("open", None)
+        open_action.connect("activate", self.on_open)
+        action_group.add_action(open_action)
+        
+        # Save file
+        save_action = Gio.SimpleAction.new("save", None)
+        save_action.connect("activate", self.on_save)
+        action_group.add_action(save_action)
+        
+        # Save As
+        save_as_action = Gio.SimpleAction.new("save-as", None)
+        save_as_action.connect("activate", self.on_save_as)
+        action_group.add_action(save_as_action)
+        
+        # Export PDF
+        export_pdf_action = Gio.SimpleAction.new("export-pdf", None)
+        export_pdf_action.connect("activate", self.on_export_pdf)
+        action_group.add_action(export_pdf_action)
+        
+        # Quit
+        quit_action = Gio.SimpleAction.new("quit", None)
+        quit_action.connect("activate", self.on_quit)
+        action_group.add_action(quit_action)
+        
+        # Insert snippet
+        insert_snippet_action = Gio.SimpleAction.new("insert-snippet", None)
+        insert_snippet_action.connect("activate", self.on_insert_snippet)
+        action_group.add_action(insert_snippet_action)
+        
+        # Add action group to the window
+        self.insert_action_group("win", action_group)
+        
+        # Add keyboard shortcuts
+        self.application.set_accels_for_action("win.new", ["<Control>n"])
+        self.application.set_accels_for_action("win.open", ["<Control>o"])
+        self.application.set_accels_for_action("win.save", ["<Control>s"])
+        self.application.set_accels_for_action("win.save-as", ["<Control><Shift>s"])
+        self.application.set_accels_for_action("win.quit", ["<Control>q"])
+    
+    def on_new(self, action, param):
+        """Create a new document."""
+        # Check if we need to save current document
+        if self.editor.is_modified():
+            dialog = Adw.MessageDialog.new(
+                self,
+                "Save changes?",
+                "The current document has unsaved changes. Save before creating a new document?"
+            )
+            dialog.add_response("cancel", "Cancel")
+            dialog.add_response("discard", "Discard")
+            dialog.add_response("save", "Save")
+            dialog.set_default_response("save")
+            dialog.set_response_appearance("discard", Adw.ResponseAppearance.DESTRUCTIVE)
+            dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
+            
+            dialog.connect("response", self.on_new_dialog_response)
+            dialog.present()
+        else:
+            self.editor.new_document()
+    
+    def on_new_dialog_response(self, dialog, response):
+        """Handle response from the save dialog when creating a new document."""
+        if response == "save":
+            self.on_save(None, None)
+            self.editor.new_document()
+        elif response == "discard":
+            self.editor.new_document()
+    
+    def on_open(self, action, param):
+        """Open a document."""
+        dialog = Gtk.FileChooserDialog(
+            title="Open LaTeX Document",
+            parent=self,
+            action=Gtk.FileChooserAction.OPEN
+        )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Open", Gtk.ResponseType.ACCEPT)
+        
+        # Add file filters
+        latex_filter = Gtk.FileFilter()
+        latex_filter.set_name("LaTeX files")
+        latex_filter.add_pattern("*.tex")
+        dialog.add_filter(latex_filter)
+        
+        all_filter = Gtk.FileFilter()
+        all_filter.set_name("All files")
+        all_filter.add_pattern("*")
+        dialog.add_filter(all_filter)
+        
+        dialog.connect("response", self.on_open_dialog_response)
+        dialog.present()
+    
+    def on_open_dialog_response(self, dialog, response):
+        """Handle response from the open dialog."""
+        if response == Gtk.ResponseType.ACCEPT:
+            file_path = dialog.get_file().get_path()
+            self.open_file(file_path)
+        dialog.destroy()
+    
+    def open_file(self, file_path):
+        """Open the specified file."""
+        self.editor.load_file(file_path)
+        self.update_title()
+    
+    def on_save(self, action, param):
+        """Save the current document."""
+        if self.editor.get_file_path() is None:
+            self.on_save_as(action, param)
+        else:
+            self.editor.save_file()
+            self.update_title()
+    
+    def on_save_as(self, action, param):
+        """Save the document with a new name."""
+        dialog = Gtk.FileChooserDialog(
+            title="Save LaTeX Document",
+            parent=self,
+            action=Gtk.FileChooserAction.SAVE
+        )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Save", Gtk.ResponseType.ACCEPT)
+        dialog.set_do_overwrite_confirmation(True)
+        
+        # Add file filters
+        latex_filter = Gtk.FileFilter()
+        latex_filter.set_name("LaTeX files")
+        latex_filter.add_pattern("*.tex")
+        dialog.add_filter(latex_filter)
+        
+        all_filter = Gtk.FileFilter()
+        all_filter.set_name("All files")
+        all_filter.add_pattern("*")
+        dialog.add_filter(all_filter)
+        
+        # Set current file name if available
+        current_path = self.editor.get_file_path()
+        if current_path:
+            dialog.set_file(Gio.File.new_for_path(current_path))
+        
+        dialog.connect("response", self.on_save_dialog_response)
+        dialog.present()
+    
+    def on_save_dialog_response(self, dialog, response):
+        """Handle response from the save dialog."""
+        if response == Gtk.ResponseType.ACCEPT:
+            file_path = dialog.get_file().get_path()
+            # Add .tex extension if none provided
+            if not file_path.endswith(".tex") and dialog.get_filter() == dialog.get_filters()[0]:
+                file_path += ".tex"
+            self.editor.save_file_as(file_path)
+            self.update_title()
+        dialog.destroy()
+    
+    def on_export_pdf(self, action, param):
+        """Export the document as PDF."""
+        self.latex_compiler.compile_and_save_pdf()
+    
+    def on_quit(self, action, param):
+        """Quit the application."""
+        self.application.quit()
+    
+    def on_insert_snippet(self, action, param):
+        """Insert a snippet at the current cursor position."""
+        self.snippet_manager.show_snippet_selector()
+    
+    def on_stats_button_clicked(self, button):
+        """Show document statistics dialog."""
+        self.document_statistics.show_statistics()
+    
+    def on_template_button_clicked(self, button):
+        """Show template selection dialog."""
+        self.template_manager.show_template_selector()
+    
+    def on_buffer_changed(self, editor):
+        """Handle changes to the editor buffer."""
+        self.update_title()
+        # Trigger LaTeX compilation for preview
+        self.latex_compiler.compile_for_preview()
+    
+    def update_title(self):
+        """Update the window title based on the current document."""
+        file_path = self.editor.get_file_path()
+        modified = self.editor.is_modified()
+        
+        if file_path:
+            file_name = os.path.basename(file_path)
+            self.set_title(f"{file_name}{' *' if modified else ''} - SilkTex")
+        else:
+            self.set_title(f"Untitled{' *' if modified else ''} - SilkTex")
+    
+    def update_status(self, message):
+        """Update the status bar message."""
+        self.status_label.set_text(message)
+# Import the window class from silktex module
+from silktex import SilkTexWindow
+
+# This file exists to provide a bridge between the application
+# and the actual window implementation in silktex.py

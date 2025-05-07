@@ -1,0 +1,28 @@
+Metadata-Version: 2.4
+Name: silktex
+Version: 0.1.0
+Summary: A lightweight LaTeX editor with live preview
+Home-page: https://github.com/example/silktex
+Author: SilkTex Team
+Author-email: example@example.com
+Classifier: Development Status :: 3 - Alpha
+Classifier: Environment :: X11 Applications :: GTK
+Classifier: Intended Audience :: Education
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Scientific/Engineering
+Classifier: Topic :: Text Editors
+Classifier: Topic :: Text Processing :: Markup :: LaTeX
+Requires-Python: >=3.6
+License-File: COPYING
+License-File: AUTHORS
+Requires-Dist: pygobject>=3.38.0
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: home-page
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary

@@ -5,7 +5,164 @@ import gi
 # config.py - Configuration manager for SilkTex
 import os
 import gi
+#!/usr/bin/env python3
+# config.py - Configuration management for SilkTex
 
+import os
+import json
+
+class ConfigManager:
+    """Manages application configuration"""
+    
+    def __init__(self, config_file=None):
+        """Initialize the configuration manager
+        
+        Args:
+            config_file: Optional path to a configuration file
+        """
+        self.config_file = config_file or os.path.expanduser("~/.config/silktex/config.json")
+        self.config = {
+            'color-scheme': 'default',
+            'editor': {
+                'font': 'Monospace 11',
+                'show-line-numbers': True,
+                'highlight-current-line': True,
+                'auto-indent': True,
+                'tab-width': 4,
+                'use-spaces': True,
+                'word-wrap': True,
+                'right-margin': 80,
+                'show-right-margin': True
+            },
+            'latex': {
+                'compiler': 'pdflatex',
+                'auto-compile': True,
+                'compile-timeout': 5000
+            },
+            'ui': {
+                'sidebar-width': 250,
+                'preview-width': 500,
+                'show-sidebar': True,
+                'show-statusbar': True
+            }
+        }
+        
+        # Create directory if needed
+        os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
+        
+        # Load configuration if file exists
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r') as f:
+                    loaded_config = json.load(f)
+                    # Update config with loaded values
+                    self._update_config(self.config, loaded_config)
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Error loading configuration: {e}")
+    
+    def _update_config(self, config, updates):
+        """Recursively update configuration dictionary
+        
+        Args:
+            config: Configuration dictionary to update
+            updates: Dictionary with updates
+        """
+        for key, value in updates.items():
+            if key in config and isinstance(config[key], dict) and isinstance(value, dict):
+                self._update_config(config[key], value)
+            else:
+                config[key] = value
+    
+    def save(self):
+        """Save configuration to file"""
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(self.config, f, indent=2)
+        except IOError as e:
+            print(f"Error saving configuration: {e}")
+    
+    def get_string(self, key, default=None):
+        """Get a string configuration value
+        
+        Args:
+            key: Configuration key (dot-separated for nested keys)
+            default: Default value if key not found
+            
+        Returns:
+            String value or default
+        """
+        return self._get_value(key, default)
+    
+    def get_boolean(self, key, default=False):
+        """Get a boolean configuration value
+        
+        Args:
+            key: Configuration key (dot-separated for nested keys)
+            default: Default value if key not found
+            
+        Returns:
+            Boolean value or default
+        """
+        value = self._get_value(key, default)
+        if isinstance(value, bool):
+            return value
+        return default
+    
+    def get_integer(self, key, default=0):
+        """Get an integer configuration value
+        
+        Args:
+            key: Configuration key (dot-separated for nested keys)
+            default: Default value if key not found
+            
+        Returns:
+            Integer value or default
+        """
+        value = self._get_value(key, default)
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return default
+    
+    def set_value(self, key, value):
+        """Set a configuration value
+        
+        Args:
+            key: Configuration key (dot-separated for nested keys)
+            value: Value to set
+        """
+        keys = key.split('.')
+        config = self.config
+        
+        # Navigate to the correct level
+        for k in keys[:-1]:
+            if k not in config:
+                config[k] = {}
+            config = config[k]
+        
+        # Set the value
+        config[keys[-1]] = value
+    
+    def _get_value(self, key, default=None):
+        """Get a configuration value
+        
+        Args:
+            key: Configuration key (dot-separated for nested keys)
+            default: Default value if key not found
+            
+        Returns:
+            Configuration value or default
+        """
+        keys = key.split('.')
+        config = self.config
+        
+        # Navigate to the correct level
+        for k in keys:
+            if not isinstance(config, dict) or k not in config:
+                return default
+            config = config[k]
+        
+        return config
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
@@ -277,7 +434,199 @@ class ConfigManager:
 import os
 import json
 from gi.repository import GObject, Gio, GLib
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+SilkTex - Configuration module
 
+This module handles application configuration, storing and retrieving
+user preferences and settings.
+"""
+
+import os
+import configparser
+import gi
+
+gi.require_version('Gtk', '4.0')
+from gi.repository import GLib
+
+class ConfigManager:
+    """
+    Configuration manager for SilkTex.
+    
+    This class handles reading and writing application settings, and provides
+    default values for settings that are not configured.
+    """
+    
+    DEFAULT_CONFIG = {
+        "General": {
+            "auto_save": "true",
+            "auto_save_interval": "60",
+            "recent_files_count": "10",
+            "check_updates": "true",
+            "default_engine": "pdflatex"
+        },
+        "Editor": {
+            "font": "Monospace 12",
+            "line_numbers": "true",
+            "wrap_text": "true",
+            "auto_indent": "true",
+            "highlight_line": "true",
+            "tab_width": "4",
+            "use_spaces": "true",
+            "show_whitespace": "false",
+            "style_scheme": "classic"
+        },
+        "Preview": {
+            "auto_update": "true",
+            "update_delay": "1000",
+            "zoom_level": "1.0",
+            "show_toolbar": "true"
+        },
+        "LaTeX": {
+            "additional_path": "",
+            "additional_args": "",
+            "run_bibtex": "true",
+            "run_makeindex": "false"
+        },
+        "SpellCheck": {
+            "enabled": "true",
+            "language": "en_US"
+        }
+    }
+    
+    def __init__(self):
+        """Initialize the configuration manager."""
+        self.config = configparser.ConfigParser()
+        
+        # Load default configuration
+        for section, items in self.DEFAULT_CONFIG.items():
+            if not self.config.has_section(section):
+                self.config.add_section(section)
+            for key, value in items.items():
+                self.config.set(section, key, value)
+        
+        # Load user configuration if it exists
+        self.config_file = self._get_config_file_path()
+        self.load_config()
+    
+    def _get_config_file_path(self):
+        """Get the path to the configuration file.
+        
+        Returns:
+            The path to the configuration file
+        """
+        config_dir = GLib.get_user_config_dir()
+        app_config_dir = os.path.join(config_dir, "silktex")
+        
+        # Create config directory if it doesn't exist
+        os.makedirs(app_config_dir, exist_ok=True)
+        
+        return os.path.join(app_config_dir, "settings.ini")
+    
+    def load_config(self):
+        """Load configuration from the config file."""
+        if os.path.exists(self.config_file):
+            try:
+                self.config.read(self.config_file)
+            except configparser.Error as e:
+                print(f"Error loading configuration: {e}")
+    
+    def save_config(self):
+        """Save the current configuration to the config file."""
+        try:
+            with open(self.config_file, 'w') as f:
+                self.config.write(f)
+        except Exception as e:
+            print(f"Error saving configuration: {e}")
+    
+    def get_string(self, section, key):
+        """Get a string value from the configuration.
+        
+        Args:
+            section: The configuration section
+            key: The configuration key
+            
+        Returns:
+            The string value, or the default value if not found
+        """
+        try:
+            return self.config.get(section, key)
+        except (configparser.NoSectionError, configparser.NoOptionError):
+            if section in self.DEFAULT_CONFIG and key in self.DEFAULT_CONFIG[section]:
+                return self.DEFAULT_CONFIG[section][key]
+            return ""
+    
+    def get_boolean(self, section, key):
+        """Get a boolean value from the configuration.
+        
+        Args:
+            section: The configuration section
+            key: The configuration key
+            
+        Returns:
+            The boolean value, or the default value if not found
+        """
+        try:
+            return self.config.getboolean(section, key)
+        except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
+            if section in self.DEFAULT_CONFIG and key in self.DEFAULT_CONFIG[section]:
+                return self.DEFAULT_CONFIG[section][key].lower() == "true"
+            return False
+    
+    def get_int(self, section, key):
+        """Get an integer value from the configuration.
+        
+        Args:
+            section: The configuration section
+            key: The configuration key
+            
+        Returns:
+            The integer value, or the default value if not found
+        """
+        try:
+            return self.config.getint(section, key)
+        except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
+            if section in self.DEFAULT_CONFIG and key in self.DEFAULT_CONFIG[section]:
+                try:
+                    return int(self.DEFAULT_CONFIG[section][key])
+                except ValueError:
+                    pass
+            return 0
+    
+    def get_float(self, section, key):
+        """Get a float value from the configuration.
+        
+        Args:
+            section: The configuration section
+            key: The configuration key
+            
+        Returns:
+            The float value, or the default value if not found
+        """
+        try:
+            return self.config.getfloat(section, key)
+        except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
+            if section in self.DEFAULT_CONFIG and key in self.DEFAULT_CONFIG[section]:
+                try:
+                    return float(self.DEFAULT_CONFIG[section][key])
+                except ValueError:
+                    pass
+            return 0.0
+    
+    def set_value(self, section, key, value):
+        """Set a value in the configuration.
+        
+        Args:
+            section: The configuration section
+            key: The configuration key
+            value: The value to set
+        """
+        if not self.config.has_section(section):
+            self.config.add_section(section)
+        
+        self.config.set(section, key, str(value))
+        self.save_config()
 
 class ConfigManager(GObject.Object):
     """Configuration manager for SilkTex"""
