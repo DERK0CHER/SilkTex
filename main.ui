@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="MainWindow" parent="GtkApplicationWindow">
+    <property name="title">SilkTex</property>
+    <property name="default-width">1024</property>
+    <property name="default-height">700</property>
+    <property name="child">
+      <object class="GtkBox">
+        <property name="orientation">vertical</property>
+        <property name="spacing">6</property>
+        <child>
+          <object class="GtkHeaderBar">
+            <property name="title-widget">
+              <object class="GtkLabel">
+                <property name="label">SilkTex</property>
+                <property name="halign">center</property>
+              </object>
+            </property>
+            <child>
+              <object class="GtkButton">
+                <property name="icon-name">document-open-symbolic</property>
+                <property name="tooltip-text">Open File</property>
+                <property name="on-clicked">open_file</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton">
+                <property name="icon-name">document-save-symbolic</property>
+                <property name="tooltip-text">Save File</property>
+                <property name="on-clicked">save_file</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton">
+                <property name="icon-name">preferences-system-symbolic</property>
+                <property name="tooltip-text">Preferences</property>
+                <property name="on-clicked">open_preferences</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkPaned">
+            <property name="orientation">horizontal</property>
+            <property name="start-child">
+              <object class="GtkScrolledWindow">
+                <property name="min-content-width">200</property>
+                <property name="child">
+                  <object class="GtkListBox">
+                    <property name="id">sidebar</property>
+                  </object>
+                </property>
+              </object>
+            </property>
+            <property name="end-child">
+              <object class="GtkScrolledWindow">
+                <property name="child">
+                  <object class="GtkTextView">
+                    <property name="id">editor</property>
+                    <property name="wrap-mode">word</property>
+                    <property name="monospace">true</property>
+                    <property name="vexpand">true</property>
+                  </object>
+                </property>
+              </object>
+            </property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkStatusbar">
+            <property name="id">statusbar</property>
+          </object>
+        </child>
+      </object>
+    </property>
+  </template>
+</interface>

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.example.letsgo</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Letsgo</name>
+  <summary>Modern GTK4 application</summary>
+  <description>
+    <p>A modern GTK4/libadwaita application with a beautiful and responsive user interface.</p>
+  </description>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://example.org/letsgo/screenshot.png</image>
+      <caption>Main window</caption>
+    </screenshot>
+  </screenshots>
+  <url type="homepage">https://github.com/yourusername/letsgo</url>
+  <url type="bugtracker">https://github.com/yourusername/letsgo/issues</url>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.1.0" date="2023-08-01">
+      <description>
+        <p>Initial release</p>
+      </description>
+    </release>
+  </releases>
+  <kudos>
+    <kudo>ModernToolkit</kudo>
+    <kudo>HiDpiIcon</kudo>
+  </kudos>
+  <developer_name>Your Name</developer_name>
+  <update_contact>your.email@example.com</update_contact>
+  <translation type="gettext">letsgo</translation>
+  <launchable type="desktop-id">org.example.letsgo.desktop</launchable>
+</component>
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop">
+  <id>org.example.letsgo.desktop</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Letsgo</name>
+  <summary>A modern GTK4/libadwaita application</summary>
+  <description>
+    <p>
+      Letsgo is a modern application built with GTK4 and libadwaita,
+      featuring a beautiful and responsive user interface.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>Modern GTK4 and libadwaita interface</li>
+      <li>Dark mode support</li>
+      <li>Responsive design</li>
+      <li>Blueprint UI definitions</li>
+    </ul>
+  </description>
+  <url type="homepage">https://example.org/letsgo</url>
+  <url type="bugtracker">https://github.com/example/letsgo/issues</url>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.1.0" date="2023-01-01">
+      <description>
+        <p>Initial release of Letsgo</p>
+      </description>
+    </release>
+  </releases>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://example.org/letsgo/screenshot1.png</image>
+      <caption>Main application window</caption>
+    </screenshot>
+  </screenshots>
+  <developer_name>Your Name</developer_name>
+  <update_contact>your.email@example.com</update_contact>
+  <launchable type="desktop-id">org.example.letsgo.desktop</launchable>
+</component>

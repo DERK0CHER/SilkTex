@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="LetsgoSidebar" parent="GtkBox">
+    <property name="orientation">vertical</property>
+    <property name="width-request">250</property>
+    <style>
+      <class name="sidebar"/>
+    </style>
+    
+    <child>
+      <object class="GtkScrolledWindow">
+        <property name="hexpand">true</property>
+        <property name="vexpand">true</property>
+        <child>
+          <object class="GtkListBox" id="sidebar_list">
+            <property name="selection-mode">single</property>
+            <style>
+              <class name="navigation-sidebar"/>
+            </style>
+            
+            <child>
+              <object class="GtkListBoxRow" id="home_row">
+                <property name="activatable">true</property>
+                <property name="action-name">app.navigate</property>
+                <property name="action-target">'home'</property>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">Home</property>
+                    <property name="icon-name">user-home-symbolic</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            
+            <child>
+              <object class="GtkListBoxRow" id="dashboard_row">
+                <property name="activatable">true</property>
+                <property name="action-name">app.navigate</property>
+                <property name="action-target">'dashboard'</property>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">Dashboard</property>
+                    <property name="icon-name">view-grid-symbolic</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            
+            <child>
+              <object class="GtkListBoxRow" id="settings_row">
+                <property name="activatable">true</property>
+                <property name="action-name">app.navigate</property>
+                <property name="action-target">'settings'</property>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">Settings</property>
+                    <property name="icon-name">preferences-system-symbolic</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="SilkTexSidebar" parent="GtkBox">
+    <property name="orientation">vertical</property>
+    <property name="width-request">200</property>
+    <style>
+      <class name="sidebar"/>
+    </style>
+    
+    <!-- Sidebar Header -->
+    <child>
+      <object class="GtkBox">
+        <property name="orientation">horizontal</property>
+        <property name="margin-top">12</property>
+        <property name="margin-bottom">6</property>
+        <property name="margin-start">12</property>
+        <property name="margin-end">12</property>
+        <property name="spacing">6</property>
+        <child>
+          <object class="GtkLabel">
+            <property name="label">Document Structure</property>
+            <property name="xalign">0</property>
+            <property name="hexpand">true</property>
+            <style>
+              <class name="title-4"/>
+            </style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="refresh_button">
+            <property name="tooltip-text">Refresh Structure</property>
+            <property name="icon-name">view-refresh-symbolic</property>
+            <property name="valign">center</property>
+            <style>
+              <class name="flat"/>
+            </style>
+          </object>
+        </child>
+      </object>
+    </child>
+    
+    <!-- Document Structure Tree -->
+    <child>
+      <object class="GtkScrolledWindow" id="structure_scroll">
+        <property name="hexpand">true</property>
+        <property name="vexpand">true</property>
+        <child>
+          <object class="GtkTreeView" id="structure_tree">
+            <property name="headers-visible">false</property>
+            <property name="enable-tree-lines">true</property>
+            <property name="activate-on-single-click">true</property>
+            <style>
+              <class name="navigation-sidebar"/>
+            </style>
+          </object>
+        </child>
+      </object>
+    </child>
+    
+    <!-- Separator -->
+    <child>
+      <object class="GtkSeparator">
+        <property name="margin-top">6</property>
+        <property name="margin-bottom">6</property>
+      </object>
+    </child>
+    
+    <!-- File Browser header -->
+    <child>
+      <object class="GtkBox">
+        <property name="orientation">horizontal</property>
+        <property name="margin-top">6</property>
+        <property name="margin-bottom">6</property>
+        <property name="margin-start">12</property>
+        <property name="margin-end">12</property>
+        <property name="spacing">6</property>
+        <child>
+          <object class="GtkLabel">
+            <property name="label">Project Files</property>
+            <property name="xalign">0</property>
+            <property name="hexpand">true</property>
+            <style>
+              <class name="title-4"/>
+            </style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="file_browser_toggle">
+            <property name="tooltip-text">Toggle File Browser</property>
+            <property name="icon-name">folder-symbolic</property>
+            <property name="valign">center</property>
+            <style>
+              <class name="flat"/>
+            </style>
+          </object>
+        </child>
+      </object>
+    </child>
+    
+    <!-- File Browser -->
+    <child>
+      <object class="GtkRevealer" id="file_browser_revealer">
+        <property name="reveal-child">true</property>
+        <property name="vexpand">true</property>
+        <child>
+          <object class="GtkBox">
+            <property name="orientation">vertical</property>
+            <property name="vexpand">true</property>
+            <child>
+              <!-- File system explorer -->
+              <object class="GtkScrolledWindow" id="file_browser_scroll">
+                <property name="hexpand">true</property>
+                <property name="vexpand">true</property>
+                <child>
+                  <object class="GtkTreeView" id="file_browser_tree">
+                    <property name="headers-visible">false</property>
+                    <style>
+                      <class name="navigation-sidebar"/>
+                    </style>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

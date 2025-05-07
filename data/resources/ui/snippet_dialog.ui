@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="SilkTexSnippetDialog" parent="AdwWindow">
+    <property name="title">Insert LaTeX Snippet</property>
+    <property name="modal">true</property>
+    <property name="default-width">500</property>
+    <property name="default-height">400</property>
+    <child>
+      <object class="GtkBox">
+        <property name="orientation">vertical</property>
+        <child>
+          <object class="AdwHeaderBar">
+            <property name="show-start-title-buttons">false</property>
+            <property name="show-end-title-buttons">false</property>
+            <child type="start">
+              <object class="GtkButton" id="cancel_button">
+                <property name="label">Cancel</property>
+              </object>
+            </child>
+            <child type="end">
+              <object class="GtkButton" id="insert_button">
+                <property name="label">Insert</property>
+                <style>
+                  <class name="suggested-action"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox">
+            <property name="orientation">vertical</property>
+            <property name="margin-top">12</property>
+            <property name="margin-bottom">12</property>
+            <property name="margin-start">12</property>
+            <property name="margin-end">12</property>
+            <property name="spacing">12</property>
+            <child>
+              <object class="GtkLabel">
+                <property name="label">Insert LaTeX Snippet</property>
+                <property name="xalign">0</property>
+                <style>
+                  <class name="heading"/>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkBox">
+                <property name="orientation">horizontal</property>
+                <property name="spacing">6</property>
+                <child>
+                  <object class="GtkSearchEntry" id="search_entry">
+                    <property name="placeholder-text">Search snippets</property>
+                    <property name="hexpand">true</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="add_button">
+                    <property name="icon-name">list-add-symbolic</property>
+                    <property name="tooltip-text">Add a new snippet</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="edit_button">
+                    <property name="icon-name">document-edit-symbolic</property>
+                    <property name="tooltip-text">Edit selected snippet</property>
+                    <property name="sensitive">false</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="delete_button">
+                    <property name="icon-name">user-trash-symbolic</property>
+                    <property name="tooltip-text">Delete selected snippet</property>
+                    <property name="sensitive">false</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkScrolledWindow">
+                <property name="hexpand">true</property>
+                <property name="vexpand">true</property>
+                <property name="has-frame">true</property>
+                <child>
+                  <object class="GtkListBox" id="snippet_list">
+                    <property name="selection-mode">single</property>
+                    <style>
+                      <class name="navigation-sidebar"/>
+                    </style>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkFrame">
+                <property name="label">Preview</property>
+                <property name="label-xalign">0.5</property>
+                <child>
+                  <object class="GtkScrolledWindow">
+                    <property name="height-request">100</property>
+                    <child>
+                      <object class="GtkTextView" id="preview_text_view">
+                        <property name="editable">false</property>
+                        <property name="cursor-visible">false</property>
+                        <property name="monospace">true</property>
+                        <property name="wrap-mode">word</property>
+                        <property name="left-margin">6</property>
+                        <property name="right-margin">6</property>
+                        <property name="top-margin">6</property>
+                        <property name="bottom-margin">6</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

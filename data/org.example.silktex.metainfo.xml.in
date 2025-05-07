@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2023 Your Name -->
+<component type="desktop-application">
+  <id>org.example.silktex</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>SilkTex</name>
+  <summary>A modern LaTeX editor with live preview</summary>
+  
+  <description>
+    <p>
+      SilkTex is a modern LaTeX editor built with GTK4 and Libadwaita, designed to provide
+      a seamless writing experience for LaTeX documents.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>Live PDF preview as you type</li>
+      <li>Syntax highlighting for LaTeX</li>
+      <li>BibTeX support for references</li>
+      <li>Document templates for quick start</li>
+      <li>Snippet library for common LaTeX constructs</li>
+      <li>Document statistics</li>
+      <li>Error detection and highlighting</li>
+      <li>Integrated spell checking</li>
+      <li>Project management for multi-file documents</li>
+    </ul>
+  </description>
+  
+  <launchable type="desktop-id">org.example.silktex.desktop</launchable>
+  
+  <url type="homepage">https://github.com/yourusername/silktex</url>
+  <url type="bugtracker">https://github.com/yourusername/silktex/issues</url>
+  
+  <screenshots>
+    <screenshot type="default">
+      <caption>SilkTex main window with editor and preview</caption>
+      <image>https://example.com/silktex/screenshot1.png</image>
+    </screenshot>
+  </screenshots>
+  
+  <provides>
+    <binary>silktex</binary>
+  </provides>
+  
+  <requires>
+    <display_length compare="ge">medium</display_length>
+  </requires>
+  
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+  
+  <content_rating type="oars-1.1" />
+  
+  <releases>
+    <release version="0.1.0" date="2023-07-01">
+      <description>
+        <p>Initial release of SilkTex!</p>
+        <ul>
+          <li>Basic LaTeX editing with syntax highlighting</li>
+          <li>Live PDF preview</li>
+          <li>Document templates</li>
+          <li>BibTeX support</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+</component>

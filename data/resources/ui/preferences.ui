@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="SilkTexPreferences" parent="AdwPreferencesWindow">
+    <property name="title">Preferences</property>
+    <property name="default-width">600</property>
+    <property name="default-height">550</property>
+    <child>
+      <object class="AdwPreferencesPage">
+        <property name="title">Interface</property>
+        <property name="icon-name">applications-system-symbolic</property>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title">Appearance</property>
+            <child>
+              <object class="AdwComboRow" id="theme_row">
+                <property name="title">Theme</property>
+                <property name="subtitle">Application color scheme</property>
+                <property name="model">
+                  <object class="GtkStringList">
+                    <items>
+                      <item>System</item>
+                      <item>Light</item>
+                      <item>Dark</item>
+                    </items>
+                  </object>
+                </property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title">Layout</property>
+            <child>
+              <object class="AdwSwitchRow" id="sidebar_visible_row">
+                <property name="title">Show Structure Sidebar</property>
+                <property name="subtitle">Show document structure in sidebar</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesPage">
+        <property name="title">Editor</property>
+        <property name="icon-name">document-edit-symbolic</property>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title">Font</property>
+            <child>
+              <object class="AdwActionRow" id="font_row">
+                <property name="title">Editor Font</property>
+                <property name="subtitle">Font used in the editor</property>
+                <child>
+                  <object class="GtkFontButton" id="font_button">
+                    <property name="valign">center</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title">Display</property>
+            <child>
+              <object class="AdwSwitchRow" id="line_numbers_row">
+                <property name="title">Show Line Numbers</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="highlight_line_row">
+                <property name="title">Highlight Current Line</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="right_margin_row">
+                <property name="title">Show Right Margin</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwActionRow" id="margin_position_row">
+                <property name="title">Right Margin Position</property>
+                <property name="subtitle">Column position for the right margin</property>
+                <child>
+                  <object class="GtkSpinButton" id="margin_position_spin">
+                    <property name="valign">center</property>
+                    <property name="adjustment">
+                      <object class="GtkAdjustment">
+                        <property name="lower">40</property>
+                        <property name="upper">200</property>
+                        <property name="value">80</property>
+                        <property name="step-increment">1</property>
+                        <property name="page-increment">10</property>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title">Editing</property>
+            <child>
+              <object class="AdwSwitchRow" id="wrap_text_row">
+                <property name="title">Wrap Text</property>
+                <property name="subtitle">Wrap long lines to fit the editor</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="auto_indent_row">
+                <property name="title">Auto Indent</property>
+                <property name="subtitle">Automatically indent new lines</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="use_spaces_row">
+                <property name="title">Use Spaces for Tabs</property>
+                <property name="subtitle">Insert spaces instead of tab characters</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwActionRow" id="tab_width_row">
+                <property name="title">Tab Width</property>
+                <property name="subtitle">Width of a tab character in spaces</property>
+                <child>
+                  <object class="GtkSpinButton" id="tab_width_spin">
+                    <property name="valign">center</property>
+                    <property name="adjustment">
+                      <object class="GtkAdjustment">
+                        <property name="lower">2</property>
+                        <property name="upper">8</property>
+                        <property name="value">4</property>
+                        <property name="step-increment">1</property>
+                        <property name="page-increment">2</property>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesPage">
+        <property name="title">LaTeX</property>
+        <property name="icon-name">text-x-generic-symbolic</property>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title">Compilation</property>
+            <child>
+              <object class="AdwComboRow" id="engine_row">
+                <property name="title">LaTeX Engine</property>
+                <property name="subtitle">LaTeX engine used for compilation</property>
+                <property name="model">
+                  <object class="GtkStringList">
+                    <items>
+                      <item>pdflatex</item>
+                      <item>xelatex</item>
+                      <item>lualatex</item>
+                    </items>
+                  </object>
+                </property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="shell_escape_row">
+                <property name="title">Enable Shell Escape</property>
+                <property name="subtitle">Allow LaTeX to run external commands (potentially unsafe)</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="auto_compile_row">
+                <property name="title">Auto Compile on Save</property>
+                <property name="subtitle">Automatically compile document when saving</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesPage">
+        <property name="title">Preview</property>
+        <property name="icon-name">document-print-preview-symbolic</property>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title">PDF Preview</property>
+            <child>
+              <object class="AdwSwitchRow" id="auto_refresh_row">
+                <property name="title">Auto Refresh</property>
+                <property name="subtitle">Automatically refresh preview when document changes</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwActionRow" id="refresh_delay_row">
+                <property name="title">Refresh Delay (ms)</property>
+                <property name="subtitle">Delay before refreshing preview after changes</property>
+                <child>
+                  <object class="GtkSpinButton" id="refresh_delay_spin">
+                    <property name="valign">center</property>
+                    <property name="adjustment">
+                      <object class="GtkAdjustment">
+                        <property name="lower">100</property>
+                        <property name="upper">5000</property>
+                        <property name="value">1000</property>
+                        <property name="step-increment">100</property>
+                        <property name="page-increment">500</property>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

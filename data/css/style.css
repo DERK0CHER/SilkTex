@@ -1,0 +1,76 @@
+/* SilkTex main CSS file */
+
+/* Editor styling */
+.editor {
+  font-family: monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.template-preview {
+  font-family: monospace;
+  font-size: 13px;
+  background-color: alpha(@view_bg_color, 0.8);
+  border-radius: 6px;
+}
+
+/* Sidebar styling */
+.sidebar {
+  border-right: 1px solid @borders;
+}
+
+.sidebar .title-4 {
+  font-weight: bold;
+}
+
+/* Status styling */
+.warning {
+  color: @warning_color;
+  font-weight: bold;
+}
+
+.error {
+  color: @error_color;
+  font-weight: bold;
+}
+
+/* Preview styling */
+.preview-container {
+  background-color: alpha(@view_bg_color, 0.9);
+  border-radius: 3px;
+  border: 1px solid @borders;
+}
+
+.toolbar-view {
+  background-color: @headerbar_bg_color;
+  border-bottom: 1px solid @borders;
+}
+
+.toolbar-button {
+  padding: 4px;
+}
+
+/* Document titles */
+.document-title {
+  font-weight: bold;
+}
+
+.modified-document-title {
+  font-style: italic;
+}
+
+/* Toast notifications */
+.success-toast {
+  background-color: @success_color;
+  color: @success_fg_color;
+}
+
+.error-toast {
+  background-color: @error_color;
+  color: @error_fg_color;
+}
+
+/* Dialog spacing */
+dialog-content {
+  margin: 12px;
+}

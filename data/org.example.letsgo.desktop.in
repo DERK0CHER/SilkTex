@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=SilkTex
+Comment=A modern TeX editor with GTK4/libadwaita
+Exec=silktex
+Icon=org.example.silktex
+Terminal=false
+Type=Application
+Categories=GTK;Office;TextEditor;
+StartupNotify=true

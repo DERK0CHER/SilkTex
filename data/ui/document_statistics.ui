@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="SilkTexDocumentStatistics" parent="AdwDialog">
+    <property name="title">Document Statistics</property>
+    <property name="content-width">400</property>
+    <property name="content-height">400</property>
+    <property name="child">
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar">
+            <property name="title-widget">
+              <object class="AdwWindowTitle">
+                <property name="title">Document Statistics</property>
+                <property name="subtitle">Detailed document metrics</property>
+              </object>
+            </property>
+          </object>
+        </child>
+        <property name="content">
+          <object class="GtkBox">
+            <property name="orientation">vertical</property>
+            <property name="margin-start">24</property>
+            <property name="margin-end">24</property>
+            <property name="margin-top">24</property>
+            <property name="margin-bottom">24</property>
+            <property name="spacing">24</property>
+            <child>
+              <!-- Basic statistics -->
+              <object class="AdwPreferencesGroup">
+                <property name="title">Basic Statistics</property>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title">Document Title</property>
+                    <property name="subtitle" bind-source="document_title_value" bind-property="label" bind-flags="sync-create"/>
+                    <child>
+                      <object class="GtkLabel" id="document_title_value">
+                        <property name="label">Untitled Document</property>
+                        <property name="xalign">1</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title">Words</property>
+                    <child>
+                      <object class="GtkLabel" id="word_count_value">
+                        <property name="label">0</property>
+                        <property name="xalign">1</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title">Characters (with spaces)</property>
+                    <child>
+                      <object class="GtkLabel" id="char_count_with_spaces_value">
+                        <property name="label">0</property>
+                        <property name="xalign">1</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title">Characters (without spaces)</property>
+                    <child>
+                      <object class="GtkLabel" id="char_count_without_spaces_value">
+                        <property name="label">0</property>
+                        <property name="xalign">1</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title">Lines</property>
+                    <child>
+                      <object class="GtkLabel" id="line_count_value">
+                        <property name="label">0</property>
+                        <property name="xalign">1</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+            
+            <!-- Document Structure -->
+            <child>
+              <object class="AdwPreferencesGroup">
+                <property name="title">Document Structure</property>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title">Sections</property>
+                    <child>
+                      <object class="GtkLabel" id="section_count_value">
+                        <property name="label">0</property>
+                        <property name="xalign">1</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title">Subsections</property>
+                    <child>
+                      <object class="GtkLabel" id="subsection_count_value">
+                        <property name="label">0</property>
+                        <property name="xalign">1</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title">Figures</property>
+                    <child>
+                      <object class="GtkLabel" id="figure_count_value">
+                        <property name="label">0</property>
+                        <property name="xalign">1</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title">Tables</property>
+                    <child>
+                      <object class="GtkLabel" id="table_count_value">
+                        <property name="label">0</property>
+                        <property name="xalign">1</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title">Equations</property>
+                    <child>
+                      <object class="GtkLabel" id="equation_count_value">
+                        <property name="label">0</property>
+                        <property name="xalign">1</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title">Citations</property>
+                    <child>
+                      <object class="GtkLabel" id="citation_count_value">
+                        <property name="label">0</property>
+                        <property name="xalign">1</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+            
+            <!-- Reading Metrics -->
+            <child>
+              <object class="AdwPreferencesGroup">
+                <property name="title">Reading Metrics</property>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title">Estimated Reading Time</property>
+                    <property name="subtitle">Based on average reading speed</property>
+                    <child>
+                      <object class="GtkLabel" id="reading_time_value">
+                        <property name="label">0 minutes</property>
+                        <property name="xalign">1</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title">Readability Score</property>
+                    <property name="subtitle">Flesch Reading Ease</property>
+                    <child>
+                      <object class="GtkLabel" id="readability_score_value">
+                        <property name="label">N/A</property>
+                        <property name="xalign">1</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+            
+            <!-- Actions -->
+            <child>
+              <object class="GtkBox">
+                <property name="orientation">horizontal</property>
+                <property name="halign">end</property>
+                <property name="spacing">12</property>
+                <child>
+                  <object class="GtkButton" id="refresh_button">
+                    <property name="label">Refresh</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="close_button">
+                    <property name="label">Close</property>
+                    <style>
+                      <class name="suggested-action"/>
+                    </style>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </property>
+      </object>
+    </property>
+  </template>
+</interface>

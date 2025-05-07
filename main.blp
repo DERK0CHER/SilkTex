@@ -1,0 +1,166 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $SilkTexWindow : Adw.ApplicationWindow {
+  title: _("Letsgo");
+  default-width: 800;
+  default-height: 600;
+  content: Adw.ToastOverlay toast_overlay {
+    child: Adw.Leaflet main_leaflet {
+      can-navigate-back: true;
+      can-unfold: false;
+
+      Adw.LeafletPage {
+        name: "main_page";
+        child: Box {
+          orientation: vertical;
+
+          Adw.HeaderBar {
+            centering-policy: strict;
+            title-widget: Adw.ViewSwitcher {
+              policy: wide;
+              stack: main_stack;
+            };
+            [end]
+            MenuButton {
+              icon-name: "open-menu-symbolic";
+              menu-model: primary_menu;
+              primary: true;
+              tooltip-text: _("Main Menu");
+            }
+          }
+
+          Adw.ViewStack main_stack {
+            vexpand: true;
+
+            Adw.ViewStackPage {
+              name: "home";
+              title: _("Home");
+              icon-name: "user-home-symbolic";
+              child: Box {
+                orientation: vertical;
+                spacing: 12;
+                margin-top: 24;
+                margin-bottom: 24;
+                margin-start: 24;
+                margin-end: 24;
+
+                Label {
+                  label: _("Welcome to Letsgo");
+                  styles ["title-1"]
+                }
+
+                Label {
+                  label: _("A modern GTK application");
+                  styles ["title-4"]
+                }
+
+                Button get_started_button {
+                  label: _("Get Started");
+                  halign: center;
+                  margin-top: 24;
+                  styles ["suggested-action", "pill"]
+                }
+              };
+            }
+
+            Adw.ViewStackPage {
+              name: "dashboard";
+              title: _("Dashboard");
+              icon-name: "view-grid-symbolic";
+              child: Box {
+                orientation: vertical;
+                spacing: 12;
+                margin-top: 24;
+                margin-bottom: 24;
+                margin-start: 24;
+                margin-end: 24;
+
+                Adw.PreferencesGroup {
+                  title: _("Recent Activities");
+                  
+                  Adw.ActionRow {
+                    title: _("Activity 1");
+                    subtitle: _("Description of activity 1");
+                    activatable: true;
+                    
+                    [suffix]
+                    Button {
+                      icon-name: "go-next-symbolic";
+                      valign: center;
+                      styles ["flat"]
+                    }
+                  }
+                  
+                  Adw.ActionRow {
+                    title: _("Activity 2");
+                    subtitle: _("Description of activity 2");
+                    activatable: true;
+                    
+                    [suffix]
+                    Button {
+                      icon-name: "go-next-symbolic";
+                      valign: center;
+                      styles ["flat"]
+                    }
+                  }
+                }
+              };
+            }
+
+            Adw.ViewStackPage {
+              name: "settings";
+              title: _("Settings");
+              icon-name: "preferences-system-symbolic";
+              child: Adw.PreferencesPage {
+                Adw.PreferencesGroup {
+                  title: _("Appearance");
+
+                  Adw.ActionRow {
+                    title: _("Dark Mode");
+                    
+                    [suffix]
+                    Switch dark_mode_switch {
+                      valign: center;
+                    }
+                  }
+                }
+
+                Adw.PreferencesGroup {
+                  title: _("Notifications");
+
+                  Adw.ActionRow {
+                    title: _("Enable Notifications");
+                    
+                    [suffix]
+                    Switch notifications_switch {
+                      valign: center;
+                      active: true;
+                    }
+                  }
+                }
+              };
+            }
+          }
+        };
+      }
+    };
+  };
+}
+
+menu primary_menu {
+  section {
+    item {
+      label: _("Preferences");
+      action: "app.preferences";
+    }
+    item {
+      label: _("Keyboard Shortcuts");
+      action: "win.show-help-overlay";
+    }
+    item {
+      label: _("About Letsgo");
+      action: "app.about";
+    }
+  }
+}

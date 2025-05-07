@@ -1,0 +1,294 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="LetsgoWindow" parent="AdwApplicationWindow">
+    <property name="title" translatable="yes">Letsgo</property>
+    <property name="default-width">800</property>
+    <property name="default-height">600</property>
+    <property name="content">
+      <object class="AdwToastOverlay" id="toast_overlay">
+        <property name="child">
+          <object class="AdwLeaflet" id="main_leaflet">
+            <property name="can-navigate-back">true</property>
+            <property name="can-unfold">false</property>
+            <child>
+              <object class="AdwLeafletPage">
+                <property name="name">main_page</property>
+                <property name="child">
+                  <object class="GtkBox">
+                    <property name="orientation">vertical</property>
+                    <child>
+                      <object class="AdwHeaderBar">
+                        <property name="centering-policy">strict</property>
+                        <property name="title-widget">
+                          <object class="AdwViewSwitcher">
+                            <property name="policy">wide</property>
+                            <property name="stack">main_stack</property>
+                          </object>
+                        </property>
+                        <child type="end">
+                          <object class="GtkMenuButton">
+                            <property name="icon-name">open-menu-symbolic</property>
+                            <property name="menu-model">primary_menu</property>
+                            <property name="primary">true</property>
+                            <property name="tooltip-text" translatable="yes">Main Menu</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwViewStack" id="main_stack">
+                        <property name="vexpand">true</property>
+                        <child>
+                          <object class="AdwViewStackPage">
+                            <property name="name">home</property>
+                            <property name="title" translatable="yes">Home</property>
+                            <property name="icon-name">user-home-symbolic</property>
+                            <property name="child">
+                              <object class="GtkBox">
+                                <property name="orientation">vertical</property>
+                                <property name="spacing">12</property>
+                                <property name="margin-top">24</property>
+                                <property name="margin-bottom">24</property>
+                                <property name="margin-start">24</property>
+                                <property name="margin-end">24</property>
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="label" translatable="yes">Welcome to Letsgo</property>
+                                    <style>
+                                      <class name="title-1"/>
+                                    </style>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="label" translatable="yes">A modern GTK application</property>
+                                    <style>
+                                      <class name="title-4"/>
+                                    </style>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkButton" id="get_started_button">
+                                    <property name="label" translatable="yes">Get Started</property>
+                                    <property name="halign">center</property>
+                                    <property name="margin-top">24</property>
+                                    <style>
+                                      <class name="suggested-action"/>
+                                      <class name="pill"/>
+                                    </style>
+                                  </object>
+                                </child>
+                              </object>
+                            </property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwViewStackPage">
+                            <property name="name">dashboard</property>
+                            <property name="title" translatable="yes">Dashboard</property>
+                            <property name="icon-name">view-grid-symbolic</property>
+                            <property name="child">
+                              <object class="GtkBox">
+                                <property name="orientation">vertical</property>
+                                <property name="spacing">12</property>
+                                <property name="margin-top">24</property>
+                                <property name="margin-bottom">24</property>
+                                <property name="margin-start">24</property>
+                                <property name="margin-end">24</property>
+                                <child>
+                                  <object class="AdwPreferencesGroup">
+                                    <property name="title" translatable="yes">Recent Activities</property>
+                                    <child>
+                                      <object class="AdwActionRow">
+                                        <property name="title" translatable="yes">Activity 1</property>
+                                        <property name="subtitle" translatable="yes">Description of activity 1</property>
+                                        <property name="activatable">true</property>
+                                        <child type="suffix">
+                                          <object class="GtkButton">
+                                            <property name="icon-name">go-next-symbolic</property>
+                                            <property name="valign">center</property>
+                                            <style>
+                                              <class name="flat"/>
+                                            </style>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="AdwActionRow">
+                                        <property name="title" translatable="yes">Activity 2</property>
+                                        <property name="subtitle" translatable="yes">Description of activity 2</property>
+                                        <property name="activatable">true</property>
+                                        <child type="suffix">
+                                          <object class="GtkButton">
+                                            <property name="icon-name">go-next-symbolic</property>
+                                            <property name="valign">center</property>
+                                            <style>
+                                              <class name="flat"/>
+                                            </style>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwViewStackPage">
+                            <property name="name">settings</property>
+                            <property name="title" translatable="yes">Settings</property>
+                            <property name="icon-name">preferences-system-symbolic</property>
+                            <property name="child">
+                              <object class="AdwPreferencesPage">
+                                <child>
+                                  <object class="AdwPreferencesGroup">
+                                    <property name="title" translatable="yes">Appearance</property>
+                                    <child>
+                                      <object class="AdwActionRow">
+                                        <property name="title" translatable="yes">Dark Mode</property>
+                                        <child type="suffix">
+                                          <object class="GtkSwitch" id="dark_mode_switch">
+                                            <property name="valign">center</property>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="AdwPreferencesGroup">
+                                    <property name="title" translatable="yes">Notifications</property>
+                                    <child>
+                                      <object class="AdwActionRow">
+                                        <property name="title" translatable="yes">Enable Notifications</property>
+                                        <child type="suffix">
+                                          <object class="GtkSwitch" id="notifications_switch">
+                                            <property name="valign">center</property>
+                                            <property name="active">true</property>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </property>
+              </object>
+            </child>
+          </object>
+        </property>
+      </object>
+    </property>
+  </template>
+  <menu id="primary_menu">
+    <section>
+      <item>
+        <attribute name="label" translatable="yes">Preferences</attribute>
+        <attribute name="action">app.preferences</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="yes">Keyboard Shortcuts</attribute>
+        <attribute name="action">win.show-help-overlay</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="yes">About Letsgo</attribute>
+        <attribute name="action">app.about</attribute>
+      </item>
+    </section>
+  </menu>
+</interface>
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="SilkTexWindow" parent="AdwApplicationWindow">
+    <property name="title" translatable="yes">SilkTex</property>
+    <property name="default-width">1200</property>
+    <property name="default-height">800</property>
+    <property name="content">
+      <object class="AdwToolbarView">
+        <!-- HeaderBar -->
+        <child type="top">
+          <object class="SilkTexHeaderBar" id="header_bar"/>
+        </child>
+        
+        <!-- Main Content -->
+        <property name="content">
+          <object class="AdwToastOverlay" id="toast_overlay">
+            <child>
+              <object class="GtkBox" id="main_box">
+                <property name="orientation">vertical</property>
+                <child>
+                  <!-- Main split view -->
+                  <object class="GtkPaned" id="main_paned">
+                    <property name="orientation">horizontal</property>
+                    <property name="position">250</property>
+                    <property name="wide-handle">true</property>
+                    <property name="hexpand">true</property>
+                    <property name="vexpand">true</property>
+                    
+                    <!-- Sidebar -->
+                    <child>
+                      <object class="GtkBox" id="sidebar_box">
+                        <property name="orientation">vertical</property>
+                        <property name="width-request">200</property>
+                        <style>
+                          <class name="sidebar"/>
+                        </style>
+                      </object>
+                    </child>
+                    
+                    <!-- Editor/Preview split -->
+                    <child>
+                      <object class="GtkPaned" id="editor_preview_paned">
+                        <property name="orientation">horizontal</property>
+                        <property name="position">600</property>
+                        <property name="wide-handle">true</property>
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        
+                        <!-- Editor area -->
+                        <child>
+                          <object class="GtkBox" id="editor_container">
+                            <property name="orientation">vertical</property>
+                            <property name="hexpand">true</property>
+                            <property name="vexpand">true</property>
+                          </object>
+                        </child>
+                        
+                        <!-- Preview area -->
+                        <child>
+                          <object class="GtkBox" id="preview_container">
+                            <property name="orientation">vertical</property>
+                            <property name="hexpand">true</property>
+                            <property name="vexpand">true</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </property>
+        
+        <!-- Status Bar -->
+        <child type="bottom">
+          <object class="SilkTexStatusBar" id="status_bar"/>
+        </child>
+      </object>
+    </property>
+  </template>
+</interface>

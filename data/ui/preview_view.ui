@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <requires lib="webkit" version="6.0"/>
+  <template class="SilkTexPreviewView" parent="GtkBox">
+    <property name="orientation">vertical</property>
+    <property name="hexpand">true</property>
+    <property name="vexpand">true</property>
+    
+    <!-- Toolbar for preview functions -->
+    <child>
+      <object class="GtkBox" id="toolbar_box">
+        <property name="orientation">horizontal</property>
+        <property name="spacing">6</property>
+        <property name="margin-start">6</property>
+        <property name="margin-end">6</property>
+        <property name="margin-top">6</property>
+        <property name="margin-bottom">6</property>
+        <style>
+          <class name="toolbar-view"/>
+        </style>
+        <child>
+          <object class="GtkButton" id="refresh_button">
+            <property name="tooltip-text">Refresh Preview</property>
+            <property name="icon-name">view-refresh-symbolic</property>
+            <style>
+              <class name="toolbar-button"/>
+            </style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkSeparator">
+            <property name="orientation">vertical</property>
+            <property name="margin-start">6</property>
+            <property name="margin-end">6</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="zoom_in_button">
+            <property name="tooltip-text">Zoom In</property>
+            <property name="icon-name">zoom-in-symbolic</property>
+            <style>
+              <class name="toolbar-button"/>
+            </style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="zoom_out_button">
+            <property name="tooltip-text">Zoom Out</property>
+            <property name="icon-name">zoom-out-symbolic</property>
+            <style>
+              <class name="toolbar-button"/>
+            </style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="zoom_reset_button">
+            <property name="tooltip-text">Reset Zoom</property>
+            <property name="icon-name">zoom-original-symbolic</property>
+            <style>
+              <class name="toolbar-button"/>
+            </style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkSeparator">
+            <property name="orientation">vertical</property>
+            <property name="margin-start">6</property>
+            <property name="margin-end">6</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="prev_page_button">
+            <property name="tooltip-text">Previous Page</property>
+            <property name="icon-name">go-up-symbolic</property>
+            <property name="sensitive">false</property>
+            <style>
+              <class name="toolbar-button"/>
+            </style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox">
+            <property name="orientation">horizontal</property>
+            <property name="spacing">2</property>
+            <child>
+              <object class="GtkEntry" id="page_entry">
+                <property name="width-chars">3</property>
+                <property name="max-width-chars">3</property>
+                <property name="text">1</property>
+                <property name="xalign">1</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel" id="page_separator_label">
+                <property name="label">/</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel" id="total_pages_label">
+                <property name="label">1</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="next_page_button">
+            <property name="tooltip-text">Next Page</property>
+            <property name="icon-name">go-down-symbolic</property>
+            <property name="sensitive">false</property>
+            <style>
+              <class name="toolbar-button"/>
+            </style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkSeparator">
+            <property name="orientation">vertical</property>
+            <property name="margin-start">6</property>
+            <property name="margin-end">6</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="open_extern_button">
+            <property name="tooltip-text">Open in External Viewer</property>
+            <property name="icon-name">document-open-symbolic</property>
+            <style>
+              <class name="toolbar-button"/>
+            </style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="print_button">
+            <property name="tooltip-text">Print</property>
+            <property name="icon-name">document-print-symbolic</property>
+            <style>
+              <class name="toolbar-button"/>
+            </style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox">
+            <property name="hexpand">true</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkToggleButton" id="sync_toggle">
+            <property name="tooltip-text">Toggle Sync Scrolling</property>
+            <property name="icon-name">view-dual-symbolic</property>
+            <property name="active">true</property>
+            <style>
+              <class name="toolbar-button"/>
+            </style>
+          </object>
+        </child>
+        <child>
+          <object class="GtkToggleButton" id="auto_refresh_toggle">
+            <property name="tooltip-text">Toggle Auto-Refresh</property>
+            <property name="icon-name">emblem-synchronizing-symbolic</property>
+            <property name="active">true</property>
+            <style>
+              <class name="toolbar-button"/>
+            </style>
+          </object>
+        </child>
+      </object>
+    </child>
+    
+    <!-- The preview content area -->
+    <child>
+      <object class="GtkOverlay" id="preview_overlay">
+        <property name="hexpand">true</property>
+        <property name="vexpand">true</property>
+        
+        <!-- Default content when no PDF is loaded -->
+        <child type="overlay">
+          <object class="GtkBox" id="empty_box">
+            <property name="orientation">vertical</property>
+            <property name="halign">center</property>
+            <property name="valign">center</property>
+            <property name="spacing">12</property>
+            <property name="margin-start">24</property>
+            <property name="margin-end">24</property>
+            <property name="visible">true</property>
+            <child>
+              <object class="GtkImage">
+                <property name="icon-name">system-run-symbolic</property>
+                <property name="icon-size">large</property>
+                <property name="opacity">0.5</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel">
+                <property name="label">No preview available</property>
+                <property name="wrap">true</property>
+                <property name="justify">center</property>
+                <style>
+                  <class name="title-3"/>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel">
+                <property name="label">Compile your document to generate a preview</property>
+                <property name="wrap">true</property>
+                <property name="justify">center</property>
+                <style>
+                  <class name="dim-label"/>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton" id="compile_button">
+                <property name="label">Compile Document</property>
+                <property name="halign">center</property>
+                <property name="margin-top">12</property>
+                <style>
+                  <class name="suggested-action"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+        
+        <!-- WebKit WebView for PDF rendering -->
+        <child>
+          <object class="GtkBox" id="webview_container">
+            <property name="orientation">vertical</property>
+            <property name="hexpand">true</property>
+            <property name="vexpand">true</property>
+            <property name="visible">false</property>
+            <child>
+              <object class="GtkScrolledWindow" id="scrolled_window">
+                <property name="hexpand">true</property>
+                <property name="vexpand">true</property>
+                <!-- The WebKitWebView will be added programmatically here -->
+              </object>
+            </child>
+          </object>
+        </child>
+        
+        <!-- Loading spinner overlay -->
+        <child type="overlay">
+          <object class="GtkBox" id="loading_box">
+            <property name="orientation">vertical</property>
+            <property name="halign">center</property>
+            <property name="valign">center</property>
+            <property name="spacing">12</property>
+            <property name="visible">false</property>
+            <child>
+              <object class="GtkSpinner" id="loading_spinner">
+                <property name="spinning">true</property>
+                <property name="width-request">32</property>
+                <property name="height-request">32</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel" id="loading_label">
+                <property name="label">Compiling document...</property>
+                <style>
+                  <class name="dim-label"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    
+    <!-- Error info bar (initially hidden) -->
+    <child>
+      <object class="GtkRevealer" id="error_revealer">
+        <property name="reveal-child">false</property>
+        <child>
+          <object class="GtkInfoBar" id="error_infobar">
+            <property name="message-type">error</property>
+            <property name="show-close-button">true</property>
+            <child>
+              <object class="GtkLabel" id="error_label">
+                <property name="label">Error compiling document</property>
+                <property name="wrap">true</property>
+                <property name="xalign">0</property>
+              </object>
+            </child>
+            <child type="action">
+              <object class="GtkButton" id="show_log_button">
+                <property name="label">Show Log</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="LetsgoStatusBar" parent="GtkBox">
+    <property name="orientation">horizontal</property>
+    <property name="spacing">6</property>
+    <style>
+      <class name="statusbar"/>
+      <class name="toolbar"/>
+    </style>
+    
+    <child>
+      <object class="GtkLabel" id="position_label">
+        <property name="label">Line: 1, Col: 1</property>
+        <property name="halign">start</property>
+        <property name="hexpand">false</property>
+      </object>
+    </child>
+    
+    <child>
+      <object class="GtkSeparator">
+        <property name="orientation">vertical</property>
+      </object>
+    </child>
+    
+    <child>
+      <object class="GtkLabel" id="language_label">
+        <property name="label">Plain Text</property>
+        <property name="halign">start</property>
+        <property name="hexpand">false</property>
+      </object>
+    </child>
+    
+    <child>
+      <object class="GtkBox">
+        <property name="hexpand">true</property>
+        <property name="halign">end</property>
+        <child>
+          <object class="GtkSeparator">
+            <property name="orientation">vertical</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkLabel" id="status_message">
+            <property name="label" translatable="yes">Ready</property>
+            <property name="halign">end</property>
+            <property name="margin-start">12</property>
+            <property name="margin-end">12</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="SilkTexStatusBar" parent="GtkActionBar">
+    <!-- Left side status indicators -->
+    <child>
+      <object class="GtkBox">
+        <property name="spacing">12</property>
+        <child>
+          <object class="GtkLabel" id="status_label">
+            <property name="label">Ready</property>
+            <property name="xalign">0</property>
+          </object>
+        </child>
+      </object>
+    </child>
+    
+    <!-- Engine selector -->
+    <child type="center">
+      <object class="GtkBox">
+        <property name="spacing">6</property>
+        <child>
+          <object class="GtkLabel">
+            <property name="label">Engine:</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkDropDown" id="engine_selector">
+            <property name="model">
+              <object class="GtkStringList">
+                <items>
+                  <item>pdflatex</item>
+                  <item>xelatex</item>
+                  <item>lualatex</item>
+                </items>
+              </object>
+            </property>
+          </object>
+        </child>
+      </object>
+    </child>
+    
+    <!-- Right side indicators -->
+    <child type="end">
+      <object class="GtkBox">
+        <property name="spacing">12</property>
+        <!-- Line and column indicator -->
+        <child>
+          <object class="GtkLabel" id="cursor_position_label">
+            <property name="label">Line: 1, Col: 1</property>
+          </object>
+        </child>
+        <!-- Modification indicator -->
+        <child>
+          <object class="GtkLabel" id="modified_label">
+            <property name="visible">false</property>
+            <property name="label">Modified</property>
+            <style>
+              <class name="warning"/>
+            </style>
+          </object>
+        </child>
+        <!-- Word count -->
+        <child>
+          <object class="GtkLabel" id="word_count_label">
+            <property name="label">Words: 0</property>
+            <property name="margin-end">6</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

@@ -1,0 +1,10 @@
+[re/sonny/Workbench]
+show-console=true
+maximized=true
+show-code=false
+code-language=3
+edited=true
+show-ui=true
+user-interface-language='blueprint'
+show-style=false
+show-preview=true

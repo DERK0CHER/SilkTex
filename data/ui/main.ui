@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <menu id="app_menu">
+    <section>
+      <item>
+        <attribute name="label">Preferences</attribute>
+        <attribute name="action">app.preferences</attribute>
+      </item>
+      <item>
+        <attribute name="label">Keyboard Shortcuts</attribute>
+        <attribute name="action">win.show-help-overlay</attribute>
+      </item>
+      <item>
+        <attribute name="label">About SilkTex</attribute>
+        <attribute name="action">app.about</attribute>
+      </item>
+    </section>
+  </menu>
+  <menu id="document_menu">
+    <section>
+      <item>
+        <attribute name="label">New</attribute>
+        <attribute name="action">app.new</attribute>
+      </item>
+      <item>
+        <attribute name="label">New from Template</attribute>
+        <attribute name="action">app.new-from-template</attribute>
+      </item>
+      <item>
+        <attribute name="label">Open</attribute>
+        <attribute name="action">app.open</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Save</attribute>
+        <attribute name="action">app.save</attribute>
+      </item>
+      <item>
+        <attribute name="label">Save As</attribute>
+        <attribute name="action">app.save-as</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Export PDF</attribute>
+        <attribute name="action">app.export-pdf</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Close</attribute>
+        <attribute name="action">win.close</attribute>
+      </item>
+    </section>
+  </menu>
+  <menu id="edit_menu">
+    <section>
+      <item>
+        <attribute name="label">Undo</attribute>
+        <attribute name="action">win.undo</attribute>
+      </item>
+      <item>
+        <attribute name="label">Redo</attribute>
+        <attribute name="action">win.redo</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Cut</attribute>
+        <attribute name="action">win.cut</attribute>
+      </item>
+      <item>
+        <attribute name="label">Copy</attribute>
+        <attribute name="action">win.copy</attribute>
+      </item>
+      <item>
+        <attribute name="label">Paste</attribute>
+        <attribute name="action">win.paste</attribute>
+      </item>
+      <item>
+        <attribute name="label">Delete</attribute>
+        <attribute name="action">win.delete</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Select All</attribute>
+        <attribute name="action">win.select-all</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Find and Replace</attribute>
+        <attribute name="action">win.find</attribute>
+      </item>
+    </section>
+  </menu>
+  <menu id="insert_menu">
+    <section>
+      <item>
+        <attribute name="label">Section</attribute>
+        <attribute name="action">win.insert-section</attribute>
+      </item>
+      <item>
+        <attribute name="label">Subsection</attribute>
+        <attribute name="action">win.insert-subsection</attribute>
+      </item>
+      <item>
+        <attribute name="label">Subsubsection</attribute>
+        <attribute name="action">win.insert-subsubsection</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Equation</attribute>
+        <attribute name="action">win.insert-equation</attribute>
+      </item>
+      <item>
+        <attribute name="label">Figure</attribute>
+        <attribute name="action">win.insert-figure</attribute>
+      </item>
+      <item>
+        <attribute name="label">Table</attribute>
+        <attribute name="action">win.insert-table</attribute>
+      </item>
+      <item>
+        <attribute name="label">List</attribute>
+        <attribute name="action">win.insert-list</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Citation</attribute>
+        <attribute name="action">win.insert-citation</attribute>
+      </item>
+      <item>
+        <attribute name="label">Label</attribute>
+        <attribute name="action">win.insert-label</attribute>
+      </item>
+      <item>
+        <attribute name="label">Reference</attribute>
+        <attribute name="action">win.insert-reference</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Snippets...</attribute>
+        <attribute name="action">win.open-snippets</attribute>
+      </item>
+    </section>
+  </menu>
+  <menu id="build_menu">
+    <section>
+      <item>
+        <attribute name="label">Compile</attribute>
+        <attribute name="action">win.compile</attribute>
+      </item>
+      <item>
+        <attribute name="label">Clean Build Files</attribute>
+        <attribute name="action">win.clean</attribute>
+      </item>
+    </section>
+    <section>
+      <submenu>
+        <attribute name="label">Compile With</attribute>
+        <section>
+          <item>
+            <attribute name="label">pdfLaTeX</attribute>
+            <attribute name="action">win.compile-with</attribute>
+            <attribute name="target">pdflatex</attribute>
+          </item>
+          <item>
+            <attribute name="label">XeLaTeX</attribute>
+            <attribute name="action">win.compile-with</attribute>
+            <attribute name="target">xelatex</attribute>
+          </item>
+          <item>
+            <attribute name="label">LuaLaTeX</attribute>
+            <attribute name="action">win.compile-with</attribute>
+            <attribute name="target">lualatex</attribute>
+          </item>
+        </section>
+      </submenu>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">View Log</attribute>
+        <attribute name="action">win.view-log</attribute>
+      </item>
+    </section>
+  </menu>
+  <menu id="view_menu">
+    <section>
+      <item>
+        <attribute name="label">Toggle Sidebar</attribute>
+        <attribute name="action">win.toggle-sidebar</attribute>
+      </item>
+      <item>
+        <attribute name="label">Toggle Preview</attribute>
+        <attribute name="action">win.toggle-preview</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Zoom In</attribute>
+        <attribute name="action">win.zoom-in</attribute>
+      </item>
+      <item>
+        <attribute name="label">Zoom Out</attribute>
+        <attribute name="action">win.zoom-out</attribute>
+      </item>
+      <item>
+        <attribute name="label">Reset Zoom</attribute>
+        <attribute name="action">win.zoom-reset</attribute>
+      </item>
+    </section>
+  </menu>
+</interface>

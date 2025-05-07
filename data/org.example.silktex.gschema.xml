@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="silktex">
+  <schema id="org.example.silktex" path="/org/example/silktex/">
+    <!-- Window settings -->
+    <key name="window-width" type="i">
+      <default>1200</default>
+      <summary>Window width</summary>
+      <description>Width of the application window in pixels</description>
+    </key>
+    <key name="window-height" type="i">
+      <default>800</default>
+      <summary>Window height</summary>
+      <description>Height of the application window in pixels</description>
+    </key>
+    <key name="is-maximized" type="b">
+      <default>false</default>
+      <summary>Window maximized state</summary>
+      <description>Whether the window is maximized</description>
+    </key>
+    <key name="is-fullscreen" type="b">
+      <default>false</default>
+      <summary>Window fullscreen state</summary>
+      <description>Whether the window is fullscreen</description>
+    </key>
+    <key name="sidebar-visible" type="b">
+      <default>true</default>
+      <summary>Sidebar visibility</summary>
+      <description>Whether the sidebar is visible</description>
+    </key>
+    <key name="sidebar-width" type="i">
+      <default>250</default>
+      <summary>Sidebar width</summary>
+      <description>Width of the sidebar in pixels</description>
+    </key>
+    
+    <!-- Editor settings -->
+    <key name="editor-font" type="s">
+      <default>'Monospace 11'</default>
+      <summary>Editor font</summary>
+      <description>Font used in the editor</description>
+    </key>
+    <key name="editor-tab-width" type="i">
+      <default>4</default>
+      <summary>Tab width</summary>
+      <description>Width of a tab character in spaces</description>
+    </key>
+    <key name="editor-use-spaces" type="b">
+      <default>true</default>
+      <summary>Use spaces instead of tabs</summary>
+      <description>Whether to use spaces instead of tabs for indentation</description>
+    </key>
+    <key name="editor-show-line-numbers" type="b">
+      <default>true</default>
+      <summary>Show line numbers</summary>
+      <description>Whether to show line numbers in the editor</description>
+    </key>
+    <key name="editor-highlight-current-line" type="b">
+      <default>true</default>
+      <summary>Highlight current line</summary>
+      <description>Whether to highlight the current line in the editor</description>
+    </key>
+    <key name="editor-auto-indent" type="b">
+      <default>true</default>
+      <summary>Auto indent</summary>
+      <description>Whether to automatically indent new lines</description>
+    </key>
+    <key name="editor-wrap-text" type="b">
+      <default>true</default>
+      <summary>Wrap text</summary>
+      <description>Whether to wrap long lines in the editor</description>
+    </key>
+    <key name="editor-show-right-margin" type="b">
+      <default>true</default>
+      <summary>Show right margin</summary>
+      <description>Whether to show the right margin in the editor</description>
+    </key>
+    <key name="editor-right-margin-position" type="i">
+      <default>80</default>
+      <summary>Right margin position</summary>
+      <description>Position of the right margin in characters</description>
+    </key>
+    <key name="editor-spell-check" type="b">
+      <default>true</default>
+      <summary>Enable spell checking</summary>
+      <description>Whether to enable spell checking in the editor</description>
+    </key>
+    <key name="editor-spell-check-language" type="s">
+      <default>''</default>
+      <summary>Spell check language</summary>
+      <description>Language code for spell checking (empty for system default)</description>
+    </key>
+    
+    <!-- Preview settings -->
+    <key name="preview-auto-refresh" type="b">
+      <default>true</default>
+      <summary>Auto-refresh preview</summary>
+      <description>Whether to automatically refresh the preview when the document is modified</description>
+    </key>
+    <key name="preview-refresh-delay" type="i">
+      <default>1500</default>
+      <summary>Preview refresh delay</summary>
+      <description>Delay in milliseconds before refreshing the preview after document changes</description>
+    </key>
+    <key name="preview-zoom-level" type="d">
+      <default>1.0</default>
+      <summary>Preview zoom level</summary>
+      <description>Zoom level for the preview (1.0 = 100%)</description>
+    </key>
+    
+    <!-- LaTeX settings -->
+    <key name="latex-engine" type="s">
+      <default>'pdflatex'</default>
+      <summary>LaTeX engine</summary>
+      <description>Engine used to compile LaTeX documents (pdflatex, xelatex, lualatex)</description>
+    </key>
+    <key name="latex-options" type="s">
+      <default>'-interaction=nonstopmode -halt-on-error -file-line-error'</default>
+      <summary>LaTeX engine options</summary>
+      <description>Command line options passed to the LaTeX engine</description>
+    </key>
+    <key name="latex-bibtex-engine" type="s">
+      <default>'bibtex'</default>
+      <summary>BibTeX engine</summary>
+      <description>Engine used to compile bibliographies (bibtex, biber)</description>
+    </key>
+    
+    <!-- Application settings -->
+    <key name="color-scheme" type="s">
+      <default>'system'</default>
+      <summary>Color scheme</summary>
+      <description>Color scheme for the application (system, light, dark)</description>
+    </key>
+    <key name="last-open-directory" type="s">
+      <default>''</default>
+      <summary>Last open directory</summary>
+      <description>Path to the last directory used to open or save files</description>
+    </key>
+    <key name="recent-files" type="as">
+      <default>[]</default>
+      <summary>Recent files</summary>
+      <description>List of recently opened files</description>
+    </key>
+    <key name="recent-projects" type="as">
+      <default>[]</default>
+      <summary>Recent projects</summary>
+      <description>List of recently opened projects</description>
+    </key>
+    <key name="autosave-enabled" type="b">
+      <default>true</default>
+      <summary>Enable autosave</summary>
+      <description>Whether to automatically save documents periodically</description>
+    </key>
+    <key name="autosave-interval" type="i">
+      <default>300</default>
+      <summary>Autosave interval</summary>
+      <description>Interval in seconds between automatic saves</description>
+    </key>
+  </schema>
+</schemalist>

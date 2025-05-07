@@ -1,0 +1,46 @@
+      <item>
+        <attribute name="label">Zoom Out</attribute>
+        <attribute name="action">win.zoom-out</attribute>
+      </item>
+      <item>
+        <attribute name="label">Reset Zoom</attribute>
+        <attribute name="action">win.zoom-reset</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Compile Document</attribute>
+        <attribute name="action">win.compile</attribute>
+      </item>
+      <item>
+        <attribute name="label">Show Error Log</attribute>
+        <attribute name="action">win.show-error-log</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Toggle Sidebar</attribute>
+        <attribute name="action">win.toggle-sidebar</attribute>
+        <attribute name="accel">F9</attribute>
+      </item>
+      <item>
+        <attribute name="label">Toggle Preview</attribute>
+        <attribute name="action">win.toggle-preview</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Preferences</attribute>
+        <attribute name="action">app.preferences</attribute>
+      </item>
+      <item>
+        <attribute name="label">Keyboard Shortcuts</attribute>
+        <attribute name="action">win.show-help-overlay</attribute>
+      </item>
+      <item>
+        <attribute name="label">About SilkTex</attribute>
+        <attribute name="action">app.about</attribute>
+      </item>
+    </section>
+  </menu>
+</interface>

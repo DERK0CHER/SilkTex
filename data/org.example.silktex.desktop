@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=SilkTex
+Comment=LaTeX editor with live preview
+Exec=silktex %f
+Icon=org.example.silktex
+Terminal=false
+Type=Application
+Categories=Office;TextEditor;Development;Education;Science;
+Keywords=LaTeX;Editor;TeX;Document;PDF;Preview;Writing;
+StartupNotify=true
+MimeType=text/x-tex;text/x-latex;application/x-tex;

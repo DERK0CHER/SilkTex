@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="LetsgoHeaderBar" parent="AdwHeaderBar">
+    <property name="show-end-title-buttons">true</property>
+    <property name="centering-policy">strict</property>
+    
+    <child type="end">
+      <object class="GtkMenuButton" id="menu_button">
+        <property name="icon-name">open-menu-symbolic</property>
+        <property name="primary">true</property>
+        <property name="tooltip-text" translatable="yes">Main Menu</property>
+        <property name="menu-model">primary_menu</property>
+      </object>
+    </child>
+    
+    <child type="start">
+      <object class="GtkButton" id="new_button">
+        <property name="icon-name">document-new-symbolic</property>
+        <property name="tooltip-text" translatable="yes">New Document</property>
+        <property name="action-name">app.new</property>
+      </object>
+    </child>
+    
+    <child type="start">
+      <object class="GtkButton" id="open_button">
+        <property name="icon-name">document-open-symbolic</property>
+        <property name="tooltip-text" translatable="yes">Open Document</property>
+        <property name="action-name">app.open</property>
+      </object>
+    </child>
+  </template>
+  
+  <menu id="primary_menu">
+    <section>
+      <item>
+        <attribute name="label" translatable="yes">Save</attribute>
+        <attribute name="action">app.save</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="yes">Save As...</attribute>
+        <attribute name="action">app.save-as</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="yes">Preferences</attribute>
+        <attribute name="action">app.preferences</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label" translatable="yes">Keyboard Shortcuts</attribute>
+        <attribute name="action">win.show-help-overlay</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="yes">About Letsgo</attribute>
+        <attribute name="action">app.about</attribute>
+      </item>
+    </section>
+  </menu>
+</interface>
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="SilkTexHeaderBar" parent="AdwHeaderBar">
+    <property name="show-start-title-buttons">true</property>
+    <property name="show-end-title-buttons">true</property>
+    <property name="centering-policy">strict</property>
+    
+    <!-- Start area buttons -->
+    <child type="start">
+      <object class="GtkButton" id="new_button">
+        <property name="tooltip-text">New Document</property>
+        <property name="icon-name">document-new-symbolic</property>
+        <property name="action-name">app.new</property>
+      </object>
+    </child>
+    
+    <child type="start">
+      <object class="GtkButton" id="open_button">
+        <property name="tooltip-text">Open File</property>
+        <property name="icon-name">document-open-symbolic</property>
+        <property name="action-name">app.open</property>
+      </object>
+    </child>
+    
+    <child type="start">
+      <object class="GtkButton" id="save_button">
+        <property name="tooltip-text">Save</property>
+        <property name="icon-name">document-save-symbolic</property>
+        <property name="action-name">app.save</property>
+      </object>
+    </child>
+    
+    <!-- Center area with document title -->
+    <property name="title-widget">
+      <object class="AdwWindowTitle" id="window_title">
+        <property name="title">Untitled Document</property>
+        <property name="subtitle"></property>
+      </object>
+    </property>
+    
+    <!-- End area buttons -->
+    <child type="end">
+      <object class="GtkButton" id="compile_button">
+        <property name="tooltip-text">Compile Document</property>
+        <property name="icon-name">system-run-symbolic</property>
+        <property name="action-name">win.compile</property>
+      </object>
+    </child>
+    
+    <child type="end">
+      <object class="GtkMenuButton" id="menu_button">
+        <property name="tooltip-text">Main Menu</property>
+        <property name="icon-name">open-menu-symbolic</property>
+        <property name="menu-model">app_menu</property>
+        <property name="primary">true</property>
+      </object>
+    </child>
+  </template>
+</interface>

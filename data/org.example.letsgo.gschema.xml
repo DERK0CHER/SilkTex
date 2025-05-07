@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="letsgo">
+  <schema id="org.example.letsgo" path="/org/example/letsgo/">
+    <key name="window-width" type="i">
+      <default>800</default>
+      <summary>Window width</summary>
+      <description>Width of the application window in pixels</description>
+    </key>
+    <key name="window-height" type="i">
+      <default>600</default>
+      <summary>Window height</summary>
+      <description>Height of the application window in pixels</description>
+    </key>
+    <key name="is-maximized" type="b">
+      <default>false</default>
+      <summary>Window maximized</summary>
+      <description>Whether the window is maximized</description>
+    </key>
+    <key name="dark-mode" type="b">
+      <default>false</default>
+      <summary>Dark mode</summary>
+      <description>Whether the application uses dark mode</description>
+    </key>
+    <key name="notifications-enabled" type="b">
+      <default>true</default>
+      <summary>Notifications enabled</summary>
+      <description>Whether notifications are enabled</description>
+    </key>
+  </schema>
+</schemalist>
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="letsgo">
+  <schema id="org.example.letsgo" path="/org/example/letsgo/">
+    <key name="window-width" type="i">
+      <default>800</default>
+      <summary>Window width</summary>
+      <description>Width of the application window</description>
+    </key>
+    <key name="window-height" type="i">
+      <default>600</default>
+      <summary>Window height</summary>
+      <description>Height of the application window</description>
+    </key>
+    <key name="is-maximized" type="b">
+      <default>false</default>
+      <summary>Window maximized state</summary>
+      <description>Whether the window is maximized</description>
+    </key>
+    <key name="is-fullscreen" type="b">
+      <default>false</default>
+      <summary>Window fullscreen state</summary>
+      <description>Whether the window is fullscreen</description>
+    </key>
+    <key name="dark-mode" type="b">
+      <default>false</default>
+      <summary>Dark mode</summary>
+      <description>Whether to use dark mode for the application</description>
+    </key>
+    <key name="enable-notifications" type="b">
+      <default>true</default>
+      <summary>Enable notifications</summary>
+      <description>Whether to enable notifications in the application</description>
+    </key>
+    <key name="last-open-folder" type="s">
+      <default>""</default>
+      <summary>Last open folder</summary>
+      <description>Path of the last folder accessed in the application</description>
+    </key>
+  </schema>
+</schemalist>

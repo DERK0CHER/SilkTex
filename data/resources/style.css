@@ -1,0 +1,112 @@
+/* Main application styling */
+.title-1 {
+    font-size: 24pt;
+    font-weight: bold;
+}
+
+.title-4 {
+    font-size: 12pt;
+    opacity: 0.8;
+}
+
+/* Styled button for primary actions */
+button.suggested-action.pill {
+    padding: 12px 24px;
+    border-radius: 9999px;
+    font-weight: bold;
+}
+
+/* Card styling */
+.card {
+    background-color: @card_bg_color;
+    border-radius: 12px;
+    padding: 16px;
+    margin: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: all 200ms ease;
+}
+
+.card:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    transform: translateY(-2px);
+}
+/* Main styles for Letsgo application */
+
+/* Make sidebar more prominent */
+.sidebar {
+  border-right: 1px solid @borders;
+}
+
+/* Style for the editor */
+.editor {
+  font-family: "Monospace", monospace;
+  font-size: 14px;
+}
+
+/* Custom styling for buttons */
+button.pill {
+  border-radius: 9999px;
+  padding: 8px 20px;
+}
+
+button.flat {
+  min-height: 0;
+  min-width: 0;
+  padding: 6px;
+}
+
+/* Status bar styling */
+.statusbar {
+  font-size: 0.9em;
+  padding: 2px 6px;
+  border-top: 1px solid @borders;
+}
+
+/* Custom welcome page styling */
+.welcome-box {
+  margin: 48px 24px;
+}
+
+/* Preferences page styling */
+.preferences-title {
+  font-weight: bold;
+}
+
+/* Dashboard card styling */
+.dashboard-card {
+  border-radius: 12px;
+  padding: 16px;
+  margin: 8px;
+  background-color: alpha(currentColor, 0.05);
+}
+
+/* Dark mode specific adjustments */
+@define-color theme_bg_color #242424;
+@define-color theme_fg_color #ffffff;
+
+/* Toast styling */
+.toast {
+  background-color: alpha(#323232, 0.9);
+  color: white;
+  border-radius: 6px;
+}
+
+/* Action buttons */
+.action-button {
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-weight: bold;
+}
+.welcome-box {
+    background: linear-gradient(135deg, @blue_1, @purple_1);
+    color: white;
+    border-radius: 12px;
+    padding: 24px;
+}
+
+.avatar {
+    border-radius: 50%;
+    background-color: alpha(@blue_1, 0.2);
+    color: @blue_5;
+    font-weight: bold;
+}

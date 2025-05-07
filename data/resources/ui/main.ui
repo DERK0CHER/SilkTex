@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <requires lib="libadwaita" version="1.0"/>
+  <template class="SilkTexWindow" parent="AdwApplicationWindow">
+    <property name="default-width">1200</property>
+    <property name="default-height">800</property>
+    <property name="title">SilkTex</property>
+    <child>
+      <object class="GtkBox">
+        <property name="orientation">vertical</property>
+        <child>
+          <object class="AdwHeaderBar" id="header_bar">
+            <property name="centering-policy">strict</property>
+            <property name="show-end-title-buttons">true</property>
+            <child type="start">
+              <object class="GtkButton" id="open_button">
+                <property name="tooltip-text">Open File</property>
+                <property name="icon-name">document-open-symbolic</property>
+                <property name="action-name">app.open</property>
+              </object>
+            </child>
+            <child type="start">
+              <object class="GtkButton" id="save_button">
+                <property name="tooltip-text">Save</property>
+                <property name="icon-name">document-save-symbolic</property>
+                <property name="action-name">app.save</property>
+              </object>
+            </child>
+            <child type="end">
+              <object class="GtkMenuButton" id="menu_button">
+                <property name="tooltip-text">Main Menu</property>
+                <property name="icon-name">open-menu-symbolic</property>
+                <property name="menu-model">primary_menu</property>
+                <property name="primary">true</property>
+              </object>
+            </child>
+            <child type="end">
+              <object class="GtkButton" id="compile_button">
+                <property name="tooltip-text">Compile Document</property>
+                <property name="icon-name">system-run-symbolic</property>
+                <property name="action-name">win.compile</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwToastOverlay" id="toast_overlay">
+            <child>
+              <object class="GtkPaned" id="main_paned">
+                <property name="orientation">horizontal</property>
+                <property name="position">250</property>
+                <property name="wide-handle">true</property>
+                <property name="resize-start-child">false</property>
+                <property name="shrink-start-child">false</property>
+                <child>
+                  <object class="GtkBox" id="sidebar_box">
+                    <property name="orientation">vertical</property>
+                    <property name="width-request">220</property>
+                    <style>
+                      <class name="sidebar"/>
+                    </style>
+                    <!-- Sidebar content will be added programmatically -->
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkPaned" id="editor_preview_paned">
+                    <property name="orientation">horizontal</property>
+                    <property name="position">600</property>
+                    <property name="wide-handle">true</property>
+                    <child>
+                      <object class="GtkBox" id="editor_box">
+                        <property name="orientation">vertical</property>
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        <!-- Editor content will be added programmatically -->
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkBox" id="preview_box">
+                        <property name="orientation">vertical</property>
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        <!-- Preview content will be added programmatically -->
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkActionBar" id="status_bar">
+            <child>
+              <object class="GtkLabel" id="status_label">
+                <property name="label">Ready</property>
+                <property name="xalign">0</property>
+              </object>
+            </child>
+            <child type="end">
+              <object class="GtkLabel" id="cursor_position_label">
+                <property name="label">Line: 1, Col: 1</property>
+                <property name="margin-end">10</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+  <menu id="primary_menu">
+    <section>
+      <item>
+        <attribute name="label">New Document</attribute>
+        <attribute name="action">app.new</attribute>
+      </item>
+      <item>
+        <attribute name="label">Open</attribute>
+        <attribute name="action">app.open</attribute>
+      </item>
+      <item>
+        <attribute name="label">Save</attribute>
+        <attribute name="action">app.save</attribute>
+      </item>
+      <item>
+        <attribute name="label">Save As</attribute>
+        <attribute name="action">app.save-as</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Zoom In</attribute>
+        <attribute name="action">win.zoom-in</attribute>
+      </item>
+      <item>
+        <attribute name="label">Zoom Out</attribute>
+        <attribute name="action">win.zoom-out</attribute>
+      </item>
+      <item>
+        <attribute name="label">Reset Zoom</attribute>
+        <attribute name="action">win.zoom-reset</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Compile Document</attribute>
+        <attribute name="action">win.compile</attribute>
+      </item>
+      <item>
+        <attribute name="label">Show Errors</attribute>
+        <attribute name="action">win.show-errors</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Toggle Sidebar</attribute>
+        <attribute name="action">win.toggle-sidebar</attribute>
+      </item>
+      <item>
+        <attribute name="label">Preferences</attribute>
+        <attribute name="action">app.preferences</attribute>
+      </item>
+      <item>
+        <attribute name="label">About SilkTex</attribute>
+        <attribute name="action">app.about</attribute>
+      </item>
+    </section>
+  </menu>
+</interface>

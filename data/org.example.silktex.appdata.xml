@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.example.silktex</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>SilkTex</name>
+  <summary>LaTeX editor with live preview</summary>
+  <description>
+    <p>
+      SilkTex is a LaTeX editor designed for writing and compiling LaTeX documents
+      with a focus on simplicity and productivity. It includes a live preview pane
+      that shows the PDF output in real-time.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>Clean, modern GTK4 interface with light and dark themes</li>
+      <li>Syntax highlighting for LaTeX</li>
+      <li>Real-time PDF preview</li>
+      <li>Document structure navigation</li>
+      <li>BibTeX support</li>
+      <li>Document templates</li>
+      <li>Snippets for quick code insertion</li>
+      <li>Document statistics</li>
+      <li>Error detection and highlighting</li>
+      <li>Spell checking</li>
+      <li>Project management for multiple files</li>
+      <li>Multiple LaTeX engine support (pdflatex, xelatex, lualatex)</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">org.example.silktex.desktop</launchable>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://example.com/silktex/screenshot1.png</image>
+      <caption>SilkTex editor with document open</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://example.com/silktex/screenshot2.png</image>
+      <caption>Live preview of LaTeX document</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://example.com/silktex/screenshot3.png</image>
+      <caption>Snippets library and templates</caption>
+    </screenshot>
+  </screenshots>
+  <url type="homepage">https://example.com/silktex</url>
+  <url type="bugtracker">https://example.com/silktex/issues</url>
+  <url type="help">https://example.com/silktex/docs</url>
+  <content_rating type="oars-1.1" />
+  <provides>
+    <binary>silktex</binary>
+  </provides>
+  <requires>
+    <display_length compare="ge">medium</display_length>
+  </requires>
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+  <releases>
+    <release version="0.1.0" date="2023-07-15">
+      <description>
+        <p>Initial release of SilkTex with the following features:</p>
+        <ul>
+          <li>Modern GTK4 and libadwaita interface</li>
+          <li>LaTeX editing with syntax highlighting</li>
+          <li>Live PDF preview</li>
+          <li>Document structure navigation</li>
+          <li>Templates and snippets</li>
+          <li>Support for multiple LaTeX engines</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+  <developer_name>SilkTex Team</developer_name>
+  <update_contact>silktex@example.com</update_contact>
+</component>

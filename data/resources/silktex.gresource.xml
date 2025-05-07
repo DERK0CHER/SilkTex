@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/org/example/silktex">
+    <file preprocess="xml-stripblanks">ui/main_window.ui</file>
+    <file preprocess="xml-stripblanks">ui/main.ui</file>
+    <file preprocess="xml-stripblanks">ui/preferences.ui</file>
+    <file preprocess="xml-stripblanks">ui/template_dialog.ui</file>
+    <file preprocess="xml-stripblanks">ui/snippet_dialog.ui</file>
+    <file preprocess="xml-stripblanks">ui/document_statistics.ui</file>
+    <file>css/style.css</file>
+  </gresource>
+</gresources>

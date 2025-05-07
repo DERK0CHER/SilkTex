@@ -1,0 +1,9 @@
+data/org.example.letsgo.desktop.in
+data/org.example.letsgo.metainfo.xml.in
+data/org.example.letsgo.gschema.xml
+data/ui/window.ui
+data/ui/headerbar.ui
+data/ui/sidebar.ui
+data/ui/editorview.ui
+data/ui/statusbar.ui
+src/letsgo.py

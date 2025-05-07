@@ -1,0 +1,22 @@
+#!@PYTHON@
+
+import os
+import sys
+import signal
+import locale
+import gettext
+
+VERSION = '@VERSION@'
+pkgdatadir = '@pkgdatadir@'
+localedir = '@LOCALEDIR@'
+
+sys.path.insert(1, pkgdatadir)
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+locale.bindtextdomain('silktex', localedir)
+locale.textdomain('silktex')
+gettext.install('silktex', localedir)
+
+if __name__ == '__main__':
+    import gi
+    from silktex.main import main
+    sys.exit(main(VERSION))

@@ -1,0 +1,197 @@
+/* SilkTex application styles */
+
+/* Main window styles */
+.sidebar {
+  border-right: 1px solid alpha(@borders, 0.6);
+}
+
+.view-header {
+  border-bottom: 1px solid alpha(@borders, 0.6);
+  background-color: alpha(@view_bg_color, 0.8);
+  padding: 6px;
+}
+
+/* Editor styles */
+.editor-view {
+  padding: 6px;
+}
+
+.editor-view textview {
+  font-family: monospace;
+  background-color: @theme_base_color;
+}
+
+.editor-view textview:focus {
+  background-color: @theme_base_color;
+}
+
+.editor-view textview text {
+  background-color: @theme_base_color;
+  color: @theme_text_color;
+}
+
+/* Current line highlighting */
+.editor-view textview text selection {
+  background-color: alpha(@accent_bg_color, 0.3);
+  color: @theme_text_color;
+}
+
+/* Document structure sidebar */
+.structure-view {
+  background-color: @theme_base_color;
+}
+
+.structure-view list {
+  background-color: transparent;
+}
+
+.structure-view list row {
+  padding: 6px;
+  border-radius: 4px;
+}
+
+.structure-view list row:selected {
+  background-color: alpha(@accent_bg_color, 0.8);
+}
+
+/* Preview view */
+.preview-view {
+  background-color: @theme_base_color;
+}
+
+/* Status bar styles */
+statusbar {
+  border-top: 1px solid alpha(@borders, 0.6);
+}
+
+/* Toast styles */
+toast {
+  border-radius: 8px;
+  margin: 8px;
+}
+
+.error-toast {
+  background-color: alpha(@error_color, 0.9);
+  color: white;
+}
+
+.success-toast {
+  background-color: alpha(@success_color, 0.9);
+  color: white;
+}
+
+/* Toolbar styles */
+.toolbar-view {
+  border-bottom: 1px solid alpha(@borders, 0.5);
+  padding: 6px;
+  background-color: alpha(@theme_bg_color, 0.9);
+}
+
+/* Dialog styles */
+.dialog-content {
+  padding: 12px;
+}
+
+/* Section headers */
+.section-header {
+  font-weight: bold;
+  font-size: 14px;
+  margin-top: 6px;
+  margin-bottom: 6px;
+}
+
+/* Error view */
+.error-view {
+  padding: 12px;
+}
+
+.error-view textview {
+  font-family: monospace;
+  background-color: alpha(@error_bg_color, 0.1);
+  color: @error_fg_color;
+  border-radius: 4px;
+  padding: 8px;
+}
+
+/* LaTeX templates list */
+.template-row {
+  padding: 12px;
+}
+
+.template-title {
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.template-description {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* Adwaita enhancements */
+button.flat:hover {
+  background-color: alpha(@theme_fg_color, 0.1);
+}
+
+.title-header {
+  font-weight: bold;
+  font-size: larger;
+}
+
+/* Line number styling */
+textview.line-numbers {
+  font-family: monospace;
+  font-size: small;
+  color: alpha(@theme_fg_color, 0.6);
+  padding: 0 8px 0 0;
+  border-right: 1px solid alpha(@borders, 0.5);
+}
+
+/* Right margin line */
+textview.right-margin {
+  border-right: 1px solid alpha(@accent_color, 0.4);
+}
+
+/* Highlighting improvements */
+@keyframes highlight {
+  from { background-color: alpha(@accent_bg_color, 0.2); }
+  to { background-color: transparent; }
+}
+
+.highlight-animation {
+  animation: highlight 2s ease-out;
+}
+
+/* Paned handle styling */
+paned > separator {
+  background-color: alpha(@borders, 0.5);
+}
+
+/* Toolbar buttons */
+.toolbar-button {
+  border-radius: 4px;
+  padding: 4px;
+}
+
+.toolbar-button:hover {
+  background-color: alpha(@theme_fg_color, 0.1);
+}
+
+/* Custom scrollbars */
+scrollbar {
+  background-color: transparent;
+  border-left: 1px solid alpha(@borders, 0.2);
+}
+
+scrollbar slider {
+  border-radius: 8px;
+  background-color: alpha(@theme_fg_color, 0.3);
+}
+
+scrollbar slider:hover {
+  background-color: alpha(@theme_fg_color, 0.4);
+}
+
+scrollbar slider:active {
+  background-color: alpha(@theme_fg_color, 0.5);
+}

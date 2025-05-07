@@ -1,0 +1,63 @@
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+name: CI
+
+jobs:
+  rustfmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Create blank versions of configured file
+        run: echo -e "" >> src/config.rs
+      - name: Run cargo fmt
+        run: cargo fmt --all -- --check
+
+  flatpak-manifest-lint:
+    name: Lint Flatpak Manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker run -v $(pwd):/mnt --rm -t ghcr.io/flathub/flatpak-builder-lint:latest manifest /mnt/build-aux/io.github.finefindus.Hieroglyphic.json
+
+  flatpak:
+    name: Flatpak
+    runs-on: ubuntu-latest
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:gnome-nightly
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add Flathub Beta remote
+        run: |
+          flatpak --user remote-add --if-not-exists flathub-beta https://flathub.org/beta-repo/flathub-beta.flatpakrepo
+          flatpak install --user -y flathub-beta org.freedesktop.Sdk.Extension.rust-stable//24.08beta org.freedesktop.Sdk.Extension.llvm18//24.08beta
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: Hieroglyphic.flatpak
+          # repository-name: flathub-beta
+          manifest-path: build-aux/io.github.finefindus.Hieroglyphic.Devel.json
+          run-tests: true
+          cache-key: flatpak-builder-${{ github.sha }}
+
+  spell_check:
+    name: Spell Checker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - name: Install Python Dependencies
+        run: pip install codespell
+      - name: Run spellchecker
+        run: codespell  -S po,_build,.git,.flatpak,_builddir,build,target -L crate,rouge,vermillion,oint
