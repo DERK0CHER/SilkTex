@@ -1,5 +1,6 @@
 ## Latex editor based on GUMMI
 
+- Its working on macOS (till i update to GTK 4) :)
 - Snippets to autocomplete via Keybinds.
 - Real time Preview
 - fast compilation
@@ -7,6 +8,7 @@
 - sharper on HIdpi Displays 
 
 ## Meson buildable
+
 ```
 $ git clone https://github.com/DERK0CHER/SilkTex.git
 $ cd SilkTex
