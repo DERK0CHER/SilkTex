@@ -9,7 +9,6 @@ GTK4-Adwaita framework
 ```
 $ meson setup bild
 $ ninja -C build
-
 ```
 ### ⚠️ TODO 
 - upgrade from glade/ui to blueprint
