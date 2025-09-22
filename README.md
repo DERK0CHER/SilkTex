@@ -5,6 +5,12 @@ Real time Preview
 fast compilation
 GTK4-Adwaita framework
 
-#Meson buildable
+## Meson buildable
+```
+$ meson setup bild
+$ ninja -C build
 
-##TODO upgrade from glade/ui to blueprint
+```
+### ⚠️ TODO 
+- upgrade from glade/ui to blueprint
+- better Luatex integration
