@@ -9,6 +9,7 @@
 ## Meson buildable
 ```
 $ git clone https://github.com/DERK0CHER/SilkTex.git
+$ cd SilkTex
 $ meson setup bild
 $ ninja -C build
 ```
