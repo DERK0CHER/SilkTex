@@ -35,7 +35,7 @@
 
 void config_init ();
 
-void config_load_defaults();
+void config_load_defaults(GKeyFile* key_file);
 
 void config_save ();
 

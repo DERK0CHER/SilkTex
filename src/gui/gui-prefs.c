@@ -621,7 +621,7 @@ void on_prefs_close_clicked (GtkWidget* widget, void* user) {
 
 G_MODULE_EXPORT
 void on_prefs_reset_clicked (GtkWidget* widget, void* user) {
-    config_load_defaults ();
+   // config_load_defaults ();
     utils_copy_file (C_DEFAULTTEXT, C_WELCOMETEXT, NULL);
 
     set_all_tab_settings (gui->prefsgui);
