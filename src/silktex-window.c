@@ -568,6 +568,7 @@ silktex_window_init(SilktexWindow *self)
     /* Preferences dialog */
     self->prefs = silktex_prefs_new();
     silktex_prefs_set_apply_callback(self->prefs, on_prefs_apply, self);
+    silktex_prefs_set_snippets(self->prefs, self->snippets);
 
     g_signal_connect(self->btn_preview, "toggled",
                      G_CALLBACK(on_preview_toggled), self);
@@ -647,6 +648,15 @@ silktex_window_new_tab(SilktexWindow *self)
     g_return_if_fail(SILKTEX_IS_WINDOW(self));
 
     SilktexEditor *editor = silktex_editor_new();
+
+    /* Load vorlage.tex as the default new-tab content */
+    g_autofree char *vorlage = g_build_filename(GUMMI_DATA, "templates", "vorlage.tex", NULL);
+    if (g_file_test(vorlage, G_FILE_TEST_EXISTS)) {
+        g_autofree char *text = NULL;
+        if (g_file_get_contents(vorlage, &text, NULL, NULL))
+            silktex_editor_set_text(editor, text, -1);
+    }
+
     GtkWidget *page_widget = create_editor_page(self, editor);
     AdwTabPage *page = adw_tab_view_append(self->tab_view, page_widget);
 

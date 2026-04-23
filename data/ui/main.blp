@@ -170,12 +170,22 @@ menu primary_menu {
   }
   section {
     item {
-      label: _("_Preferences");
-      action: "app.preferences";
+      label: _("_Find…");
+      action: "win.find";
     }
     item {
-      label: _("_Keyboard Shortcuts");
-      action: "win.show-help-overlay";
+      label: _("Find and _Replace…");
+      action: "win.find-replace";
+    }
+    item {
+      label: _("_Forward SyncTeX");
+      action: "win.forward-sync";
+    }
+  }
+  section {
+    item {
+      label: _("_Preferences");
+      action: "win.preferences";
     }
     item {
       label: _("_About SilkTex");

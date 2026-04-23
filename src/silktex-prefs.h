@@ -5,6 +5,7 @@
 #pragma once
 #include <adwaita.h>
 #include "silktex-editor.h"
+#include "silktex-snippets.h"
 
 G_BEGIN_DECLS
 
@@ -19,6 +20,7 @@ SilktexPrefs *silktex_prefs_new(void);
 void silktex_prefs_set_apply_callback(SilktexPrefs *self,
                                       SilktexPrefsApplyFunc func,
                                       gpointer user_data);
+void silktex_prefs_set_snippets(SilktexPrefs *self, SilktexSnippets *snippets);
 void silktex_prefs_present(SilktexPrefs *self, GtkWindow *parent);
 
 G_END_DECLS

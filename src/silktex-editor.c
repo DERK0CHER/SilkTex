@@ -315,9 +315,7 @@ silktex_editor_set_text(SilktexEditor *self, const char *text, gssize len)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
-    gtk_text_buffer_begin_user_action(GTK_TEXT_BUFFER(self->buffer));
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(self->buffer), text, (int)len);
-    gtk_text_buffer_end_user_action(GTK_TEXT_BUFFER(self->buffer));
 
     GtkTextIter start;
     gtk_text_buffer_get_start_iter(GTK_TEXT_BUFFER(self->buffer), &start);

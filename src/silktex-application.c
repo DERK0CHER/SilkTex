@@ -47,20 +47,9 @@ action_about(GSimpleAction *action, GVariant *parameter, gpointer user_data)
                           NULL);
 }
 
-static void
-action_preferences(GSimpleAction *action, GVariant *parameter, gpointer user_data)
-{
-    GtkApplication *app = GTK_APPLICATION(user_data);
-    GtkWindow *window = gtk_application_get_active_window(app);
-    
-    AdwDialog *dialog = adw_preferences_dialog_new();
-    adw_dialog_present(dialog, GTK_WIDGET(window));
-}
-
 static const GActionEntry app_actions[] = {
     { "quit", action_quit },
     { "about", action_about },
-    { "preferences", action_preferences },
 };
 
 static void

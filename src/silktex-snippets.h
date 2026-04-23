@@ -20,10 +20,9 @@ G_DECLARE_FINAL_TYPE(SilktexSnippets, silktex_snippets, SILKTEX, SNIPPETS, GObje
 
 SilktexSnippets *silktex_snippets_new(void);
 
-/* Load / save the snippets file */
-void silktex_snippets_load(SilktexSnippets *self);
-void silktex_snippets_save(SilktexSnippets *self);
-void silktex_snippets_reset_to_default(SilktexSnippets *self);
+const char *silktex_snippets_get_filename(SilktexSnippets *self);
+void        silktex_snippets_reload(SilktexSnippets *self);
+void        silktex_snippets_reset_to_default(SilktexSnippets *self);
 
 /* Key-press handler – returns TRUE if the event was consumed */
 gboolean silktex_snippets_handle_key(SilktexSnippets *self,
