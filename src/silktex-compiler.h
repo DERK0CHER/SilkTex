@@ -32,6 +32,7 @@ gboolean silktex_compiler_is_compiling(SilktexCompiler *self);
 
 void silktex_compiler_set_shell_escape(SilktexCompiler *self, gboolean enabled);
 void silktex_compiler_set_synctex(SilktexCompiler *self, gboolean enabled);
+void silktex_compiler_apply_config(SilktexCompiler *self);
 
 const char *silktex_compiler_get_log(SilktexCompiler *self);
 int *silktex_compiler_get_error_lines(SilktexCompiler *self);

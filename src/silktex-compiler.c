@@ -4,6 +4,7 @@
  */
 
 #include "silktex-compiler.h"
+#include "configfile.h"
 #include <glib/gstdio.h>
 #include <signal.h>
 
@@ -365,6 +366,17 @@ silktex_compiler_set_synctex(SilktexCompiler *self, gboolean enabled)
 {
     g_return_if_fail(SILKTEX_IS_COMPILER(self));
     self->synctex = enabled;
+}
+
+void
+silktex_compiler_apply_config(SilktexCompiler *self)
+{
+    g_return_if_fail(SILKTEX_IS_COMPILER(self));
+    const char *ts = config_get_string("Compile", "typesetter");
+    if (ts && *ts)
+        silktex_compiler_set_typesetter(self, ts);
+    silktex_compiler_set_shell_escape(self, config_get_boolean("Compile", "shellescape"));
+    silktex_compiler_set_synctex(self,   config_get_boolean("Compile", "synctex"));
 }
 
 const char *

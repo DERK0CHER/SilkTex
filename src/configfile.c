@@ -37,8 +37,17 @@ static const gchar default_config[] =
 "typesetter = pdflatex\n"
 "auto_compile = true\n"
 "timer = 1\n"
-"shellescape = true\n"
-"synctex = false\n";
+"shellescape = false\n"
+"synctex = false\n"
+"\n"
+"[File]\n"
+"autosaving = false\n"
+"autosave_timer = 10\n"
+"autoexport = false\n"
+"\n"
+"[Spelling]\n"
+"enabled = false\n"
+"language = en_US\n";
 
 static GKeyFile *key_file = NULL;
 static gchar *conf_filepath = NULL;

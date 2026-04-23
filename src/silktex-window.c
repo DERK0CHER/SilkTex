@@ -11,6 +11,7 @@
 #include "configfile.h"
 #include "constants.h"
 #include <glib/gi18n.h>
+#include <glib/gstdio.h>
 
 struct _SilktexWindow {
     AdwApplicationWindow parent_instance;
@@ -33,7 +34,12 @@ struct _SilktexWindow {
     SilktexSnippets *snippets;
     SilktexPrefs *prefs;
 
+    /* compile log panel */
+    GtkRevealer *log_revealer;
+    GtkTextBuffer *log_buf;
+
     guint compile_timer_id;
+    guint autosave_timer_id;
     gboolean auto_compile;
 };
 
@@ -92,8 +98,11 @@ restart_compile_timer(SilktexWindow *self)
 {
     if (self->compile_timer_id > 0) {
         g_source_remove(self->compile_timer_id);
+        self->compile_timer_id = 0;
     }
-    self->compile_timer_id = g_timeout_add_seconds(1, on_compile_timer, self);
+    int delay = config_get_integer("Compile", "timer");
+    if (delay < 1) delay = 1;
+    self->compile_timer_id = g_timeout_add_seconds((guint)delay, on_compile_timer, self);
 }
 
 static void
@@ -113,6 +122,14 @@ on_editor_changed(SilktexEditor *editor, gpointer user_data)
 }
 
 static void
+update_log_panel(SilktexWindow *self)
+{
+    if (!self->log_buf) return;
+    const char *log = silktex_compiler_get_log(self->compiler);
+    gtk_text_buffer_set_text(self->log_buf, log ? log : "", -1);
+}
+
+static void
 on_compile_finished(SilktexCompiler *compiler, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
@@ -124,13 +141,15 @@ on_compile_finished(SilktexCompiler *compiler, gpointer user_data)
             silktex_preview_load_file(self->preview, pdffile);
         }
     }
+    update_log_panel(self);
 }
 
 static void
 on_compile_error(SilktexCompiler *compiler, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
-    silktex_window_show_toast(self, _("Compilation error - check build log"));
+    silktex_window_show_toast(self, _("Compilation error — see compile log"));
+    update_log_panel(self);
 }
 
 static GtkWidget *
@@ -401,17 +420,59 @@ action_forward_sync(GSimpleAction *action, GVariant *parameter, gpointer user_da
 }
 
 static void
+action_toggle_preview(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    gboolean active = gtk_toggle_button_get_active(self->btn_preview);
+    gtk_toggle_button_set_active(self->btn_preview, !active);
+}
+
+static void
 action_preferences(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     silktex_prefs_present(self->prefs, GTK_WINDOW(self));
 }
 
+static gboolean
+on_autosave_timer(gpointer user_data)
+{
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    guint n = adw_tab_view_get_n_pages(self->tab_view);
+    for (guint i = 0; i < n; i++) {
+        AdwTabPage *page = adw_tab_view_get_nth_page(self->tab_view, i);
+        SilktexEditor *editor = get_editor_for_page(page);
+        if (editor && silktex_editor_get_modified(editor)) {
+            const char *fname = silktex_editor_get_filename(editor);
+            if (fname && *fname) {
+                GFile *f = g_file_new_for_path(fname);
+                silktex_editor_save_file(editor, f, NULL);
+                g_object_unref(f);
+            }
+        }
+    }
+    return G_SOURCE_CONTINUE;
+}
+
+static void
+restart_autosave_timer(SilktexWindow *self)
+{
+    if (self->autosave_timer_id > 0) {
+        g_source_remove(self->autosave_timer_id);
+        self->autosave_timer_id = 0;
+    }
+    if (config_get_boolean("File", "autosaving")) {
+        int delay = config_get_integer("File", "autosave_timer");
+        if (delay < 1) delay = 1;
+        self->autosave_timer_id = g_timeout_add_seconds((guint)delay * 60,
+                                                         on_autosave_timer, self);
+    }
+}
+
 static void
 on_prefs_apply(gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
-    /* Apply settings to every open editor */
     guint n = adw_tab_view_get_n_pages(self->tab_view);
     for (guint i = 0; i < n; i++) {
         AdwTabPage *page = adw_tab_view_get_nth_page(self->tab_view, i);
@@ -421,6 +482,8 @@ on_prefs_apply(gpointer user_data)
     }
     config_save();
     self->auto_compile = config_get_boolean("Compile", "auto_compile");
+    silktex_compiler_apply_config(self->compiler);
+    restart_autosave_timer(self);
 }
 
 static void
@@ -429,6 +492,8 @@ on_preview_toggled(GtkToggleButton *button, gpointer user_data)
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     gboolean visible = gtk_toggle_button_get_active(button);
     gtk_widget_set_visible(GTK_WIDGET(self->preview_box), visible);
+    gtk_button_set_icon_name(GTK_BUTTON(button),
+        visible ? "view-dual-symbolic" : "view-continuous-symbolic");
 }
 
 static void
@@ -445,14 +510,66 @@ on_tab_changed(AdwTabView *view, GParamSpec *pspec, gpointer user_data)
     }
 }
 
+typedef struct {
+    AdwTabView  *view;
+    AdwTabPage  *page;
+    SilktexWindow *win;
+} ClosePageData;
+
+static void
+on_close_dialog_response(AdwAlertDialog *dialog,
+                          const char      *response,
+                          gpointer         user_data)
+{
+    ClosePageData *d = user_data;
+    SilktexEditor *editor = get_editor_for_page(d->page);
+
+    if (g_strcmp0(response, "save") == 0 && editor) {
+        const char *fname = silktex_editor_get_filename(editor);
+        if (fname && *fname) {
+            GFile *f = g_file_new_for_path(fname);
+            silktex_editor_save_file(editor, f, NULL);
+            g_object_unref(f);
+        }
+        adw_tab_view_close_page_finish(d->view, d->page, TRUE);
+    } else if (g_strcmp0(response, "discard") == 0) {
+        adw_tab_view_close_page_finish(d->view, d->page, TRUE);
+    } else {
+        adw_tab_view_close_page_finish(d->view, d->page, FALSE);
+    }
+
+    g_free(d);
+}
+
 static gboolean
 on_close_page(AdwTabView *view, AdwTabPage *page, gpointer user_data)
 {
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
     SilktexEditor *editor = get_editor_for_page(page);
-    if (editor != NULL && silktex_editor_get_modified(editor)) {
-        return GDK_EVENT_STOP;
-    }
-    return GDK_EVENT_PROPAGATE;
+
+    if (editor == NULL || !silktex_editor_get_modified(editor))
+        return GDK_EVENT_PROPAGATE;
+
+    ClosePageData *d = g_new(ClosePageData, 1);
+    d->view = view;
+    d->page = page;
+    d->win  = self;
+
+    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(
+        adw_alert_dialog_new("Save Changes?",
+            "This document has unsaved changes. Save before closing?"));
+    adw_alert_dialog_add_response(dlg, "cancel",  "Cancel");
+    adw_alert_dialog_add_response(dlg, "discard", "Discard");
+    adw_alert_dialog_add_response(dlg, "save",    "Save");
+    adw_alert_dialog_set_response_appearance(dlg, "discard", ADW_RESPONSE_DESTRUCTIVE);
+    adw_alert_dialog_set_response_appearance(dlg, "save",    ADW_RESPONSE_SUGGESTED);
+    adw_alert_dialog_set_default_response(dlg, "save");
+    adw_alert_dialog_set_close_response(dlg, "cancel");
+
+    g_signal_connect(dlg, "response", G_CALLBACK(on_close_dialog_response), d);
+    adw_dialog_present(ADW_DIALOG(dlg), GTK_WIDGET(self));
+
+    return GDK_EVENT_STOP;
 }
 
 static const GActionEntry win_actions[] = {
@@ -473,6 +590,7 @@ static const GActionEntry win_actions[] = {
     { "find", action_find },
     { "find-replace", action_find_replace },
     { "forward-sync", action_forward_sync },
+    { "toggle-preview", action_toggle_preview },
     { "preferences", action_preferences },
 };
 
@@ -490,6 +608,21 @@ on_window_key_pressed(GtkEventControllerKey *ctrl,
     return silktex_snippets_handle_key(self->snippets, editor, keyval, state);
 }
 
+/* Mirror placeholder groups after the character has been committed to the
+ * buffer (fires post-insertion, unlike key-pressed). */
+static gboolean
+on_window_key_released(GtkEventControllerKey *ctrl,
+                       guint                  keyval,
+                       guint                  keycode,
+                       GdkModifierType        state,
+                       gpointer               user_data)
+{
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    SilktexEditor *editor = silktex_window_get_active_editor(self);
+    if (!editor) return GDK_EVENT_PROPAGATE;
+    return silktex_snippets_handle_key_release(self->snippets, editor, keyval, state);
+}
+
 static void
 silktex_window_dispose(GObject *object)
 {
@@ -498,6 +631,10 @@ silktex_window_dispose(GObject *object)
     if (self->compile_timer_id > 0) {
         g_source_remove(self->compile_timer_id);
         self->compile_timer_id = 0;
+    }
+    if (self->autosave_timer_id > 0) {
+        g_source_remove(self->autosave_timer_id);
+        self->autosave_timer_id = 0;
     }
 
     silktex_compiler_stop(self->compiler);
@@ -538,6 +675,7 @@ silktex_window_init(SilktexWindow *self)
                                     G_N_ELEMENTS(win_actions), self);
 
     self->compiler = silktex_compiler_new();
+    silktex_compiler_apply_config(self->compiler);
     silktex_compiler_start(self->compiler);
 
     g_signal_connect(self->compiler, "compile-finished",
@@ -546,6 +684,8 @@ silktex_window_init(SilktexWindow *self)
                      G_CALLBACK(on_compile_error), self);
 
     self->preview = silktex_preview_new();
+    gtk_widget_set_hexpand(GTK_WIDGET(self->preview), TRUE);
+    gtk_widget_set_vexpand(GTK_WIDGET(self->preview), TRUE);
     gtk_box_append(self->preview_box, GTK_WIDGET(self->preview));
 
     /* Search bar – inserted above the tab bar inside the paned left child */
@@ -564,6 +704,8 @@ silktex_window_init(SilktexWindow *self)
     gtk_widget_add_controller(GTK_WIDGET(self), GTK_EVENT_CONTROLLER(key_ctrl));
     g_signal_connect(key_ctrl, "key-pressed",
                      G_CALLBACK(on_window_key_pressed), self);
+    g_signal_connect(key_ctrl, "key-released",
+                     G_CALLBACK(on_window_key_released), self);
 
     /* Preferences dialog */
     self->prefs = silktex_prefs_new();
@@ -578,6 +720,42 @@ silktex_window_init(SilktexWindow *self)
                      G_CALLBACK(on_close_page), self);
 
     self->auto_compile = config_get_boolean("Compile", "auto_compile");
+    restart_autosave_timer(self);
+
+    /* Compile log panel – collapsible at bottom of the editor pane */
+    {
+        GtkWidget *paned_child = gtk_paned_get_start_child(self->editor_paned);
+        if (GTK_IS_BOX(paned_child)) {
+            GtkWidget *log_toggle = gtk_toggle_button_new_with_label("Compile Log");
+            gtk_widget_add_css_class(log_toggle, "flat");
+            gtk_widget_set_margin_top(log_toggle, 2);
+            gtk_widget_set_margin_bottom(log_toggle, 2);
+            gtk_widget_set_margin_start(log_toggle, 4);
+            gtk_widget_set_halign(log_toggle, GTK_ALIGN_START);
+
+            GtkWidget *revealer = gtk_revealer_new();
+            gtk_revealer_set_transition_type(GTK_REVEALER(revealer),
+                                             GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN);
+            gtk_revealer_set_reveal_child(GTK_REVEALER(revealer), FALSE);
+            self->log_revealer = GTK_REVEALER(revealer);
+
+            self->log_buf = gtk_text_buffer_new(NULL);
+            GtkWidget *log_tv = gtk_text_view_new_with_buffer(self->log_buf);
+            gtk_text_view_set_editable(GTK_TEXT_VIEW(log_tv), FALSE);
+            gtk_text_view_set_monospace(GTK_TEXT_VIEW(log_tv), TRUE);
+            gtk_widget_set_vexpand(log_tv, TRUE);
+            GtkWidget *log_scroll = gtk_scrolled_window_new();
+            gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(log_scroll), 140);
+            gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(log_scroll), log_tv);
+            gtk_revealer_set_child(GTK_REVEALER(revealer), log_scroll);
+
+            gtk_box_append(GTK_BOX(paned_child), log_toggle);
+            gtk_box_append(GTK_BOX(paned_child), revealer);
+
+            g_object_bind_property(log_toggle, "active", revealer, "reveal-child",
+                                   G_BINDING_DEFAULT);
+        }
+    }
 
     silktex_window_new_tab(self);
 
@@ -601,6 +779,7 @@ silktex_window_init(SilktexWindow *self)
         { "win.find", "<Control>f" },
         { "win.find-replace", "<Control>h" },
         { "win.forward-sync", "<Control><Shift>f" },
+        { "win.toggle-preview", "F9" },
         { "win.preferences", "<Control>comma" },
     };
 

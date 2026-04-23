@@ -171,6 +171,7 @@ silktex_editor_init(SilktexEditor *self)
     GtkSourceLanguage *lang = gtk_source_language_manager_get_language(lm, "latex");
 
     self->buffer = gtk_source_buffer_new_with_language(lang);
+    gtk_source_buffer_set_highlight_matching_brackets(self->buffer, TRUE);
     self->view = GTK_SOURCE_VIEW(gtk_source_view_new_with_buffer(self->buffer));
     self->style_manager = gtk_source_style_scheme_manager_get_default();
 
@@ -495,28 +496,37 @@ silktex_editor_search_next(SilktexEditor *self, gboolean backwards)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
-    if (self->search_term == NULL) return;
+    if (self->search_term == NULL || !*self->search_term) return;
 
     GtkTextIter current, mstart, mend;
     GtkTextMark *mark = gtk_text_buffer_get_insert(GTK_TEXT_BUFFER(self->buffer));
     gtk_text_buffer_get_iter_at_mark(GTK_TEXT_BUFFER(self->buffer), &current, mark);
 
     GtkTextSearchFlags flags = 0;
-    if (!self->search_match_case) {
+    if (!self->search_match_case)
         flags |= GTK_TEXT_SEARCH_CASE_INSENSITIVE;
-    }
 
-    gboolean found = FALSE;
-    if (self->search_backwards ^ backwards) {
-        found = gtk_text_iter_backward_search(&current, self->search_term, flags, &mstart, &mend, NULL);
-    } else {
-        gtk_text_iter_forward_chars(&current, (int)strlen(self->search_term));
-        found = gtk_text_iter_forward_search(&current, self->search_term, flags, &mstart, &mend, NULL);
-    }
+    gboolean go_back = self->search_backwards ^ backwards;
 
-    if (found) {
-        gtk_text_buffer_select_range(GTK_TEXT_BUFFER(self->buffer), &mstart, &mend);
-        silktex_editor_scroll_to_cursor(self);
+    /* Advance past the current selection so we don't re-find it */
+    if (!go_back)
+        gtk_text_iter_forward_chars(&current, (int)g_utf8_strlen(self->search_term, -1));
+
+    while (TRUE) {
+        gboolean found = go_back
+            ? gtk_text_iter_backward_search(&current, self->search_term, flags, &mstart, &mend, NULL)
+            : gtk_text_iter_forward_search (&current, self->search_term, flags, &mstart, &mend, NULL);
+
+        if (!found) return;
+
+        if (!self->search_whole_word ||
+            (gtk_text_iter_starts_word(&mstart) && gtk_text_iter_ends_word(&mend))) {
+            gtk_text_buffer_select_range(GTK_TEXT_BUFFER(self->buffer), &mstart, &mend);
+            silktex_editor_scroll_to_cursor(self);
+            return;
+        }
+        /* Not a whole-word match – continue from here */
+        current = go_back ? mstart : mend;
     }
 }
 
@@ -558,9 +568,14 @@ silktex_editor_replace_all(SilktexEditor *self, const char *term, const char *re
 
     gtk_text_buffer_begin_user_action(GTK_TEXT_BUFFER(self->buffer));
     while (gtk_text_iter_forward_search(&start, term, flags, &mstart, &mend, NULL)) {
-        gtk_text_buffer_delete(GTK_TEXT_BUFFER(self->buffer), &mstart, &mend);
-        gtk_text_buffer_insert(GTK_TEXT_BUFFER(self->buffer), &mstart, replacement, -1);
-        start = mstart;
+        if (!whole_word ||
+            (gtk_text_iter_starts_word(&mstart) && gtk_text_iter_ends_word(&mend))) {
+            gtk_text_buffer_delete(GTK_TEXT_BUFFER(self->buffer), &mstart, &mend);
+            gtk_text_buffer_insert(GTK_TEXT_BUFFER(self->buffer), &mstart, replacement, -1);
+            start = mstart;
+        } else {
+            start = mend;
+        }
     }
     gtk_text_buffer_end_user_action(GTK_TEXT_BUFFER(self->buffer));
 }
@@ -611,6 +626,10 @@ silktex_editor_apply_settings(SilktexEditor *self)
     const char *scheme = config_get_string("Editor", "style_scheme");
     if (scheme && *scheme)
         silktex_editor_set_style_scheme(self, scheme);
+
+    const char *font = config_get_string("Editor", "font");
+    if (font && *font)
+        silktex_editor_set_font(self, font);
 }
 
 const char *
