@@ -1,0 +1,31 @@
+using Gtk 4.0;
+using Adw 1;
+
+Adw.ApplicationWindow main-window {
+  default-width: 1200;
+  default-height: 800;
+  title: "SilkTex";
+
+  content: Adw.ToolbarView {
+    top-bar-style: raised;
+
+    [top]
+    Adw.HeaderBar top-menubar {
+      title-widget: Adw.WindowTitle {
+        title: "SilkTex";
+      };
+    }
+
+    content: Gtk.Box {
+      orientation: vertical;
+
+      Gtk.Label {
+        label: "SilkTex GTK4/Libadwaita UI";
+        margin-top: 24;
+        margin-bottom: 24;
+        margin-start: 24;
+        margin-end: 24;
+      }
+    };
+  };
+}

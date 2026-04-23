@@ -16,7 +16,7 @@ $ meson setup bild
 $ ninja -C build
 ```
 ### ⚠️ TODO 
-- upgrade from glade/ui to blueprint
+- migrate remaining GTK3 runtime code paths to GTK4/Libadwaita APIs
 - better Luatex integration
 
 ## Fork:

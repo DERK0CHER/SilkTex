@@ -35,7 +35,9 @@
 #include <sys/stat.h>
 
 #include <gtksourceview/gtksource.h>
+#ifdef HAVE_GTKSPELL3
 #include <gtkspell/gtkspell.h>
+#endif
 #include <glib/gstdio.h>
 #include <gtk/gtk.h>
 #include <unistd.h>
@@ -332,6 +334,7 @@ void editor_sourceview_config (GuEditor* ec) {
 }
 
 void editor_activate_spellchecking (GuEditor* ec, gboolean status) {
+#ifdef HAVE_GTKSPELL3
     const gchar* lang = config_get_string ("Editor", "spelling_lang");
     GError* err = NULL;
     GtkSpellChecker* spell = 0;
@@ -351,6 +354,10 @@ void editor_activate_spellchecking (GuEditor* ec, gboolean status) {
             gtk_spell_checker_detach (spell);
     }
     // TODO g_object_unref (spell); ?
+#else
+    (void)ec;
+    (void)status;
+#endif
 }
 
 void editor_fill_buffer (GuEditor* ec, const gchar* text) {

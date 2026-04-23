@@ -110,17 +110,11 @@ int projectgui_list_projfiles (gchar* active_proj) {
 }
 
 GdkPixbuf* projectgui_get_status_pixbuf (int status) {
-    GtkIconTheme* theme = gtk_icon_theme_get_default();
-
     switch (status) {
         case 0:
-            return gtk_icon_theme_load_icon(theme, "go-home", 
-                                                    GTK_ICON_SIZE_MENU,
-                                                    GTK_ICON_LOOKUP_GENERIC_FALLBACK, NULL);
+            return gdk_pixbuf_new (GDK_COLORSPACE_RGB, TRUE, 8, 16, 16);
         case 1:
-            return gtk_icon_theme_load_icon(theme, "process-stop", 
-                                                    GTK_ICON_SIZE_MENU,
-                                                    GTK_ICON_LOOKUP_GENERIC_FALLBACK, NULL);
+            return gdk_pixbuf_new (GDK_COLORSPACE_RGB, TRUE, 8, 16, 16);
         default:
             return NULL;
     }

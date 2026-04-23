@@ -179,14 +179,12 @@ gpointer motion_compile_thread (gpointer data) {
             continue;
         }
 
-        gdk_threads_enter ();
         editortext = latex_update_workfile (editor);
         precompile_ok = latex_precompile_check (editortext);
         g_free (editortext);
-        gdk_threads_leave ();
 
         if (!precompile_ok) {
-            gdk_threads_add_idle (on_document_error, "document_error");
+            g_idle_add (on_document_error, "document_error");
             g_mutex_unlock (&mc->compile_mutex);
             continue;
         }
@@ -199,7 +197,7 @@ gpointer motion_compile_thread (gpointer data) {
         if (!mc->keep_running)
             g_thread_exit (NULL);
 
-        gdk_threads_add_idle (on_document_compiled, editor);
+        g_idle_add (on_document_compiled, editor);
         continue;
     }
 }

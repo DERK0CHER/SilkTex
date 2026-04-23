@@ -23,14 +23,21 @@ schemadir = join_paths(datadir, 'glib-2.0/schemas')
 mandir = join_paths(datadir, 'man/man1/')
 gummidir = join_paths(datadir, meson.project_name())
 
+gtkspell_dep = dependency('gtkspell3-3.0', required: false)
+
 project_dependencies = [
-    dependency('gtk+-3.0'),
+    dependency('gtk4'),
+    dependency('libadwaita-1'),
     dependency('glib-2.0'),
-    dependency('gtksourceview-3.0'),
-    dependency('gtkspell3-3.0'),
+    dependency('gtksourceview-5'),
+    gtkspell_dep,
     dependency('poppler-glib'),
     dependency('synctex'),
 ]
+
+if gtkspell_dep.found()
+  add_project_arguments(['-DHAVE_GTKSPELL3=1'], language: 'c')
+endif
 
 build_args = [
   '-Wl,--export-dynamic',
