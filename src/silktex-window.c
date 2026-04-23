@@ -4,6 +4,10 @@
  */
 
 #include "silktex-window.h"
+#include "silktex-prefs.h"
+#include "silktex-searchbar.h"
+#include "silktex-snippets.h"
+#include "silktex-synctex.h"
 #include "configfile.h"
 #include "constants.h"
 #include <glib/gi18n.h>
@@ -20,8 +24,14 @@ struct _SilktexWindow {
     GtkToggleButton *btn_preview;
     GtkButton *btn_compile;
 
+    /* editor pane container – holds the searchbar + tab view */
+    GtkBox *editor_vbox;  /* created programmatically */
+
     SilktexPreview *preview;
     SilktexCompiler *compiler;
+    SilktexSearchbar *searchbar;
+    SilktexSnippets *snippets;
+    SilktexPrefs *prefs;
 
     guint compile_timer_id;
     gboolean auto_compile;
@@ -359,6 +369,61 @@ action_zoom_fit(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 }
 
 static void
+action_find(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    SilktexEditor *editor = silktex_window_get_active_editor(self);
+    if (editor)
+        silktex_searchbar_set_editor(self->searchbar, editor);
+    silktex_searchbar_open(self->searchbar, FALSE);
+}
+
+static void
+action_find_replace(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    SilktexEditor *editor = silktex_window_get_active_editor(self);
+    if (editor)
+        silktex_searchbar_set_editor(self->searchbar, editor);
+    silktex_searchbar_open(self->searchbar, TRUE);
+}
+
+static void
+action_forward_sync(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    SilktexEditor *editor = silktex_window_get_active_editor(self);
+    if (!editor) return;
+    const char *pdf = silktex_editor_get_pdffile(editor);
+    if (!pdf) return;
+    if (!silktex_synctex_forward(editor, self->preview, pdf))
+        silktex_window_show_toast(self, _("SyncTeX: synctex not available or no .synctex.gz"));
+}
+
+static void
+action_preferences(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    silktex_prefs_present(self->prefs, GTK_WINDOW(self));
+}
+
+static void
+on_prefs_apply(gpointer user_data)
+{
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    /* Apply settings to every open editor */
+    guint n = adw_tab_view_get_n_pages(self->tab_view);
+    for (guint i = 0; i < n; i++) {
+        AdwTabPage *page = adw_tab_view_get_nth_page(self->tab_view, i);
+        SilktexEditor *editor = get_editor_for_page(page);
+        if (editor)
+            silktex_editor_apply_settings(editor);
+    }
+    config_save();
+    self->auto_compile = config_get_boolean("Compile", "auto_compile");
+}
+
+static void
 on_preview_toggled(GtkToggleButton *button, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
@@ -373,8 +438,10 @@ on_tab_changed(AdwTabView *view, GParamSpec *pspec, gpointer user_data)
     update_window_title(self);
 
     SilktexEditor *editor = silktex_window_get_active_editor(self);
-    if (editor != NULL && self->auto_compile) {
-        restart_compile_timer(self);
+    if (editor != NULL) {
+        silktex_searchbar_set_editor(self->searchbar, editor);
+        if (self->auto_compile)
+            restart_compile_timer(self);
     }
 }
 
@@ -403,7 +470,25 @@ static const GActionEntry win_actions[] = {
     { "zoom-in", action_zoom_in },
     { "zoom-out", action_zoom_out },
     { "zoom-fit", action_zoom_fit },
+    { "find", action_find },
+    { "find-replace", action_find_replace },
+    { "forward-sync", action_forward_sync },
+    { "preferences", action_preferences },
 };
+
+/* Route key events to the snippet engine on the active editor */
+static gboolean
+on_window_key_pressed(GtkEventControllerKey *ctrl,
+                      guint                  keyval,
+                      guint                  keycode,
+                      GdkModifierType        state,
+                      gpointer               user_data)
+{
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    SilktexEditor *editor = silktex_window_get_active_editor(self);
+    if (!editor) return GDK_EVENT_PROPAGATE;
+    return silktex_snippets_handle_key(self->snippets, editor, keyval, state);
+}
 
 static void
 silktex_window_dispose(GObject *object)
@@ -417,6 +502,8 @@ silktex_window_dispose(GObject *object)
 
     silktex_compiler_stop(self->compiler);
     g_clear_object(&self->compiler);
+    g_clear_object(&self->snippets);
+    g_clear_object(&self->prefs);
 
     G_OBJECT_CLASS(silktex_window_parent_class)->dispose(object);
 }
@@ -461,6 +548,27 @@ silktex_window_init(SilktexWindow *self)
     self->preview = silktex_preview_new();
     gtk_box_append(self->preview_box, GTK_WIDGET(self->preview));
 
+    /* Search bar – inserted above the tab bar inside the paned left child */
+    self->searchbar = silktex_searchbar_new();
+    GtkWidget *paned_child = gtk_paned_get_start_child(self->editor_paned);
+    if (GTK_IS_BOX(paned_child)) {
+        gtk_box_prepend(GTK_BOX(paned_child), GTK_WIDGET(self->searchbar));
+    }
+
+    /* Snippets engine */
+    self->snippets = silktex_snippets_new();
+    GtkEventControllerKey *key_ctrl = GTK_EVENT_CONTROLLER_KEY(
+        gtk_event_controller_key_new());
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(key_ctrl),
+                                               GTK_PHASE_CAPTURE);
+    gtk_widget_add_controller(GTK_WIDGET(self), GTK_EVENT_CONTROLLER(key_ctrl));
+    g_signal_connect(key_ctrl, "key-pressed",
+                     G_CALLBACK(on_window_key_pressed), self);
+
+    /* Preferences dialog */
+    self->prefs = silktex_prefs_new();
+    silktex_prefs_set_apply_callback(self->prefs, on_prefs_apply, self);
+
     g_signal_connect(self->btn_preview, "toggled",
                      G_CALLBACK(on_preview_toggled), self);
     g_signal_connect(self->tab_view, "notify::selected-page",
@@ -468,7 +576,7 @@ silktex_window_init(SilktexWindow *self)
     g_signal_connect(self->tab_view, "close-page",
                      G_CALLBACK(on_close_page), self);
 
-    self->auto_compile = TRUE;
+    self->auto_compile = config_get_boolean("Compile", "auto_compile");
 
     silktex_window_new_tab(self);
 
@@ -489,6 +597,10 @@ silktex_window_init(SilktexWindow *self)
         { "win.zoom-in", "<Control>plus" },
         { "win.zoom-out", "<Control>minus" },
         { "win.zoom-fit", "<Control>0" },
+        { "win.find", "<Control>f" },
+        { "win.find-replace", "<Control>h" },
+        { "win.forward-sync", "<Control><Shift>f" },
+        { "win.preferences", "<Control>comma" },
     };
 
     GtkApplication *app = GTK_APPLICATION(g_application_get_default());

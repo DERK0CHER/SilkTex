@@ -42,6 +42,13 @@ void silktex_editor_set_font(SilktexEditor *self, const char *font_desc);
 void silktex_editor_scroll_to_line(SilktexEditor *self, int line);
 void silktex_editor_scroll_to_cursor(SilktexEditor *self);
 
+/* Navigate by line (0-based) */
+void silktex_editor_goto_line(SilktexEditor *self, int line);
+int  silktex_editor_get_cursor_line(SilktexEditor *self);
+
+/* Apply all editor settings from configfile */
+void silktex_editor_apply_settings(SilktexEditor *self);
+
 void silktex_editor_apply_textstyle(SilktexEditor *self, const char *style_type);
 
 void silktex_editor_insert_package(SilktexEditor *self, const char *package, const char *options);

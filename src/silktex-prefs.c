@@ -7,6 +7,7 @@
  */
 #include "silktex-prefs.h"
 #include "configfile.h"
+#include "constants.h"
 #include "utils.h"
 #include <glib/gi18n.h>
 #include <gtksourceview/gtksource.h>
@@ -61,7 +62,8 @@ build_scheme_model(SilktexPrefs *self)
     const char * const *ids = gtk_source_style_scheme_manager_get_scheme_ids(mgr);
 
     /* add user scheme dir */
-    g_autofree char *custom = g_build_path(G_DIR_SEPARATOR_S, C_GUMMI_CONFDIR, "styles", NULL);
+    g_autofree char *confdir = C_GUMMI_CONFDIR;
+    g_autofree char *custom  = g_build_filename(confdir, "styles", NULL);
     if (g_file_test(custom, G_FILE_TEST_IS_DIR))
         gtk_source_style_scheme_manager_append_search_path(mgr, custom);
 

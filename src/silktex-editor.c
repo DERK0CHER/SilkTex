@@ -567,6 +567,54 @@ silktex_editor_replace_all(SilktexEditor *self, const char *term, const char *re
     gtk_text_buffer_end_user_action(GTK_TEXT_BUFFER(self->buffer));
 }
 
+void
+silktex_editor_goto_line(SilktexEditor *self, int line)
+{
+    g_return_if_fail(SILKTEX_IS_EDITOR(self));
+    GtkTextIter it;
+    gtk_text_buffer_get_iter_at_line(GTK_TEXT_BUFFER(self->buffer), &it, line);
+    gtk_text_buffer_place_cursor(GTK_TEXT_BUFFER(self->buffer), &it);
+    silktex_editor_scroll_to_cursor(self);
+}
+
+int
+silktex_editor_get_cursor_line(SilktexEditor *self)
+{
+    g_return_val_if_fail(SILKTEX_IS_EDITOR(self), 0);
+    GtkTextIter it;
+    GtkTextMark *mark = gtk_text_buffer_get_insert(GTK_TEXT_BUFFER(self->buffer));
+    gtk_text_buffer_get_iter_at_mark(GTK_TEXT_BUFFER(self->buffer), &it, mark);
+    return gtk_text_iter_get_line(&it);
+}
+
+void
+silktex_editor_apply_settings(SilktexEditor *self)
+{
+    g_return_if_fail(SILKTEX_IS_EDITOR(self));
+
+    gtk_source_view_set_show_line_numbers(self->view,
+        config_get_boolean("Editor", "line_numbers"));
+    gtk_source_view_set_highlight_current_line(self->view,
+        config_get_boolean("Editor", "highlighting"));
+    gtk_source_view_set_auto_indent(self->view,
+        config_get_boolean("Editor", "autoindentation"));
+    gtk_source_view_set_insert_spaces_instead_of_tabs(self->view,
+        config_get_boolean("Editor", "spaces_instof_tabs"));
+    gtk_source_view_set_tab_width(self->view,
+        (guint)config_get_integer("Editor", "tabwidth"));
+
+    GtkWrapMode wrap = GTK_WRAP_NONE;
+    if (config_get_boolean("Editor", "textwrapping")) {
+        wrap = config_get_boolean("Editor", "wordwrapping")
+               ? GTK_WRAP_WORD : GTK_WRAP_CHAR;
+    }
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(self->view), wrap);
+
+    const char *scheme = config_get_string("Editor", "style_scheme");
+    if (scheme && *scheme)
+        silktex_editor_set_style_scheme(self, scheme);
+}
+
 const char *
 silktex_editor_get_workfile(SilktexEditor *self)
 {
