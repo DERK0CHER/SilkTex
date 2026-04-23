@@ -1,0 +1,6 @@
+build
+build-gtk4
+_docker_build
+.git
+.cursor
+*.o

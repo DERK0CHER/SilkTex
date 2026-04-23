@@ -22,6 +22,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY . .
 
-RUN meson setup build && meson compile -C build
+RUN meson setup _docker_build && meson compile -C _docker_build
 
-CMD ["./build/src/gummi", "--version"]
+CMD ["./_docker_build/src/gummi", "--version"]

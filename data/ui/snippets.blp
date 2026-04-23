@@ -6,31 +6,22 @@ Gtk.Window snippets-window {
   default-width: 520;
   default-height: 380;
 
-  child: Gtk.ScrolledWindow {
-    child: Gtk.ListBox snippets-list {
-      selection-mode: single;
+  child: Gtk.Box {
+    orientation: vertical;
+    spacing: 12;
+    margin-top: 12;
+    margin-bottom: 12;
+    margin-start: 12;
+    margin-end: 12;
 
-      Gtk.ListBoxRow {
-        child: Gtk.Box {
-          orientation: vertical;
-          spacing: 4;
-          margin-top: 12;
-          margin-bottom: 12;
-          margin-start: 12;
-          margin-end: 12;
+    Gtk.Label {
+      xalign: 0;
+      label: "Snippets";
+    }
 
-          Gtk.Label {
-            xalign: 0;
-            label: "section";
-            css-classes: ["heading"];
-          }
-
-          Gtk.Label {
-            xalign: 0;
-            label: "\\section{...}";
-          }
-        };
-      }
-    };
+    Gtk.Label {
+      xalign: 0;
+      label: "\\section{...}";
+    }
   };
 }

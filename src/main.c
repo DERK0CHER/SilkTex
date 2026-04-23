@@ -26,11 +26,10 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  * OTHER DEALINGS IN THE SOFTWARE.
  */
-#define GUMMI_DATA "data"
-
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <gtk/gtk.h>
+#include <adwaita.h>
 #include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,6 +54,7 @@ extern Gummi* gummi;
 extern GummiGui* gui;
 static int debug = 0;
 static int showversion = 0;
+static GMainLoop* shell_loop = NULL;
 
 static GOptionEntry entries[] = {
     { (const gchar*)"debug", (gchar)'d', 0, G_OPTION_ARG_NONE,
@@ -63,6 +63,16 @@ static GOptionEntry entries[] = {
         &showversion, (gchar*)"show version and exit", NULL},
     { NULL, 0, 0, G_OPTION_ARG_NONE, NULL, NULL, NULL }
 };
+
+static gboolean
+on_shell_window_close_request (GtkWindow* window, gpointer user_data) {
+    (void)window;
+    (void)user_data;
+    if (shell_loop != NULL) {
+        g_main_loop_quit (shell_loop);
+    }
+    return FALSE;
+}
 
 int main (int argc, char *argv[]) {
     /* set up i18n */
@@ -83,14 +93,15 @@ int main (int argc, char *argv[]) {
 
     // Initialize GTK
     gtk_init ();
+    adw_init ();
 
     GError* ui_error = NULL;
     GtkBuilder* builder = gtk_builder_new ();
-    gchar* ui = g_build_filename (GUMMI_DATA, "ui", "gummi.glade", NULL);
+    gchar* ui = g_build_filename (GUMMI_DATA, "ui", "silktex.ui", NULL);
 
-    // Exit program when gummi.glade can not be located:
+    // Exit program when UI file can not be located:
     if (!g_file_test (ui, G_FILE_TEST_EXISTS)) {
-        printf("Could not locate Glade interface file at:\n%s\n", ui);
+        printf("Could not locate interface file at:\n%s\n", ui);
         return 0;
     }
 
@@ -100,6 +111,24 @@ int main (int argc, char *argv[]) {
     }
     gtk_builder_set_translation_domain (builder, C_PACKAGE);
     g_free (ui);
+
+    /* Bootable GTK4 shell path:
+     * If we have the new Adwaita shell but not the legacy widget tree, present
+     * the shell window and run a plain GLib loop until close-request. */
+    GtkWindow* shell_window =
+        GTK_WINDOW (gtk_builder_get_object (builder, "main-window"));
+    GtkWindow* legacy_window =
+        GTK_WINDOW (gtk_builder_get_object (builder, "mainwindow"));
+    if (shell_window != NULL && legacy_window == NULL) {
+        g_signal_connect (shell_window, "close-request",
+                          G_CALLBACK (on_shell_window_close_request), NULL);
+        gtk_window_present (shell_window);
+        shell_loop = g_main_loop_new (NULL, FALSE);
+        g_main_loop_run (shell_loop);
+        g_main_loop_unref (shell_loop);
+        shell_loop = NULL;
+        return 0;
+    }
 
     /* Initialize logging */
     slog_init (debug);
