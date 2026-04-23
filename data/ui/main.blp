@@ -1,31 +1,191 @@
 using Gtk 4.0;
 using Adw 1;
 
-Adw.ApplicationWindow main-window {
+template $SilktexWindow : Adw.ApplicationWindow {
   default-width: 1200;
   default-height: 800;
   title: "SilkTex";
 
   content: Adw.ToolbarView {
-    top-bar-style: raised;
-
     [top]
-    Adw.HeaderBar top-menubar {
-      title-widget: Adw.WindowTitle {
+    Adw.HeaderBar headerbar {
+      [start]
+      Gtk.Button btn_open {
+        icon-name: "document-open-symbolic";
+        tooltip-text: _("Open (Ctrl+O)");
+        action-name: "win.open";
+      }
+
+      [start]
+      Gtk.Button btn_save {
+        icon-name: "document-save-symbolic";
+        tooltip-text: _("Save (Ctrl+S)");
+        action-name: "win.save";
+      }
+
+      [start]
+      Gtk.Separator {}
+
+      [start]
+      Gtk.Button btn_compile {
+        icon-name: "media-playback-start-symbolic";
+        tooltip-text: _("Compile (Ctrl+Enter)");
+        action-name: "win.compile";
+
+        styles ["suggested-action"]
+      }
+
+      [title]
+      Adw.WindowTitle window_title {
         title: "SilkTex";
-      };
+        subtitle: _("Untitled");
+      }
+
+      [end]
+      Gtk.MenuButton btn_menu {
+        icon-name: "open-menu-symbolic";
+        menu-model: primary_menu;
+        tooltip-text: _("Main Menu");
+      }
+
+      [end]
+      Gtk.ToggleButton btn_preview {
+        icon-name: "view-paged-symbolic";
+        tooltip-text: _("Toggle Preview");
+        active: true;
+      }
+
+      [end]
+      Gtk.Separator {}
+
+      [end]
+      Gtk.Button {
+        icon-name: "zoom-in-symbolic";
+        tooltip-text: _("Zoom In");
+        action-name: "win.zoom-in";
+      }
+
+      [end]
+      Gtk.Button {
+        icon-name: "zoom-out-symbolic";
+        tooltip-text: _("Zoom Out");
+        action-name: "win.zoom-out";
+      }
+
+      [end]
+      Gtk.Button {
+        icon-name: "zoom-fit-best-symbolic";
+        tooltip-text: _("Fit Width");
+        action-name: "win.zoom-fit";
+      }
     }
 
-    content: Gtk.Box {
-      orientation: vertical;
+    content: Adw.ToastOverlay toast_overlay {
+      child: Gtk.Box {
+        orientation: vertical;
 
-      Gtk.Label {
-        label: "SilkTex GTK4/Libadwaita UI";
-        margin-top: 24;
-        margin-bottom: 24;
-        margin-start: 24;
-        margin-end: 24;
-      }
+        Adw.TabBar tab_bar {
+          view: tab_view;
+          autohide: false;
+        }
+
+        Gtk.Paned editor_paned {
+          orientation: horizontal;
+          shrink-start-child: false;
+          shrink-end-child: false;
+          resize-start-child: true;
+          resize-end-child: true;
+          vexpand: true;
+
+          [start]
+          Adw.TabView tab_view {
+            vexpand: true;
+            hexpand: true;
+          }
+
+          [end]
+          Gtk.Box preview_box {
+            orientation: vertical;
+            hexpand: true;
+          }
+        }
+      };
     };
   };
+}
+
+menu primary_menu {
+  section {
+    item {
+      label: _("_New");
+      action: "win.new";
+    }
+    item {
+      label: _("_Open...");
+      action: "win.open";
+    }
+    item {
+      label: _("_Save");
+      action: "win.save";
+    }
+    item {
+      label: _("Save _As...");
+      action: "win.save-as";
+    }
+    item {
+      label: _("_Close Tab");
+      action: "win.close-tab";
+    }
+  }
+  section {
+    submenu {
+      label: _("_Format");
+      item {
+        label: _("_Bold");
+        action: "win.bold";
+      }
+      item {
+        label: _("_Italic");
+        action: "win.italic";
+      }
+      item {
+        label: _("_Underline");
+        action: "win.underline";
+      }
+    }
+  }
+  section {
+    item {
+      label: _("_Compile");
+      action: "win.compile";
+    }
+    item {
+      label: _("_Undo");
+      action: "win.undo";
+    }
+    item {
+      label: _("_Redo");
+      action: "win.redo";
+    }
+  }
+  section {
+    item {
+      label: _("_Preferences");
+      action: "app.preferences";
+    }
+    item {
+      label: _("_Keyboard Shortcuts");
+      action: "win.show-help-overlay";
+    }
+    item {
+      label: _("_About SilkTex");
+      action: "app.about";
+    }
+  }
+  section {
+    item {
+      label: _("_Quit");
+      action: "app.quit";
+    }
+  }
 }

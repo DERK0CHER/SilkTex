@@ -31,6 +31,7 @@
 #define __GUMMI_GUI_PREVIEW_H__
 
 #include <gtk/gtk.h>
+#include "gtk4-compat.h"
 #include <poppler.h>
 
 #define PAGE_MARGIN 14

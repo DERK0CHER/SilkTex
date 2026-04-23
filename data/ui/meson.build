@@ -1,22 +1,16 @@
-
 blueprint_compiler = find_program('blueprint-compiler')
 
-ui_blueprints = [
-  'main.blp',
-  'prefs.blp',
-  'snippets.blp',
-]
+blueprints = custom_target(
+  'blueprints',
+  input: files('main.blp'),
+  output: 'main.ui',
+  command: [blueprint_compiler, 'compile', '--output', '@OUTPUT@', '@INPUT@'],
+)
 
-foreach blp : ui_blueprints
-  compiled_ui = custom_target(
-    blp + '-compiled',
-    input: blp,
-    output: blp.replace('.blp', '.ui'),
-    command: [blueprint_compiler, 'compile', '--output', '@OUTPUT@', '@INPUT@'],
-    build_by_default: true,
-    install: true,
-    install_dir: join_paths(gummidir, 'ui'),
-  )
-endforeach
-
-
+silktex_resources = gnome.compile_resources(
+  'silktex-resources',
+  '../silktex.gresource.xml',
+  c_name: 'silktex',
+  dependencies: blueprints,
+  source_dir: meson.current_build_dir(),
+)

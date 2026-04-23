@@ -33,6 +33,7 @@
 
 #include <glib.h>
 #include <gtk/gtk.h>
+#include "gtk4-compat.h"
 
 #include "gui-import.h"
 #include "gui-prefs.h"

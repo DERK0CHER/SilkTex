@@ -32,6 +32,7 @@
 
 #include <glib.h>
 #include <gtk/gtk.h>
+#include "gtk4-compat.h"
 
 #include "snippets.h"
 

@@ -1,12 +1,13 @@
 project(
     'gummi',
     'c',
-    version: '0.8.3',
+    version: '0.9.0',
     license: 'MIT',
-    meson_version: '>=0.50.0'
+    meson_version: '>=0.56.0'
 )
 
 i18n = import('i18n')
+gnome = import('gnome')
 
 
 #dependency('setconf')
@@ -68,8 +69,8 @@ conf_data.set_quoted('LOCALEDIR', join_paths(get_option('prefix'), get_option('l
 #install_data(['COPYING',], install_dir: join_paths(datadir,'licences/gummi/'))
 install_data('COPYING', install_dir: join_paths(datadir, 'licenses', 'gummi'))
 
-subdir('src')
 subdir('data')
+subdir('src')
 subdir('lib')
 subdir('po')
 

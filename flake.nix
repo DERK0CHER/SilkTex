@@ -31,12 +31,14 @@
           poppler
           intltool
           texlive.bin.core
+          gsettings-desktop-schemas
         ];
 
         shellHook = ''
           echo "SilkTex dev shell loaded"
           echo "GTK4: $(pkg-config --modversion gtk4 2>/dev/null || echo missing)"
           echo "Adwaita: $(pkg-config --modversion libadwaita-1 2>/dev/null || echo missing)"
+          export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk4}/share/gsettings-schemas/${pkgs.gtk4.name}:$XDG_DATA_DIRS"
         '';
       };
     };
