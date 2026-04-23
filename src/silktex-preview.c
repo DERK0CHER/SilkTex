@@ -26,6 +26,11 @@ struct _SilktexPreview {
     cairo_surface_t *cached_surface;
     int cached_page;
     double cached_zoom;
+    GPtrArray *page_surfaces;
+    double total_height;
+
+    SilktexPreviewLayout layout;
+    gboolean scrolling_programmatically;
 };
 
 G_DEFINE_FINAL_TYPE(SilktexPreview, silktex_preview, GTK_TYPE_WIDGET)
@@ -35,6 +40,7 @@ enum {
     PROP_PAGE,
     PROP_N_PAGES,
     PROP_ZOOM,
+    PROP_LAYOUT,
     N_PROPS
 };
 
@@ -46,32 +52,29 @@ silktex_preview_invalidate_cache(SilktexPreview *self)
     g_clear_pointer(&self->cached_surface, cairo_surface_destroy);
     self->cached_page = -1;
     self->cached_zoom = 0;
+    if (self->page_surfaces != NULL) {
+        g_ptr_array_set_size(self->page_surfaces, 0);
+    }
+    self->total_height = 0;
 }
 
-static void
-silktex_preview_render_page(SilktexPreview *self)
+static cairo_surface_t *
+render_single_page(SilktexPreview *self, int index, double *out_page_w, double *out_page_h)
 {
-    if (self->document == NULL) return;
-    if (self->current_page < 0 || self->current_page >= self->n_pages) return;
+    PopplerPage *page = poppler_document_get_page(self->document, index);
+    if (page == NULL) return NULL;
 
-    if (self->cached_surface != NULL &&
-        self->cached_page == self->current_page &&
-        fabs(self->cached_zoom - self->zoom) < 0.001) {
-        return;
-    }
+    double page_w = 0;
+    double page_h = 0;
+    poppler_page_get_size(page, &page_w, &page_h);
+    if (out_page_w) *out_page_w = page_w;
+    if (out_page_h) *out_page_h = page_h;
 
-    silktex_preview_invalidate_cache(self);
+    int width = MAX((int)(page_w * self->zoom), 1);
+    int height = MAX((int)(page_h * self->zoom), 1);
 
-    PopplerPage *page = poppler_document_get_page(self->document, self->current_page);
-    if (page == NULL) return;
-
-    poppler_page_get_size(page, &self->page_width, &self->page_height);
-
-    int width = (int)(self->page_width * self->zoom);
-    int height = (int)(self->page_height * self->zoom);
-
-    self->cached_surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
-    cairo_t *cr = cairo_create(self->cached_surface);
+    cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
+    cairo_t *cr = cairo_create(surface);
 
     cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
     cairo_paint(cr);
@@ -82,10 +85,78 @@ silktex_preview_render_page(SilktexPreview *self)
     cairo_destroy(cr);
     g_object_unref(page);
 
-    self->cached_page = self->current_page;
-    self->cached_zoom = self->zoom;
+    return surface;
+}
 
-    gtk_widget_set_size_request(self->drawing_area, width, height);
+static void
+silktex_preview_render_pages(SilktexPreview *self)
+{
+    if (self->document == NULL) return;
+    if (self->n_pages <= 0) return;
+
+    const int page_gap = 20;
+
+    if (self->layout == SILKTEX_PREVIEW_LAYOUT_SINGLE_PAGE) {
+        /* Render only the current page (cache keyed by page+zoom) */
+        if (self->cached_surface != NULL &&
+            self->cached_page == self->current_page &&
+            fabs(self->cached_zoom - self->zoom) < 0.001) {
+            return;
+        }
+        silktex_preview_invalidate_cache(self);
+        double page_w = 0, page_h = 0;
+        cairo_surface_t *surface = render_single_page(self, self->current_page, &page_w, &page_h);
+        if (surface == NULL) return;
+        self->cached_surface = surface;
+        self->cached_page = self->current_page;
+        self->cached_zoom = self->zoom;
+        self->page_width = page_w;
+        self->page_height = page_h;
+        self->total_height = cairo_image_surface_get_height(surface);
+        int w = cairo_image_surface_get_width(surface);
+        int h = cairo_image_surface_get_height(surface);
+        gtk_widget_set_size_request(self->drawing_area, MAX(w + 24, 1), MAX(h, 1));
+        return;
+    }
+
+    /* Continuous: render all pages (cache keyed by zoom) */
+    if (self->page_surfaces != NULL &&
+        self->page_surfaces->len == (guint)self->n_pages &&
+        fabs(self->cached_zoom - self->zoom) < 0.001) {
+        return;
+    }
+
+    silktex_preview_invalidate_cache(self);
+    self->cached_zoom = self->zoom;
+    self->page_width = 0;
+    self->page_height = 0;
+    self->total_height = 0;
+
+    int max_width = 0;
+
+    for (int i = 0; i < self->n_pages; i++) {
+        double page_w = 0, page_h = 0;
+        cairo_surface_t *surface = render_single_page(self, i, &page_w, &page_h);
+        if (surface == NULL) {
+            g_ptr_array_add(self->page_surfaces, NULL);
+            continue;
+        }
+        if (i == 0) {
+            self->page_width = page_w;
+            self->page_height = page_h;
+        }
+        int width = cairo_image_surface_get_width(surface);
+        int height = cairo_image_surface_get_height(surface);
+        max_width = MAX(max_width, width);
+        self->total_height += height;
+
+        g_ptr_array_add(self->page_surfaces, surface);
+    }
+
+    if (self->n_pages > 1) {
+        self->total_height += (self->n_pages - 1) * page_gap;
+    }
+    gtk_widget_set_size_request(self->drawing_area, MAX(max_width + 24, 1), MAX((int)self->total_height, 1));
 }
 
 static void
@@ -109,17 +180,15 @@ draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer use
         return;
     }
 
-    silktex_preview_render_page(self);
+    silktex_preview_render_pages(self);
 
-    if (self->cached_surface != NULL) {
+    if (self->layout == SILKTEX_PREVIEW_LAYOUT_SINGLE_PAGE) {
+        if (self->cached_surface == NULL) return;
         int surf_width = cairo_image_surface_get_width(self->cached_surface);
         int surf_height = cairo_image_surface_get_height(self->cached_surface);
-
         double x = (width - surf_width) / 2.0;
-        double y = 0;
-
         if (x < 0) x = 0;
-        if (y < 0) y = 0;
+        double y = 0;
 
         cairo_set_source_surface(cr, self->cached_surface, x, y);
         cairo_paint(cr);
@@ -128,6 +197,29 @@ draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer use
         cairo_set_line_width(cr, 1.0);
         cairo_rectangle(cr, x - 0.5, y - 0.5, surf_width + 1, surf_height + 1);
         cairo_stroke(cr);
+        return;
+    }
+
+    const int page_gap = 20;
+    double y = 0;
+    for (guint i = 0; i < self->page_surfaces->len; i++) {
+        cairo_surface_t *surface = g_ptr_array_index(self->page_surfaces, i);
+        if (surface == NULL) continue;
+        int surf_width = cairo_image_surface_get_width(surface);
+        int surf_height = cairo_image_surface_get_height(surface);
+
+        double x = (width - surf_width) / 2.0;
+        if (x < 0) x = 0;
+
+        cairo_set_source_surface(cr, surface, x, y);
+        cairo_paint(cr);
+
+        cairo_set_source_rgb(cr, 0.5, 0.5, 0.5);
+        cairo_set_line_width(cr, 1.0);
+        cairo_rectangle(cr, x - 0.5, y - 0.5, surf_width + 1, surf_height + 1);
+        cairo_stroke(cr);
+
+        y += surf_height + page_gap;
     }
 }
 
@@ -139,6 +231,7 @@ silktex_preview_dispose(GObject *object)
     silktex_preview_invalidate_cache(self);
     g_clear_object(&self->document);
     g_clear_pointer(&self->pdf_path, g_free);
+    g_clear_pointer(&self->page_surfaces, g_ptr_array_unref);
 
     gtk_widget_unparent(self->scrolled_window);
 
@@ -160,6 +253,9 @@ silktex_preview_get_property(GObject *object, guint prop_id, GValue *value, GPar
         case PROP_ZOOM:
             g_value_set_double(value, self->zoom);
             break;
+        case PROP_LAYOUT:
+            g_value_set_int(value, (int)self->layout);
+            break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
     }
@@ -176,6 +272,9 @@ silktex_preview_set_property(GObject *object, guint prop_id, const GValue *value
             break;
         case PROP_ZOOM:
             silktex_preview_set_zoom(self, g_value_get_double(value));
+            break;
+        case PROP_LAYOUT:
+            silktex_preview_set_layout(self, (SilktexPreviewLayout)g_value_get_int(value));
             break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -198,10 +297,46 @@ silktex_preview_class_init(SilktexPreviewClass *klass)
         g_param_spec_int("n-pages", NULL, NULL, 0, G_MAXINT, 0, G_PARAM_READABLE);
     properties[PROP_ZOOM] =
         g_param_spec_double("zoom", NULL, NULL, 0.1, 10.0, 1.0, G_PARAM_READWRITE);
+    properties[PROP_LAYOUT] =
+        g_param_spec_int("layout", NULL, NULL, 0, 1, 0, G_PARAM_READWRITE);
 
     g_object_class_install_properties(object_class, N_PROPS, properties);
 
     gtk_widget_class_set_layout_manager_type(widget_class, GTK_TYPE_BIN_LAYOUT);
+}
+
+static void
+on_vadj_value_changed(GtkAdjustment *adj, gpointer user_data)
+{
+    SilktexPreview *self = SILKTEX_PREVIEW(user_data);
+    if (self->scrolling_programmatically) return;
+    if (self->layout != SILKTEX_PREVIEW_LAYOUT_CONTINUOUS) return;
+    if (self->document == NULL || self->page_surfaces == NULL) return;
+    if (self->page_surfaces->len == 0) return;
+
+    const int page_gap = 20;
+    double value = gtk_adjustment_get_value(adj);
+    double page_size = gtk_adjustment_get_page_size(adj);
+    double center = value + page_size / 2.0;
+
+    double y = 0;
+    int page = 0;
+    for (guint i = 0; i < self->page_surfaces->len; i++) {
+        cairo_surface_t *surface = g_ptr_array_index(self->page_surfaces, i);
+        if (surface == NULL) continue;
+        int h = cairo_image_surface_get_height(surface);
+        if (center < y + h + page_gap / 2.0) {
+            page = i;
+            break;
+        }
+        y += h + page_gap;
+        page = i;
+    }
+
+    if (page != self->current_page) {
+        self->current_page = page;
+        g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_PAGE]);
+    }
 }
 
 static void
@@ -210,17 +345,26 @@ silktex_preview_init(SilktexPreview *self)
     self->zoom = 1.0;
     self->current_page = 0;
     self->cached_page = -1;
+    self->layout = SILKTEX_PREVIEW_LAYOUT_CONTINUOUS;
+    self->page_surfaces = g_ptr_array_new_with_free_func((GDestroyNotify)cairo_surface_destroy);
+    gtk_widget_set_hexpand(GTK_WIDGET(self), TRUE);
+    gtk_widget_set_vexpand(GTK_WIDGET(self), TRUE);
 
     self->scrolled_window = gtk_scrolled_window_new();
     gtk_widget_set_parent(self->scrolled_window, GTK_WIDGET(self));
     gtk_widget_set_vexpand(self->scrolled_window, TRUE);
     gtk_widget_set_hexpand(self->scrolled_window, TRUE);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(self->scrolled_window),
+                                   GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
 
     self->drawing_area = gtk_drawing_area_new();
     gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(self->drawing_area), draw_func, self, NULL);
     gtk_widget_set_size_request(self->drawing_area, 400, 600);
 
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(self->scrolled_window), self->drawing_area);
+
+    GtkAdjustment *vadj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(self->scrolled_window));
+    g_signal_connect(vadj, "value-changed", G_CALLBACK(on_vadj_value_changed), self);
 }
 
 SilktexPreview *
@@ -313,8 +457,35 @@ silktex_preview_set_page(SilktexPreview *self, int page)
     if (self->current_page != page) {
         self->current_page = page;
         g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_PAGE]);
-        gtk_widget_queue_draw(self->drawing_area);
     }
+
+    silktex_preview_render_pages(self);
+
+    if (self->layout == SILKTEX_PREVIEW_LAYOUT_CONTINUOUS) {
+        GtkAdjustment *vadj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(self->scrolled_window));
+        if (vadj != NULL && self->page_surfaces != NULL) {
+            const int page_gap = 20;
+            double y = 0;
+            for (int i = 0; i < page; i++) {
+                cairo_surface_t *surface = g_ptr_array_index(self->page_surfaces, i);
+                if (surface != NULL) {
+                    y += cairo_image_surface_get_height(surface);
+                }
+                y += page_gap;
+            }
+            self->scrolling_programmatically = TRUE;
+            gtk_adjustment_set_value(vadj, y);
+            self->scrolling_programmatically = FALSE;
+        }
+    } else {
+        GtkAdjustment *vadj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(self->scrolled_window));
+        if (vadj) {
+            self->scrolling_programmatically = TRUE;
+            gtk_adjustment_set_value(vadj, 0);
+            self->scrolling_programmatically = FALSE;
+        }
+    }
+    gtk_widget_queue_draw(self->drawing_area);
 }
 
 int
@@ -404,6 +575,33 @@ silktex_preview_zoom_fit_page(SilktexPreview *self)
         double zoom_h = (widget_height - 40) / self->page_height;
         silktex_preview_set_zoom(self, MIN(zoom_w, zoom_h));
     }
+}
+
+SilktexPreviewLayout
+silktex_preview_get_layout(SilktexPreview *self)
+{
+    g_return_val_if_fail(SILKTEX_IS_PREVIEW(self), SILKTEX_PREVIEW_LAYOUT_CONTINUOUS);
+    return self->layout;
+}
+
+void
+silktex_preview_set_layout(SilktexPreview *self, SilktexPreviewLayout layout)
+{
+    g_return_if_fail(SILKTEX_IS_PREVIEW(self));
+
+    if (self->layout == layout) return;
+
+    self->layout = layout;
+    silktex_preview_invalidate_cache(self);
+    g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_LAYOUT]);
+
+    GtkAdjustment *vadj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(self->scrolled_window));
+    if (vadj) {
+        self->scrolling_programmatically = TRUE;
+        gtk_adjustment_set_value(vadj, 0);
+        self->scrolling_programmatically = FALSE;
+    }
+    gtk_widget_queue_draw(self->drawing_area);
 }
 
 void

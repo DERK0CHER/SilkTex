@@ -508,7 +508,7 @@ goto_next(SnippetState *s, GtkTextBuffer *buf, GtkTextView *view)
     }
 
     if (!s->current) {
-        /* Try $0 as final position */
+        /* Gummi behavior: final landing on $0 if present */
         for (GList *c = s->unique; c; c = c->next) {
             if (((Holder*)c->data)->group == 0) {
                 focus_holder(c->data, buf, view);
@@ -517,6 +517,7 @@ goto_next(SnippetState *s, GtkTextBuffer *buf, GtkTextView *view)
         }
         return FALSE;
     }
+
     focus_holder(s->current->data, buf, view);
     return TRUE;
 }
@@ -526,7 +527,7 @@ goto_prev(SnippetState *s, GtkTextBuffer *buf, GtkTextView *view)
 {
     GList *prev = s->current ? g_list_previous(s->current) : NULL;
     while (prev) {
-        if (((Holder*)prev->data)->group > 0) break;
+        if (((Holder*)prev->data)->group >= 0) break;
         prev = g_list_previous(prev);
     }
     if (!prev) return FALSE;
@@ -638,8 +639,10 @@ activate_snippet(SilktexSnippets *self,
     gtk_text_buffer_end_user_action(buf);
 
     /* Push existing active snippet; make this one active */
-    if (self->active)
+    if (self->active) {
+        sync_group(self->active, buf);
         self->stack = g_list_append(self->stack, self->active);
+    }
     self->active = s;
 
     if (!goto_next(s, buf, view))
@@ -722,24 +725,8 @@ silktex_snippets_handle_key(SilktexSnippets *self,
         }
     }
 
-    /* Shift-Tab: previous placeholder */
-    if ((keyval == GDK_KEY_ISO_Left_Tab || keyval == GDK_KEY_Tab) &&
-        (state & GDK_SHIFT_MASK)) {
-        if (self->active) {
-            if (!goto_prev(self->active, buf, view))
-                deactivate(self, buf);
-            return TRUE;
-        }
-    }
-
-    /* Tab: advance placeholder or expand keyword */
+    /* Gummi behavior: on Tab, try keyword expansion before placeholder nav */
     if (keyval == GDK_KEY_Tab && !(state & GDK_SHIFT_MASK)) {
-        if (self->active) {
-            if (!goto_next(self->active, buf, view))
-                deactivate(self, buf);
-            return TRUE;
-        }
-        /* Try keyword expansion */
         GtkTextIter cur;
         gtk_text_buffer_get_iter_at_mark(buf, &cur,
             gtk_text_buffer_get_insert(buf));
@@ -752,11 +739,65 @@ silktex_snippets_handle_key(SilktexSnippets *self,
                 return TRUE;
             }
         }
+        if (self->active) {
+            if (!goto_next(self->active, buf, view))
+                deactivate(self, buf);
+            return TRUE;
+        }
     }
 
-    /* Mirror group while snippet is active */
-    if (self->active)
-        sync_group(self->active, buf);
+    /* Shift-Tab: previous placeholder */
+    if ((keyval == GDK_KEY_ISO_Left_Tab || keyval == GDK_KEY_Tab) &&
+        (state & GDK_SHIFT_MASK)) {
+        if (self->active) {
+            if (!goto_prev(self->active, buf, view))
+                deactivate(self, buf);
+            return TRUE;
+        }
+    }
 
+    /* Auto-deactivate if the cursor has wandered outside the snippet body.
+     * Use the last holder mark as the end boundary and
+     * start_offset as the start boundary, matching Gummi's behaviour. */
+    if (self->active && self->active->holders) {
+        GList *last_node = g_list_last(self->active->holders);
+        if (last_node) {
+            Holder *last_h = last_node->data;
+            GtkTextIter cur_it, bound_it;
+            gtk_text_buffer_get_iter_at_mark(buf, &cur_it,
+                gtk_text_buffer_get_insert(buf));
+            gtk_text_buffer_get_iter_at_mark(buf, &bound_it, last_h->lmark);
+            int cur_off   = gtk_text_iter_get_offset(&cur_it);
+            int bound_end = gtk_text_iter_get_offset(&bound_it);
+            if (cur_off < self->active->start_offset || cur_off > bound_end)
+                deactivate(self, buf);
+        }
+    }
+
+    return FALSE;
+}
+
+/*
+ * silktex_snippets_handle_key_release:
+ *
+ * Must be called from the window's key-released signal so that group
+ * mirroring fires AFTER the typed character has been committed to the
+ * buffer (GTK processes input between key-press and key-release).
+ * This matches Gummi's snippets_key_release_cb() behaviour exactly.
+ */
+gboolean
+silktex_snippets_handle_key_release(SilktexSnippets *self,
+                                     SilktexEditor   *editor,
+                                     guint            keyval,
+                                     GdkModifierType  state)
+{
+    (void)state;
+    if (keyval == GDK_KEY_Tab)
+        return FALSE;
+    if (!self->active) return FALSE;
+
+    GtkSourceBuffer *sbuf = silktex_editor_get_buffer(editor);
+    GtkTextBuffer   *buf  = GTK_TEXT_BUFFER(sbuf);
+    sync_group(self->active, buf);
     return FALSE;
 }

@@ -30,4 +30,11 @@ gboolean silktex_snippets_handle_key(SilktexSnippets *self,
                                      guint            keyval,
                                      GdkModifierType  state);
 
+/* Key-release handler – syncs mirrored placeholder groups after character
+ * insertion.  Always returns FALSE (never consumes the event). */
+gboolean silktex_snippets_handle_key_release(SilktexSnippets *self,
+                                              SilktexEditor   *editor,
+                                              guint            keyval,
+                                              GdkModifierType  state);
+
 G_END_DECLS

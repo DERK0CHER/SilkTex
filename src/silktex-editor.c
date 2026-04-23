@@ -393,7 +393,35 @@ silktex_editor_set_font(SilktexEditor *self, const char *font_desc)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
-    g_autofree char *css = g_strdup_printf(".silktex-editor { font: %s; }", font_desc);
+    /* GTK4 CSS doesn't accept Pango font description strings in the `font`
+     * shorthand; parse the description and emit font-family / font-size
+     * declarations explicitly. */
+    g_autofree char *css = NULL;
+    if (font_desc != NULL && *font_desc != '\0') {
+        PangoFontDescription *pfd = pango_font_description_from_string(font_desc);
+        const char *family = pango_font_description_get_family(pfd);
+        int size_pango = pango_font_description_get_size(pfd);
+        gboolean size_absolute = pango_font_description_get_size_is_absolute(pfd);
+
+        GString *s = g_string_new(".silktex-editor {");
+        if (family != NULL && *family != '\0') {
+            g_string_append_printf(s, " font-family: \"%s\";", family);
+        }
+        if (size_pango > 0) {
+            double size_pt = (double)size_pango / PANGO_SCALE;
+            if (size_absolute) {
+                g_string_append_printf(s, " font-size: %.2fpx;", size_pt);
+            } else {
+                g_string_append_printf(s, " font-size: %.2fpt;", size_pt);
+            }
+        }
+        g_string_append(s, " }");
+        css = g_string_free(s, FALSE);
+        pango_font_description_free(pfd);
+    } else {
+        css = g_strdup(".silktex-editor { }");
+    }
+
     gtk_css_provider_load_from_string(self->css_provider, css);
     gtk_style_context_add_provider_for_display(
         gdk_display_get_default(),

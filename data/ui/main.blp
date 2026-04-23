@@ -2,13 +2,30 @@ using Gtk 4.0;
 using Adw 1;
 
 template $SilktexWindow : Adw.ApplicationWindow {
-  default-width: 1200;
-  default-height: 800;
+  default-width: 1400;
+  default-height: 900;
   title: "SilkTex";
 
   content: Adw.ToolbarView {
     [top]
     Adw.HeaderBar headerbar {
+      [start]
+      Gtk.ToggleButton btn_sidebar {
+        icon-name: "sidebar-show-symbolic";
+        tooltip-text: _("Toggle Document Outline (F2)");
+        active: true;
+      }
+
+      [start]
+      Gtk.Separator {}
+
+      [start]
+      Gtk.Button btn_new {
+        icon-name: "document-new-symbolic";
+        tooltip-text: _("New (Ctrl+N)");
+        action-name: "win.new";
+      }
+
       [start]
       Gtk.Button btn_open {
         icon-name: "document-open-symbolic";
@@ -35,6 +52,20 @@ template $SilktexWindow : Adw.ApplicationWindow {
         styles ["suggested-action"]
       }
 
+      [start]
+      Gtk.MenuButton btn_insert {
+        icon-name: "insert-object-symbolic";
+        tooltip-text: _("Insert...");
+        menu-model: insert_menu;
+      }
+
+      [start]
+      Gtk.MenuButton btn_format {
+        icon-name: "format-text-bold-symbolic";
+        tooltip-text: _("Format");
+        menu-model: format_menu;
+      }
+
       [title]
       Adw.WindowTitle window_title {
         title: "SilkTex";
@@ -46,12 +77,13 @@ template $SilktexWindow : Adw.ApplicationWindow {
         icon-name: "open-menu-symbolic";
         menu-model: primary_menu;
         tooltip-text: _("Main Menu");
+        primary: true;
       }
 
       [end]
       Gtk.ToggleButton btn_preview {
-        icon-name: "view-paged-symbolic";
-        tooltip-text: _("Toggle Preview");
+        icon-name: "view-dual-symbolic";
+        tooltip-text: _("Toggle Preview (F9)");
         active: true;
       }
 
@@ -59,59 +91,341 @@ template $SilktexWindow : Adw.ApplicationWindow {
       Gtk.Separator {}
 
       [end]
-      Gtk.Button {
+      Gtk.Button btn_zoom_in {
         icon-name: "zoom-in-symbolic";
         tooltip-text: _("Zoom In");
         action-name: "win.zoom-in";
       }
 
       [end]
-      Gtk.Button {
+      Gtk.Button btn_zoom_out {
         icon-name: "zoom-out-symbolic";
         tooltip-text: _("Zoom Out");
         action-name: "win.zoom-out";
       }
 
       [end]
-      Gtk.Button {
+      Gtk.MenuButton btn_zoom_menu {
         icon-name: "zoom-fit-best-symbolic";
-        tooltip-text: _("Fit Width");
-        action-name: "win.zoom-fit";
+        tooltip-text: _("Fit");
+        menu-model: zoom_menu;
       }
     }
 
     content: Adw.ToastOverlay toast_overlay {
-      child: Gtk.Box {
-        orientation: vertical;
+      child: Adw.OverlaySplitView split_view {
+        show-sidebar: bind btn_sidebar.active bidirectional;
+        sidebar-width-fraction: 0.2;
+        min-sidebar-width: 180;
+        max-sidebar-width: 400;
 
-        Adw.TabBar tab_bar {
-          view: tab_view;
-          autohide: false;
-        }
+        sidebar: Gtk.Box sidebar_box {
+          orientation: vertical;
 
-        Gtk.Paned editor_paned {
+          Gtk.Box {
+            orientation: horizontal;
+            margin-start: 12;
+            margin-end: 12;
+            margin-top: 8;
+            margin-bottom: 4;
+            spacing: 6;
+
+            Gtk.Label sidebar_title {
+              label: _("Outline");
+              halign: start;
+              hexpand: true;
+
+              styles ["heading"]
+            }
+
+            Gtk.Button btn_refresh_structure {
+              icon-name: "view-refresh-symbolic";
+              tooltip-text: _("Refresh Outline");
+              action-name: "win.refresh-structure";
+
+              styles ["flat"]
+            }
+          }
+
+          Gtk.Separator {}
+
+          Gtk.Box structure_container {
+            orientation: vertical;
+            vexpand: true;
+          }
+        };
+
+        content: Gtk.Paned editor_paned {
           orientation: horizontal;
           shrink-start-child: false;
           shrink-end-child: false;
           resize-start-child: true;
           resize-end-child: true;
           vexpand: true;
+          position: 780;
 
           [start]
-          Adw.TabView tab_view {
-            vexpand: true;
-            hexpand: true;
+          Gtk.Box {
+            orientation: vertical;
+
+            Adw.TabBar tab_bar {
+              view: tab_view;
+              autohide: false;
+            }
+
+            Adw.TabView tab_view {
+              vexpand: true;
+              hexpand: true;
+            }
           }
 
           [end]
           Gtk.Box preview_box {
             orientation: vertical;
             hexpand: true;
+            vexpand: true;
+
+            Gtk.CenterBox preview_toolbar {
+              margin-top: 4;
+              margin-bottom: 4;
+              margin-start: 6;
+              margin-end: 6;
+
+              [start]
+              Gtk.Box {
+                orientation: horizontal;
+                spacing: 4;
+
+                Gtk.Button btn_prev_page {
+                  icon-name: "go-previous-symbolic";
+                  tooltip-text: _("Previous Page");
+                  action-name: "win.prev-page";
+
+                  styles ["flat"]
+                }
+
+                Gtk.Button btn_next_page {
+                  icon-name: "go-next-symbolic";
+                  tooltip-text: _("Next Page");
+                  action-name: "win.next-page";
+
+                  styles ["flat"]
+                }
+
+                Gtk.Label page_label {
+                  label: "—";
+                  margin-start: 6;
+                  margin-end: 6;
+
+                  styles ["numeric", "dim-label"]
+                }
+              }
+
+              [center]
+              Gtk.Label preview_status {
+                label: _("Preview");
+
+                styles ["dim-label"]
+              }
+
+              [end]
+              Gtk.Box {
+                orientation: horizontal;
+                spacing: 2;
+
+                Gtk.Button btn_forward_sync {
+                  icon-name: "find-location-symbolic";
+                  tooltip-text: _("Sync to Cursor (Ctrl+Shift+F)");
+                  action-name: "win.forward-sync";
+
+                  styles ["flat"]
+                }
+
+                Gtk.Button btn_external_open {
+                  icon-name: "document-send-symbolic";
+                  tooltip-text: _("Open PDF externally");
+                  action-name: "win.open-pdf-external";
+
+                  styles ["flat"]
+                }
+              }
+            }
+
+            Gtk.Separator {}
           }
-        }
+        };
       };
     };
   };
+}
+
+menu insert_menu {
+  section {
+    label: _("Document Structure");
+
+    item {
+      label: _("Section");
+      action: "win.insert-section";
+    }
+
+    item {
+      label: _("Subsection");
+      action: "win.insert-subsection";
+    }
+
+    item {
+      label: _("Subsubsection");
+      action: "win.insert-subsubsection";
+    }
+
+    item {
+      label: _("Chapter");
+      action: "win.insert-chapter";
+    }
+
+    item {
+      label: _("Paragraph");
+      action: "win.insert-paragraph";
+    }
+  }
+
+  section {
+    label: _("Objects");
+
+    item {
+      label: _("Image…");
+      action: "win.insert-image";
+    }
+
+    item {
+      label: _("Table…");
+      action: "win.insert-table";
+    }
+
+    item {
+      label: _("Matrix…");
+      action: "win.insert-matrix";
+    }
+
+    item {
+      label: _("Bibliography…");
+      action: "win.insert-biblio";
+    }
+  }
+
+  section {
+    label: _("Environments");
+
+    item {
+      label: _("Itemize");
+      action: "win.insert-itemize";
+    }
+
+    item {
+      label: _("Enumerate");
+      action: "win.insert-enumerate";
+    }
+
+    item {
+      label: _("Description");
+      action: "win.insert-description";
+    }
+
+    item {
+      label: _("Equation");
+      action: "win.insert-equation";
+    }
+
+    item {
+      label: _("Quote");
+      action: "win.insert-quote";
+    }
+  }
+}
+
+menu format_menu {
+  section {
+    item {
+      label: _("_Bold");
+      action: "win.bold";
+    }
+
+    item {
+      label: _("_Italic");
+      action: "win.italic";
+    }
+
+    item {
+      label: _("_Underline");
+      action: "win.underline";
+    }
+  }
+
+  section {
+    label: _("Alignment");
+
+    item {
+      label: _("Align _Left");
+      action: "win.align-left";
+    }
+
+    item {
+      label: _("Align _Center");
+      action: "win.align-center";
+    }
+
+    item {
+      label: _("Align _Right");
+      action: "win.align-right";
+    }
+  }
+}
+
+menu zoom_menu {
+  section {
+    item {
+      label: _("Zoom In");
+      action: "win.zoom-in";
+    }
+
+    item {
+      label: _("Zoom Out");
+      action: "win.zoom-out";
+    }
+
+    item {
+      label: _("Reset Zoom");
+      action: "win.zoom-reset";
+    }
+  }
+
+  section {
+    item {
+      label: _("Fit _Width");
+      action: "win.zoom-fit";
+    }
+
+    item {
+      label: _("Fit _Page");
+      action: "win.zoom-fit-page";
+    }
+  }
+
+  section {
+    label: _("Page Layout");
+
+    item {
+      label: _("Continuous");
+      action: "win.preview-layout";
+      target: "continuous";
+    }
+
+    item {
+      label: _("Single Page");
+      action: "win.preview-layout";
+      target: "single";
+    }
+  }
 }
 
 menu primary_menu {
@@ -120,78 +434,125 @@ menu primary_menu {
       label: _("_New");
       action: "win.new";
     }
+
     item {
-      label: _("_Open...");
+      label: _("_Open…");
       action: "win.open";
     }
+
+    item {
+      label: _("Open _Recent…");
+      action: "win.show-recent";
+    }
+
     item {
       label: _("_Save");
       action: "win.save";
     }
+
     item {
-      label: _("Save _As...");
+      label: _("Save _As…");
       action: "win.save-as";
     }
+
+    item {
+      label: _("_Export to PDF…");
+      action: "win.export-pdf";
+    }
+
     item {
       label: _("_Close Tab");
       action: "win.close-tab";
     }
   }
+
   section {
-    submenu {
-      label: _("_Format");
-      item {
-        label: _("_Bold");
-        action: "win.bold";
-      }
-      item {
-        label: _("_Italic");
-        action: "win.italic";
-      }
-      item {
-        label: _("_Underline");
-        action: "win.underline";
-      }
-    }
-  }
-  section {
+    label: _("Document");
+
     item {
       label: _("_Compile");
       action: "win.compile";
     }
+
+    item {
+      label: _("Run _BibTeX");
+      action: "win.run-bibtex";
+    }
+
+    item {
+      label: _("Run Make_Index");
+      action: "win.run-makeindex";
+    }
+
+    item {
+      label: _("_Cleanup Build Files");
+      action: "win.cleanup";
+    }
+
+    item {
+      label: _("Document _Statistics");
+      action: "win.stats";
+    }
+
+    item {
+      label: _("Show Compile _Log");
+      action: "win.toggle-log";
+    }
+  }
+
+  section {
     item {
       label: _("_Undo");
       action: "win.undo";
     }
+
     item {
       label: _("_Redo");
       action: "win.redo";
     }
   }
+
   section {
     item {
       label: _("_Find…");
       action: "win.find";
     }
+
     item {
       label: _("Find and _Replace…");
       action: "win.find-replace";
     }
+
     item {
       label: _("_Forward SyncTeX");
       action: "win.forward-sync";
     }
   }
+
+  section {
+    item {
+      label: _("_Fullscreen");
+      action: "win.fullscreen";
+    }
+  }
+
   section {
     item {
       label: _("_Preferences");
       action: "win.preferences";
     }
+
+    item {
+      label: _("Keyboard _Shortcuts");
+      action: "win.shortcuts";
+    }
+
     item {
       label: _("_About SilkTex");
       action: "app.about";
     }
   }
+
   section {
     item {
       label: _("_Quit");
