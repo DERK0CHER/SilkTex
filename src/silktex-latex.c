@@ -1,6 +1,7 @@
 /*
  * SilkTex - LaTeX insertion helpers
- * SPDX-License-Identifier: MIT
+ * Copyright (C) 2026 Bela Georg Barthelmes
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "silktex-latex.h"
 #include <glib/gi18n.h>

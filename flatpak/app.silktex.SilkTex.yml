@@ -1,0 +1,53 @@
+# SilkTex - Modern LaTeX Editor
+# Copyright (C) 2026 Bela Georg Barthelmes
+# SPDX-License-Identifier: GPL-3.0-or-later
+app-id: app.silktex.SilkTex
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+command: silktex
+
+# The GNOME 49 Platform already includes GTK4 4.20.x, libadwaita 1.8.x,
+# gtksourceview5 and poppler-glib, which is everything SilkTex links
+# against.  synctex is looked up as an optional meson dep; if it isn't
+# present in the runtime the forward-sync feature falls back to invoking
+# the host's `synctex` binary through xdg-open when the user clicks
+# "Open in external viewer".
+
+finish-args:
+  - --share=ipc
+  - --share=network          # online LaTeX documentation, biblatex fetches, etc.
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=host        # users edit .tex files anywhere on disk
+  - --filesystem=xdg-documents
+  - --filesystem=xdg-download
+  - --filesystem=xdg-config/silktex:create
+  - --filesystem=xdg-cache/silktex:create
+  # Let the user pick a PDF viewer / launch the compiled PDF externally.
+  - --talk-name=org.freedesktop.portal.OpenURI
+  - --talk-name=org.freedesktop.portal.FileChooser
+  # Run host-installed TeX Live (pdflatex, bibtex, makeindex, synctex…).
+  # This is the simplest way to get LaTeX compilation inside the sandbox
+  # without bundling several GB of TeX Live in the Flatpak itself.
+  - --talk-name=org.freedesktop.Flatpak
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /lib/cmake
+  - /share/gtk-doc
+  - /share/man
+  - '*.la'
+  - '*.a'
+
+modules:
+  - name: silktex
+    buildsystem: meson
+    config-opts:
+      - --buildtype=release
+      - -Dprefix=/app
+    sources:
+      - type: dir
+        path: ..

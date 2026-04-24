@@ -1,6 +1,7 @@
 /*
  * SilkTex - Snippet engine
- * SPDX-License-Identifier: MIT
+ * Copyright (C) 2026 Bela Georg Barthelmes
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Supports the same snippet file format as the original Gummi:
  *

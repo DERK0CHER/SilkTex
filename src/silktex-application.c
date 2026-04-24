@@ -1,6 +1,7 @@
 /*
  * SilkTex - Modern LaTeX Editor
- * SPDX-License-Identifier: MIT
+ * Copyright (C) 2026 Bela Georg Barthelmes
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #include "silktex-application.h"
@@ -29,19 +30,18 @@ action_about(GSimpleAction *action, GVariant *parameter, gpointer user_data)
     GtkWindow *window = gtk_application_get_active_window(app);
 
     const char *developers[] = {
-        "Alexander van der Meij",
-        "Wei-Ning Huang",
+        "Bela Georg Barthelmes",
         NULL
     };
 
     adw_show_about_dialog(GTK_WIDGET(window),
                           "application-name", "SilkTex",
-                          "application-icon", "accessories-text-editor",
+                          "application-icon", "app.silktex.SilkTex",
                           "version", "0.9.0",
-                          "copyright", "© 2009-2026 Gummi Developers",
-                          "license-type", GTK_LICENSE_MIT_X11,
+                          "copyright", "© 2026 Bela Georg Barthelmes",
+                          "license-type", GTK_LICENSE_GPL_3_0,
                           "comments", _("A modern LaTeX editor for GNOME"),
-                          "website", "https://github.com/alexandervdm/gummi",
+                          "website", "https://github.com/DERK0CHER/SilkTex",
                           "developers", developers,
                           "translator-credits", _("translator-credits"),
                           NULL);

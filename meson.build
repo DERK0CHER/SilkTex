@@ -2,7 +2,7 @@ project(
     'gummi',
     'c',
     version: '0.9.0',
-    license: 'MIT',
+    license: 'GPL-3.0-or-later',
     meson_version: '>=0.56.0'
 )
 
@@ -25,6 +25,12 @@ mandir = join_paths(datadir, 'man/man1/')
 gummidir = join_paths(datadir, meson.project_name())
 
 gtkspell_dep = dependency('gtkspell3-3.0', required: false)
+# Optional: we only need libsynctex when the app links against it.  The
+# current code invokes the `synctex` CLI at runtime, so the build works
+# with or without the library being installed.  Keeping it optional lets
+# us compile inside minimal runtimes (e.g. the GNOME Flatpak SDK, which
+# does not ship libsynctex).
+synctex_dep = dependency('synctex', required: false)
 
 project_dependencies = [
     dependency('gtk4'),
@@ -33,7 +39,7 @@ project_dependencies = [
     dependency('gtksourceview-5'),
     gtkspell_dep,
     dependency('poppler-glib'),
-    dependency('synctex'),
+    synctex_dep,
 ]
 
 if gtkspell_dep.found()

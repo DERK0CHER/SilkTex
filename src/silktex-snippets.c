@@ -1,6 +1,7 @@
 /*
  * SilkTex - Snippet engine
- * SPDX-License-Identifier: MIT
+ * Copyright (C) 2026 Bela Georg Barthelmes
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Expansion model (matches original Gummi behaviour):
  *   1. Insert raw snippet body (including "$1", "${2:default}", etc.) at cursor.

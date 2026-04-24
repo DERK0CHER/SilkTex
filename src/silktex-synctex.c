@@ -1,6 +1,7 @@
 /*
  * SilkTex - SyncTeX forward/inverse sync helpers
- * SPDX-License-Identifier: MIT
+ * Copyright (C) 2026 Bela Georg Barthelmes
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * We call the command-line `synctex view` / `synctex edit` tools rather than
  * linking libsynctex directly, so the build has no extra dependency.

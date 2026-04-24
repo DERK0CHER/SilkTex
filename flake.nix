@@ -1,3 +1,6 @@
+# SilkTex - Modern LaTeX Editor
+# Copyright (C) 2026 Bela Georg Barthelmes
+# SPDX-License-Identifier: GPL-3.0-or-later
 {
   description = "SilkTex Build Environment";
 
@@ -39,6 +42,13 @@
           intltool
           texliveEnv
           gsettings-desktop-schemas
+          # Symbolic icons used by the header bar, sidebar, preview
+          # toolbar, etc. (document-new-symbolic, sidebar-show-symbolic,
+          # format-text-bold-symbolic, zoom-fit-best-symbolic,
+          # view-dual-symbolic, …). Without this the buttons fall back to
+          # an empty / generic glyph.
+          adwaita-icon-theme
+          hicolor-icon-theme
         ];
 
         shellHook = ''
@@ -52,8 +62,14 @@
           # org.gtk.gtk4.Settings.FileChooser at runtime.
           export GSETTINGS_SCHEMA_DIR="${pkgs.gtk4}/share/gsettings-schemas/${pkgs.gtk4.name}/glib-2.0/schemas:${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}/glib-2.0/schemas''${GSETTINGS_SCHEMA_DIR:+:$GSETTINGS_SCHEMA_DIR}"
 
-          # Also keep XDG_DATA_DIRS populated (used by other lookups, e.g. icons).
-          export XDG_DATA_DIRS="${pkgs.gtk4}/share/gsettings-schemas/${pkgs.gtk4.name}:${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+          # XDG_DATA_DIRS is scanned for share/icons/<theme>/… by GTK's
+          # icon theme loader. We include Adwaita + Hicolor so symbolic
+          # icons resolve, and keep the gsettings-schemas dirs so that
+          # file-chooser settings keep loading.
+          export XDG_DATA_DIRS="${pkgs.adwaita-icon-theme}/share:${pkgs.hicolor-icon-theme}/share:${pkgs.gtk4}/share/gsettings-schemas/${pkgs.gtk4.name}:${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+
+          # Ensure GTK picks the bundled icon theme by default.
+          export GTK_ICON_THEME="Adwaita"
         '';
       };
     };

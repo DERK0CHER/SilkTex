@@ -1,6 +1,7 @@
 /*
  * SilkTex - Preferences dialog
- * SPDX-License-Identifier: MIT
+ * Copyright (C) 2026 Bela Georg Barthelmes
+ * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * All settings are written immediately to configfile and the apply-callback
  * is fired so the window can push them to every open editor.

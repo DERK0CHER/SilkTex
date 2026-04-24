@@ -1,6 +1,7 @@
 /*
  * SilkTex - Inline find/replace bar
- * SPDX-License-Identifier: MIT
+ * Copyright (C) 2026 Bela Georg Barthelmes
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "silktex-searchbar.h"
 #include <glib/gi18n.h>

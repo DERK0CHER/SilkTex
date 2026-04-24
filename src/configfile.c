@@ -1,6 +1,7 @@
 /*
  * SilkTex - configfile.c
- * SPDX-License-Identifier: MIT
+ * Copyright (C) 2026 Bela Georg Barthelmes
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #include "configfile.h"

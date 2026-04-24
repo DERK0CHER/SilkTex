@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=SilkTex
+GenericName=LaTeX Editor
+Comment=A modern LaTeX editor built with GTK4 and libadwaita
+Exec=silktex %F
+Icon=app.silktex.SilkTex
+Type=Application
+Terminal=false
+MimeType=text/x-tex;application/x-tex;text/x-latex;application/x-latex;text/plain;
+Categories=Office;Publishing;WordProcessor;GTK;GNOME;
+Keywords=LaTeX;TeX;editor;PDF;document;typesetting;
+StartupNotify=true
+StartupWMClass=silktex

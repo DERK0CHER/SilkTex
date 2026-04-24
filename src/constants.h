@@ -1,6 +1,7 @@
 /*
  * SilkTex - constants.h
- * SPDX-License-Identifier: MIT
+ * Copyright (C) 2026 Bela Georg Barthelmes
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #ifndef SILKTEX_CONSTANTS_H

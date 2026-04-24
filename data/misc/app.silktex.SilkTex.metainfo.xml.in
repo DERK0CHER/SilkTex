@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>app.silktex.SilkTex</id>
+
+  <name>SilkTex</name>
+  <summary>Modern LaTeX editor for GNOME</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <description>
+    <p>
+      SilkTex is a modern LaTeX editor built with GTK4 and libadwaita.
+      It provides an integrated live PDF preview, a document outline,
+      snippet shortcuts, and a clean preferences dialog — a modernised
+      take on the classic Gummi editor.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>Live PDF preview with high-DPI aware rendering</li>
+      <li>Document outline with jump-to-section</li>
+      <li>Configurable snippet shortcuts with tab-stops</li>
+      <li>SyncTeX support for forward / inverse sync</li>
+      <li>Bibtex, makeindex, and cleanup integrations</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">app.silktex.SilkTex.desktop</launchable>
+
+  <url type="homepage">https://github.com/alexandervdm/gummi</url>
+  <url type="bugtracker">https://github.com/alexandervdm/gummi/issues</url>
+
+  <developer id="app.silktex">
+    <name>Bela Georg Barthelmes</name>
+  </developer>
+
+  <content_rating type="oars-1.1"/>
+
+  <categories>
+    <category>Office</category>
+    <category>Publishing</category>
+    <category>WordProcessor</category>
+  </categories>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+
+  <releases>
+    <release version="0.9.0" date="2026-04-24">
+      <description>
+        <p>Initial SilkTex release based on the Gummi code base.</p>
+      </description>
+    </release>
+  </releases>
+</component>
