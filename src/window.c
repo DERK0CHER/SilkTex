@@ -14,7 +14,7 @@
 #include "configfile.h"
 #include "constants.h"
 #include "utils.h"
-#include <glib/gi18n.h>
+#include "i18n.h"
 #include <glib/gstdio.h>
 #include <gio/gio.h>
 

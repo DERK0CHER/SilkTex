@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "searchbar.h"
-#include <glib/gi18n.h>
+#include "i18n.h"
 
 struct _SilktexSearchbar {
     GtkWidget parent_instance;

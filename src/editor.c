@@ -7,7 +7,7 @@
 #include "editor.h"
 #include "configfile.h"
 #include "constants.h"
-#include <glib/gi18n.h>
+#include "i18n.h"
 #include <glib/gstdio.h>
 #include <sys/stat.h>
 

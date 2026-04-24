@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "latex.h"
-#include <glib/gi18n.h>
+#include "i18n.h"
 #include <string.h>
 
 /* ------------------------------------------------------------------ table */
