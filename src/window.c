@@ -23,6 +23,10 @@
 #define EDITOR_MIN_WIDTH 280
 /* Reserve space for the PDF preview when enforcing paned position. */
 #define PREVIEW_PANE_MIN_WIDTH 200
+/* Toplevel: never smaller than editor + preview minima + grip/chrome, or the paned
+ * layout is starved and controls can appear to sit outside the window. */
+#define WINDOW_MIN_WIDTH (EDITOR_MIN_WIDTH + PREVIEW_PANE_MIN_WIDTH + 72)
+#define WINDOW_MIN_HEIGHT 400
 
 struct _SilktexWindow {
     AdwApplicationWindow parent_instance;
@@ -2474,6 +2478,8 @@ static void silktex_window_init(SilktexWindow *self)
     g_type_ensure(SILKTEX_TYPE_PREVIEW);
     install_silktex_chrome_css();
     gtk_widget_init_template(GTK_WIDGET(self));
+
+    gtk_widget_set_size_request(GTK_WIDGET(self), WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
 
     /* Flat top bars: avoid an extra "step" and shadow between title bar,
      * tab strip, and the split — reads as one continuous header band. */
