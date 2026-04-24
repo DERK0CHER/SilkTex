@@ -1675,8 +1675,14 @@ static GtkWidget *make_group(const char *title)
 
 static void action_shortcuts(GSimpleAction *a, GVariant *p, gpointer ud)
 {
+    (void)a;
+    (void)p;
     SilktexWindow *self = SILKTEX_WINDOW(ud);
 
+    /* GtkShortcutsWindow and related APIs are deprecated as of 4.18 (removed in GTK 5) with
+     * no in-tree replacement; GtkBuilder from .ui is equally deprecated. Silence until
+     * we can ship a custom shortcuts dialog or migrate to a future API. */
+    G_GNUC_BEGIN_IGNORE_DEPRECATIONS
     GtkWidget *win = g_object_new(GTK_TYPE_SHORTCUTS_WINDOW, "modal", TRUE, "transient-for", self,
                                   "destroy-with-parent", TRUE, NULL);
 
@@ -1762,6 +1768,7 @@ static void action_shortcuts(GSimpleAction *a, GVariant *p, gpointer ud)
 
     gtk_shortcuts_window_add_section(GTK_SHORTCUTS_WINDOW(win), GTK_SHORTCUTS_SECTION(section));
     gtk_window_present(GTK_WINDOW(win));
+    G_GNUC_END_IGNORE_DEPRECATIONS
 }
 
 typedef struct {
