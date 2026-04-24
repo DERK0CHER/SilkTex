@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SilkTex - Modern LaTeX Editor
+  Copyright (C) 2026 Bela Georg Barthelmes
+  SPDX-License-Identifier: CC0-1.0
+-->
 <component type="desktop-application">
   <id>app.silktex.SilkTex</id>
 
@@ -21,20 +26,21 @@
       <li>Document outline with jump-to-section</li>
       <li>Configurable snippet shortcuts with tab-stops</li>
       <li>SyncTeX support for forward / inverse sync</li>
-      <li>Bibtex, makeindex, and cleanup integrations</li>
+      <li>BibTeX, makeindex, and cleanup integrations</li>
     </ul>
   </description>
 
   <launchable type="desktop-id">app.silktex.SilkTex.desktop</launchable>
 
-  <url type="homepage">https://github.com/alexandervdm/gummi</url>
-  <url type="bugtracker">https://github.com/alexandervdm/gummi/issues</url>
+  <url type="homepage">https://github.com/DERK0CHER/SilkTex</url>
+  <url type="bugtracker">https://github.com/DERK0CHER/SilkTex/issues</url>
+  <url type="vcs-browser">https://github.com/DERK0CHER/SilkTex</url>
 
   <developer id="app.silktex">
     <name>Bela Georg Barthelmes</name>
   </developer>
 
-  <content_rating type="oars-1.1"/>
+  <content_rating type="oars-1.1" />
 
   <categories>
     <category>Office</category>
@@ -52,10 +58,34 @@
     <display_length compare="ge">768</display_length>
   </requires>
 
+  <!--
+    Flathub requires at least one screenshot. Before submitting, upload
+    PNGs (recommended 1280x720 or similar 16:9) to a durable location —
+    e.g. an assets/ branch in this repo, or a release asset — and point
+    the URLs below at them. Remove this comment when done.
+  -->
+  <screenshots>
+    <screenshot type="default">
+      <caption>Editor with live PDF preview</caption>
+      <image>https://raw.githubusercontent.com/DERK0CHER/SilkTex/assets/screenshots/editor.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Document outline and snippet editor</caption>
+      <image>https://raw.githubusercontent.com/DERK0CHER/SilkTex/assets/screenshots/outline.png</image>
+    </screenshot>
+  </screenshots>
+
   <releases>
     <release version="0.9.0" date="2026-04-24">
       <description>
         <p>Initial SilkTex release based on the Gummi code base.</p>
+        <ul>
+          <li>Ported the UI to GTK 4 / libadwaita / Blueprint.</li>
+          <li>HiDPI-aware PDF preview with device-scale aware rendering.</li>
+          <li>Configurable snippet engine with two global modifier keys
+              plus a letter, and $1 / $2 / $0 tab placeholders.</li>
+          <li>Flatpak manifest and Nix dev shell.</li>
+        </ul>
       </description>
     </release>
   </releases>

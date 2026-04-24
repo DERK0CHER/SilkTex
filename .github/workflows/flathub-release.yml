@@ -1,0 +1,109 @@
+# SilkTex - Modern LaTeX Editor
+# Copyright (C) 2026 Bela Georg Barthelmes
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# When a GitHub release is published in this repo, rewrite the tag and
+# commit SHA inside the Flathub manifest repo and open a PR.  Flathub's
+# Buildbot then builds and publishes the new version automatically once
+# the PR is merged.
+#
+# Setup (one-time):
+#   1. The app must already be accepted on Flathub, i.e. the repo
+#      github.com/flathub/app.silktex.SilkTex must exist.
+#   2. Create a GitHub Personal Access Token with `contents: write` and
+#      `pull-requests: write` on that Flathub repo, and store it as a
+#      repository secret named `FLATHUB_BUMP_TOKEN` in this repo.
+#   3. Tag + publish a GitHub release (e.g. `v0.9.1`). The workflow runs
+#      on the `published` event.
+
+name: Update Flathub manifest on release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to push to Flathub (e.g. v0.9.1)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    name: Open bump PR against flathub/app.silktex.SilkTex
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "name=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve tag to commit SHA
+        id: sha
+        env:
+          TAG: ${{ steps.tag.outputs.name }}
+        run: |
+          sha=$(git ls-remote https://github.com/${{ github.repository }}.git \
+                "refs/tags/${TAG}^{}" | cut -f1)
+          if [ -z "$sha" ]; then
+            sha=$(git ls-remote https://github.com/${{ github.repository }}.git \
+                  "refs/tags/${TAG}" | cut -f1)
+          fi
+          if [ -z "$sha" ]; then
+            echo "could not resolve tag ${TAG}" >&2
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check out Flathub manifest repo
+        uses: actions/checkout@v4
+        with:
+          repository: flathub/app.silktex.SilkTex
+          token: ${{ secrets.FLATHUB_BUMP_TOKEN }}
+          path: flathub
+
+      - name: Rewrite manifest
+        working-directory: flathub
+        env:
+          TAG: ${{ steps.tag.outputs.name }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          manifest="app.silktex.SilkTex.yml"
+          if [ ! -f "$manifest" ]; then
+            echo "manifest $manifest not found in the Flathub repo" >&2
+            exit 1
+          fi
+          python3 - <<PY
+          import re, pathlib, os
+          p = pathlib.Path("$manifest")
+          s = p.read_text()
+          s = re.sub(r'(?m)^(\s*tag:\s*).*$',    r'\g<1>' + os.environ["TAG"], s, count=1)
+          s = re.sub(r'(?m)^(\s*commit:\s*).*$', r'\g<1>' + os.environ["SHA"], s, count=1)
+          p.write_text(s)
+          PY
+          git --no-pager diff -- "$manifest"
+
+      - name: Open pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          path: flathub
+          token: ${{ secrets.FLATHUB_BUMP_TOKEN }}
+          branch: auto/${{ steps.tag.outputs.name }}
+          base: master
+          commit-message: 'chore: bump SilkTex to ${{ steps.tag.outputs.name }}'
+          title: 'Bump SilkTex to ${{ steps.tag.outputs.name }}'
+          body: |
+            Automated bump from https://github.com/${{ github.repository }}
+            triggered by the `release: published` event.
+
+            - tag: `${{ steps.tag.outputs.name }}`
+            - commit: `${{ steps.sha.outputs.sha }}`
+
+            The `flatpak-external-data-checker` running on Flathub should
+            arrive at the same result; this PR just fast-paths it.

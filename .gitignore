@@ -4,6 +4,7 @@ build-gtk4/
 build-flatpak/
 build-flatpak-repo/
 .flatpak-builder/
+flatpak/.local.*.yml
 
 # Editor / OS
 .DS_Store
