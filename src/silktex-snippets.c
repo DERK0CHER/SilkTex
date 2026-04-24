@@ -55,158 +55,53 @@ struct _SilktexSnippets {
     char         *filename;
     slist        *head;     /* linked list of snippets (first=header, second=body) */
     GList        *accels;   /* SnippetAccel* for keyboard shortcuts                */
+    GdkModifierType global_mods; /* modifiers combined with single-letter accels    */
     SnippetState *active;
     GList        *stack;
 };
 
 G_DEFINE_FINAL_TYPE(SilktexSnippets, silktex_snippets, G_TYPE_OBJECT)
 
-/* ---------------------------------------------------------------- default content */
+/* ---------------------------------------------------------------- default content
+ *
+ * We ship a default snippets.cfg in $datadir/silktex/snippets/snippets.cfg.
+ * On first run (or after reset), we copy that file verbatim to the user's
+ * config directory.  During development the build system exports GUMMI_DATA
+ * which points at the in-tree data/ folder.
+ */
 
-static const char DEFAULT_SNIPPETS[] =
-"#\n"
-"# snippets.cfg — SilkTex\n"
-"#\n"
-"# Format:\n"
-"#   snippet TAB_TRIGGER,ACCELERATOR,NAME\n"
-"#\t<TAB>body line 1\n"
-"#\t<TAB>body line 2\n"
-"#\n"
-"# Placeholders: $1 $2 … $0 (final position)  ${N:default text}\n"
-"# Macros: $FILENAME  $BASENAME  $SELECTED_TEXT\n"
-"#\n"
-"snippet enum,<Shift><Alt>e,Enumerate\n"
-"\t\\begin{enumerate}[label=(\\roman*)]\n"
-"\t\\item $1\t\n"
-"\t\\end{enumerate}\n"
-"\t$0\n"
-"snippet item,,Item\n"
-"\t\\item $0\n"
-"snippet equation,<Shift><Alt>adiaeresis,Equation\n"
-"\t\\begin{equation}\\label{$1}\n"
-"\t$2\n"
-"\t\\end{equation}\n"
-"\t$0\n"
-"snippet eq,<Shift><Alt>odiaeresis,UnnumberedEquation\n"
-"\t\\begin{equation*}\n"
-"\t\\begin{split}\n"
-"\t$1\n"
-"\t= \\; &\n"
-"\t$2\n"
-"\t\\end{split}\n"
-"\t\\end{equation*}\n"
-"\t$0\n"
-"snippet fraction,<Shift><Alt>f,Fraction\n"
-"\t\\frac{$1}{$2}$0\n"
-"snippet upper,<Shift><Alt>u,Upper\n"
-"\t^{$1}$0\n"
-"snippet lower,<Shift><Alt>j,Lower\n"
-"\t_{$1}$0\n"
-"snippet math,<Shift><Alt>m,Math\n"
-"\t$$1$$0\n"
-"snippet integral,<Shift><Alt>i,Integral\n"
-"\t\\int^{$1}_{$2} $3 \\,d$0\n"
-"snippet text,<Shift><Alt>t,Text\n"
-"\t\\; \\text{ $1 } \\; $0\n"
-"snippet braces,<Shift><Alt>b,Braces\n"
-"\t\\{ $1 \\} $0\n"
-"snippet cal,<Shift><Alt>c,Mathcal\n"
-"\t\\mathcal{$1}$0\n"
-"snippet xrightarrow,<Shift><Alt>x,Xarrow\n"
-"\t\\xrightarrow{$1}$0\n"
-"snippet root,<Shift><Alt>r,Root\n"
-"\t\\sqrt{$1}$0\n"
-"snippet parentheses,<Shift><Alt>h,Parentheses\n"
-"\t($1)$0\n"
-"snippet proof,<Shift><Alt>p,Proof\n"
-"\t\\begin{proof}\n"
-"\t$0\n"
-"\t\\end{proof}\n"
-"snippet equivalence,<Shift><Alt>g,Equivalence\n"
-"\t\\Longleftrightarrow\n"
-"snippet rightarrow,<Shift><Alt>underscore,Arrow\n"
-"\t\\longrightarrow\n"
-"snippet overset,<Shift><Alt>o,Overset\n"
-"\t\\overset{$1}{$2}$0\n"
-"snippet dafds,<Shift><Alt>d,Cases\n"
-"\t\\left\\{\n"
-"\t\\begin{matrix*}[l]\n"
-"\t$1  &  \\;\\text{$2}\\;  &  $3 \\\\\n"
-"\t$4 &  \\;\\text{$5}\\;  &  $6 \\\\\n"
-"\t\\end{matrix*}\n"
-"\t\\right.$0\n"
-"snippet lim,<Shift><Alt>l,Limit\n"
-"\t\\lim_{$1 \\to $2 }$0\n"
-"snippet mbrace,<Shift><Alt>semicolon,Mathbraces\n"
-"\t{$1}$0\n"
-"snippet prime,<Shift><Alt>asterisk,Prime\n"
-"\t\\prime $0\n"
-"snippet wedg,<Shift><Alt>w,Wedge\n"
-"\t \\; \\wedge \\; $0\n"
-"snippet vert,<Shift><Alt>a,Vert_small\n"
-"\t\\vert $1 \\vert $0\n"
-"snippet Vert,<Shift><Alt>v,Vert_big\n"
-"\t\\Vert $1 \\Vert$0\n"
-"snippet fa,,ForAll\n"
-"\t\\; \\forall \\; $0\n"
-"snippet ex,,Exists\n"
-"\t\\; \\exists \\; $0\n"
-"snippet impl,<Shift><Alt>equal,Implies\n"
-"\t \\Longrightarrow $0\n"
-"snippet bino,<Shift><Alt>percent,Binomial\n"
-"\t\\left( \\begin{matrix}\n"
-"\t$1 \\\\ $2\n"
-"\t\\end{matrix}\\right) $0\n"
-"snippet such,<Shift><Alt>colon,SuchThat\n"
-"\t\\; : \\; $0\n"
-"snippet ov,,Overline\n"
-"\t\\overline{$1}$0\n"
-"snippet quad,<Shift><Alt>q,Quad\n"
-"\t\\quad$0\n"
-"snippet under,,Underline\n"
-"\t\\underline{$1} $0\n"
-"snippet setm,<Shift><Alt>s,Setminus\n"
-"\t\\setminus \\{  $1 \\} $0\n"
-"snippet new,<Shift><Alt>n,Newline\n"
-"\t\\\\\n"
-"\t= \\; &\n"
-"snippet beg,,Begin\n"
-"\t\\begin{$1}\n"
-"\t$2\n"
-"\t\\end{$1}\n"
-"\t$0\n"
-"snippet bar,,Bar\n"
-"\t\\bar{$1}$0\n"
-"snippet par,,Partial\n"
-"\t\\partial\n"
-"snippet bra,,Bracket\n"
-"\t[ $1 ]$0\n"
-"snippet al,,alpha\n"
-"\t\\alpha\n"
-"snippet be,,beta\n"
-"\t\\beta\n"
-"snippet ga,,gamma\n"
-"\t\\gamma\n"
-"snippet de,,delta\n"
-"\t\\delta\n"
-"snippet ep,,epsilon\n"
-"\t\\varepsilon\n"
-"snippet ze,,zeta\n"
-"\t\\zeta\n"
-"snippet et,,eta\n"
-"\t\\eta\n"
-"snippet te,,theta\n"
-"\t\\theta\n"
-"snippet ka,,kappa\n"
-"\t\\kappa\n"
-"snippet la,,lambda\n"
-"\t\\lambda\n"
-"snippet split,<Shift><Alt>s,Split\n"
-"\t\\begin{split}\n"
-"\t$1\n"
-"\t= &\n"
-"\t$2\n"
-"\t\\end{split}\n";
+#ifndef GUMMI_DATA
+#define GUMMI_DATA "/usr/share/silktex"
+#endif
+
+static char *
+find_default_snippets_path(void)
+{
+    /* 1) development: GUMMI_DATA/snippets/snippets.cfg               */
+    char *p = g_build_filename(GUMMI_DATA, "snippets", "snippets.cfg", NULL);
+    if (g_file_test(p, G_FILE_TEST_IS_REGULAR)) return p;
+    g_free(p);
+
+    /* 2) installed prefix next to this binary (datadir/silktex/…)    */
+    const char * const *dirs = g_get_system_data_dirs();
+    for (int i = 0; dirs && dirs[i]; i++) {
+        char *q = g_build_filename(dirs[i], "silktex", "snippets", "snippets.cfg", NULL);
+        if (g_file_test(q, G_FILE_TEST_IS_REGULAR)) return q;
+        g_free(q);
+    }
+    return NULL;
+}
+
+static gboolean
+copy_default_snippets(const char *dest)
+{
+    g_autofree char *src = find_default_snippets_path();
+    if (!src) return FALSE;
+    g_autofree char *contents = NULL;
+    gsize len = 0;
+    if (!g_file_get_contents(src, &contents, &len, NULL)) return FALSE;
+    return g_file_set_contents(dest, contents, (gssize)len, NULL);
+}
 
 /* ------------------------------------------------------------------ file I/O */
 
@@ -223,25 +118,79 @@ static void free_slist(slist *head) {
     while (c) { slist *nx = c->next; g_free(c->first); g_free(c->second); g_free(c); c = nx; }
 }
 
+/*
+ * Parse the ACCEL field of a snippet header.
+ *
+ * Two formats are accepted:
+ *   1. Legacy full accelerator string: "<Shift><Alt>e" or "<Control>F3"
+ *      (anything gtk_accelerator_parse understands).
+ *   2. New short form: a single letter/keyword such as "e" — the global
+ *      modifier pair (set via silktex_snippets_set_modifiers) is applied.
+ *
+ * Empty / missing → no shortcut.
+ */
 static void
 parse_and_store_accel(SilktexSnippets *self, const char *header)
 {
-    /* header format: "KEYWORD,ACCEL_STR,Display Name"
-     * e.g.          "enum,<Shift><Alt>e,Enumerate"     */
     gchar **parts = g_strsplit(header, ",", 3);
     if (!parts[0] || !parts[1] || !*parts[1]) { g_strfreev(parts); return; }
 
+    const char *accel = parts[1];
     guint           kv   = 0;
     GdkModifierType mods = 0;
-    gtk_accelerator_parse(parts[1], &kv, &mods);
-    if (!gtk_accelerator_valid(kv, mods)) { g_strfreev(parts); return; }
 
-    SnippetAccel *a = g_new0(SnippetAccel, 1);
-    a->keyval  = kv;
-    a->mods    = mods & gtk_accelerator_get_default_mod_mask();
-    a->keyword = g_strdup(parts[0]);
-    self->accels = g_list_append(self->accels, a);
+    if (strchr(accel, '<') != NULL) {
+        /* Legacy explicit-modifier form: "<Shift><Alt>e" */
+        gtk_accelerator_parse(accel, &kv, &mods);
+    } else {
+        /* Short form: just the letter; combine with global modifiers. */
+        kv   = gdk_keyval_from_name(accel);
+        mods = self->global_mods;
+    }
+
+    /*
+     * Safety: never register an accelerator with no modifiers — otherwise
+     * every bare keystroke matching `kv` would trigger the snippet.  If
+     * the user has misconfigured both modifier slots, the short-form
+     * snippet is silently skipped; legacy snippets with explicit
+     * modifiers are still honored.
+     */
+    if (kv != 0 && kv != GDK_KEY_VoidSymbol && mods != 0) {
+        SnippetAccel *a = g_new0(SnippetAccel, 1);
+        a->keyval  = kv;
+        a->mods    = mods & gtk_accelerator_get_default_mod_mask();
+        a->keyword = g_strdup(parts[0]);
+        self->accels = g_list_append(self->accels, a);
+    }
     g_strfreev(parts);
+}
+
+/*
+ * Walk all stored snippet headers and (re)build self->accels.
+ * Called after the file reloads or the global modifiers change.
+ */
+static void
+rebuild_accels(SilktexSnippets *self)
+{
+    free_accels(self->accels);
+    self->accels = NULL;
+    for (slist *c = self->head; c; c = c->next) {
+        if (c->first)
+            parse_and_store_accel(self, c->first);
+    }
+}
+
+static GdkModifierType
+modifier_from_name(const char *name)
+{
+    if (!name || !*name) return 0;
+    if (g_ascii_strcasecmp(name, "Shift")   == 0) return GDK_SHIFT_MASK;
+    if (g_ascii_strcasecmp(name, "Control") == 0) return GDK_CONTROL_MASK;
+    if (g_ascii_strcasecmp(name, "Ctrl")    == 0) return GDK_CONTROL_MASK;
+    if (g_ascii_strcasecmp(name, "Alt")     == 0) return GDK_ALT_MASK;
+    if (g_ascii_strcasecmp(name, "Meta")    == 0) return GDK_META_MASK;
+    if (g_ascii_strcasecmp(name, "Super")   == 0) return GDK_SUPER_MASK;
+    return 0;
 }
 
 static void
@@ -252,8 +201,13 @@ load_snippets_file(SilktexSnippets *self)
 
     FILE *fh = fopen(self->filename, "r");
     if (!fh) {
-        slog(L_WARNING, "Snippets: writing defaults to %s\n", self->filename);
-        g_file_set_contents(self->filename, DEFAULT_SNIPPETS, -1, NULL);
+        slog(L_WARNING, "Snippets: seeding %s from default template\n",
+             self->filename);
+        if (!copy_default_snippets(self->filename)) {
+            slog(L_WARNING,
+                 "Snippets: no default template found; starting empty\n");
+            g_file_set_contents(self->filename, "", 0, NULL);
+        }
         fh = fopen(self->filename, "r");
         if (!fh) return;
     }
@@ -276,7 +230,6 @@ load_snippets_file(SilktexSnippets *self)
             if (!self->head) self->head = node;
             if (prev) prev->next = node;
             prev = node;
-            parse_and_store_accel(self, header);
         } else if (prev) {
             const char *line = buf + 1;
             if (!prev->second) {
@@ -289,6 +242,8 @@ load_snippets_file(SilktexSnippets *self)
         }
     }
     fclose(fh);
+
+    rebuild_accels(self);
 }
 
 static const char *
@@ -675,6 +630,11 @@ silktex_snippets_new(void)
     g_mkdir_with_parents(confdir, DIR_PERMS);
     self->filename = g_build_filename(confdir, "snippets.cfg", NULL);
     g_free(confdir);
+
+    /* Default global modifier pair (user-overridable via prefs).
+     * Matches the original Gummi default (<Shift><Alt>). */
+    self->global_mods = GDK_SHIFT_MASK | GDK_ALT_MASK;
+
     load_snippets_file(self);
     return self;
 }
@@ -694,8 +654,21 @@ void silktex_snippets_reload(SilktexSnippets *self)
 void silktex_snippets_reset_to_default(SilktexSnippets *self)
 {
     g_return_if_fail(SILKTEX_IS_SNIPPETS(self));
-    if (g_file_set_contents(self->filename, DEFAULT_SNIPPETS, -1, NULL))
-        load_snippets_file(self);
+    /* Remove the user's copy; load_snippets_file() will re-seed it. */
+    g_unlink(self->filename);
+    load_snippets_file(self);
+}
+
+void
+silktex_snippets_set_modifiers(SilktexSnippets *self,
+                               const char      *modifier1,
+                               const char      *modifier2)
+{
+    g_return_if_fail(SILKTEX_IS_SNIPPETS(self));
+    GdkModifierType m = modifier_from_name(modifier1) |
+                        modifier_from_name(modifier2);
+    self->global_mods = m;
+    rebuild_accels(self);
 }
 
 gboolean

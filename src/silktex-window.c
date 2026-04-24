@@ -931,6 +931,14 @@ on_prefs_apply(gpointer user_data)
     self->auto_compile = config_get_boolean("Compile", "auto_compile");
     silktex_compiler_apply_config(self->compiler);
     restart_autosave_timer(self);
+
+    /* Snippet shortcuts may have changed; push the new modifier pair
+     * through to the running engine so shortcuts update immediately. */
+    if (self->snippets) {
+        silktex_snippets_set_modifiers(self->snippets,
+            config_get_string("Snippets", "modifier1"),
+            config_get_string("Snippets", "modifier2"));
+    }
 }
 
 /* ------------------------------------------------------------ preview toggle */
@@ -1202,6 +1210,9 @@ silktex_window_init(SilktexWindow *self)
 
     /* ---- snippets ---- */
     self->snippets = silktex_snippets_new();
+    silktex_snippets_set_modifiers(self->snippets,
+        config_get_string("Snippets", "modifier1"),
+        config_get_string("Snippets", "modifier2"));
     GtkEventControllerKey *key_ctrl = GTK_EVENT_CONTROLLER_KEY(
         gtk_event_controller_key_new());
     gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(key_ctrl),

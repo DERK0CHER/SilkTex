@@ -9,6 +9,13 @@
     let
       system = "aarch64-darwin"; # Apple Silicon
       pkgs = nixpkgs.legacyPackages.${system};
+
+      # Combined TeX Live: use scheme-full to guarantee every CTAN
+      # package is available.  This is large (~6 GB after substitution)
+      # but eliminates "File foo.sty not found" surprises across the
+      # many packages real-world LaTeX documents load (bbold, enumitem,
+      # mathtools, tikz, biblatex, fontawesome5, …).
+      texliveEnv = pkgs.texlive.combined.scheme-full;
     in
     {
       devShells.${system}.default = pkgs.mkShell {
@@ -30,7 +37,7 @@
           gtkspell3
           poppler
           intltool
-          texlive.bin.core
+          texliveEnv
           gsettings-desktop-schemas
         ];
 

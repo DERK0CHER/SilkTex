@@ -24,6 +24,18 @@ const char *silktex_snippets_get_filename(SilktexSnippets *self);
 void        silktex_snippets_reload(SilktexSnippets *self);
 void        silktex_snippets_reset_to_default(SilktexSnippets *self);
 
+/*
+ * Set the two global modifier keys that are combined with each snippet's
+ * single-letter accelerator to form its full shortcut.  Pass e.g. "Shift"
+ * and "Alt" (case-insensitive).  An empty / NULL string disables that slot.
+ *
+ * Rebuilds the internal accelerator table; call whenever the preference
+ * changes or the snippets file is reloaded.
+ */
+void silktex_snippets_set_modifiers(SilktexSnippets *self,
+                                    const char      *modifier1,
+                                    const char      *modifier2);
+
 /* Key-press handler – returns TRUE if the event was consumed */
 gboolean silktex_snippets_handle_key(SilktexSnippets *self,
                                      SilktexEditor   *editor,

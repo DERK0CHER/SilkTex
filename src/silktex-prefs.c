@@ -46,6 +46,8 @@ struct _SilktexPrefs {
     AdwEntryRow     *row_snippet_name;
     AdwEntryRow     *row_snippet_key;
     AdwEntryRow     *row_snippet_accel;
+    AdwComboRow     *row_snippet_mod1;
+    AdwComboRow     *row_snippet_mod2;
     GPtrArray       *snippet_entries; /* SnippetEntry* */
     guint            current_snippet_index;
     gboolean         snippets_updating_ui; /* guard: block feedback loops while we re-populate the snippet widgets */
@@ -59,6 +61,11 @@ typedef struct {
     char *accel;
     char *body;
 } SnippetEntry;
+
+/* forward declarations – definitions live further down next to their peers */
+static char *extract_accel_letter(const char *accel);
+static void  snippet_update_accel_subtitle(SilktexPrefs *self);
+static void  snippets_apply_modifiers(SilktexPrefs *self);
 
 G_DEFINE_FINAL_TYPE(SilktexPrefs, silktex_prefs, ADW_TYPE_PREFERENCES_DIALOG)
 
@@ -164,9 +171,12 @@ snippet_load_current_into_ui(SilktexPrefs *self)
     SnippetEntry *e = g_ptr_array_index(self->snippet_entries, self->current_snippet_index);
     gtk_editable_set_text(GTK_EDITABLE(self->row_snippet_name), e->name ? e->name : "");
     gtk_editable_set_text(GTK_EDITABLE(self->row_snippet_key), e->key ? e->key : "");
-    gtk_editable_set_text(GTK_EDITABLE(self->row_snippet_accel), e->accel ? e->accel : "");
+    /* Only the letter portion is user-editable; modifier prefix is global. */
+    g_autofree char *letter = extract_accel_letter(e->accel);
+    gtk_editable_set_text(GTK_EDITABLE(self->row_snippet_accel), letter);
     gtk_text_buffer_set_text(self->snippet_buf, e->body ? e->body : "", -1);
     self->snippets_updating_ui = FALSE;
+    snippet_update_accel_subtitle(self);
 }
 
 static void
@@ -562,6 +572,129 @@ on_snippet_reset(GtkButton *btn, gpointer ud)
     snippet_load_current_into_ui(self);
 }
 
+/* ---- global snippet modifier preferences ------------------------------------
+ *
+ * Each snippet in snippets.cfg stores only a single letter (or keysym name)
+ * in its ACCELERATOR field.  At runtime that letter is combined with the two
+ * global modifier keys chosen here to form the actual shortcut.
+ */
+
+static const struct {
+    const char *display;   /* shown in the combo */
+    const char *config;    /* stored in silktex.ini */
+    guint       gdk_mask;  /* for the label preview */
+} MODIFIER_CHOICES[] = {
+    { "—",       "",        0 },
+    { "Shift",   "Shift",   GDK_SHIFT_MASK   },
+    { "Control", "Control", GDK_CONTROL_MASK },
+    { "Alt",     "Alt",     GDK_ALT_MASK     },
+    { "Super",   "Super",   GDK_SUPER_MASK   },
+};
+
+static guint
+modifier_choice_index_for(const char *name)
+{
+    for (guint i = 0; i < G_N_ELEMENTS(MODIFIER_CHOICES); i++)
+        if (g_strcmp0(name ? name : "", MODIFIER_CHOICES[i].config) == 0)
+            return i;
+    return 0;
+}
+
+static const char *
+modifier_choice_config(guint idx)
+{
+    if (idx >= G_N_ELEMENTS(MODIFIER_CHOICES)) idx = 0;
+    return MODIFIER_CHOICES[idx].config;
+}
+
+static GtkStringList *
+build_modifier_model(void)
+{
+    GtkStringList *m = gtk_string_list_new(NULL);
+    for (guint i = 0; i < G_N_ELEMENTS(MODIFIER_CHOICES); i++)
+        gtk_string_list_append(m, MODIFIER_CHOICES[i].display);
+    return m;
+}
+
+/*
+ * Extract the single-letter/keysym portion from any accelerator string.
+ * Accepts "e", "<Shift><Alt>e", "F3" etc. — returns an allocated string
+ * with just the key name (never NULL).
+ */
+static char *
+extract_accel_letter(const char *accel)
+{
+    if (!accel) return g_strdup("");
+    const char *p = accel;
+    while (*p == '<') {
+        const char *close = strchr(p, '>');
+        if (!close) break;
+        p = close + 1;
+    }
+    return g_strdup(p);
+}
+
+/* Apply the current modifier preferences to the running snippet engine. */
+static void
+snippets_apply_modifiers(SilktexPrefs *self)
+{
+    if (!self->snippets) return;
+    const char *m1 = config_get_string("Snippets", "modifier1");
+    const char *m2 = config_get_string("Snippets", "modifier2");
+    silktex_snippets_set_modifiers(self->snippets, m1, m2);
+}
+
+static void
+snippet_update_accel_subtitle(SilktexPrefs *self)
+{
+    if (!self->row_snippet_accel) return;
+    const char *letter = gtk_editable_get_text(GTK_EDITABLE(self->row_snippet_accel));
+    const char *m1 = config_get_string("Snippets", "modifier1");
+    const char *m2 = config_get_string("Snippets", "modifier2");
+
+    GString *s = g_string_new(NULL);
+    if (letter && *letter) {
+        if (m1 && *m1) g_string_append_printf(s, "%s+", m1);
+        if (m2 && *m2) g_string_append_printf(s, "%s+", m2);
+        g_string_append(s, letter);
+    } else {
+        g_string_append(s, _("No shortcut"));
+    }
+    adw_action_row_set_subtitle(ADW_ACTION_ROW(self->row_snippet_accel), s->str);
+    g_string_free(s, TRUE);
+}
+
+static void
+on_snippet_modifier_changed(AdwComboRow *row, GParamSpec *p, gpointer ud)
+{
+    SilktexPrefs *self = SILKTEX_PREFS(ud);
+    if (self->snippets_updating_ui) return;
+
+    guint i1 = adw_combo_row_get_selected(self->row_snippet_mod1);
+    guint i2 = adw_combo_row_get_selected(self->row_snippet_mod2);
+    config_set_string("Snippets", "modifier1", modifier_choice_config(i1));
+    config_set_string("Snippets", "modifier2", modifier_choice_config(i2));
+
+    snippets_apply_modifiers(self);
+    snippet_update_accel_subtitle(self);
+    fire_apply(self);
+}
+
+static void
+on_snippet_accel_changed(AdwEntryRow *row, GParamSpec *p, gpointer ud)
+{
+    SilktexPrefs *self = SILKTEX_PREFS(ud);
+    if (self->snippets_updating_ui) return;
+    if (!self->snippet_entries ||
+        self->current_snippet_index >= self->snippet_entries->len)
+        return;
+    SnippetEntry *e = g_ptr_array_index(self->snippet_entries,
+                                        self->current_snippet_index);
+    g_free(e->accel);
+    e->accel = g_strdup(gtk_editable_get_text(GTK_EDITABLE(row)));
+    snippet_update_accel_subtitle(self);
+}
+
 static void
 on_snippet_pick_changed(AdwComboRow *row, GParamSpec *pspec, gpointer ud)
 {
@@ -641,6 +774,40 @@ silktex_prefs_set_snippets(SilktexPrefs *self, SilktexSnippets *snippets)
         ADW_PREFERENCES_PAGE(g_object_get_data(G_OBJECT(self), "snip-page"));
     if (!snip_page) return;
 
+    /* ---- shortcut modifier pair (global) ---- */
+    AdwPreferencesGroup *grp_mods = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
+    adw_preferences_group_set_title(grp_mods, _("Shortcut Modifiers"));
+    adw_preferences_group_set_description(grp_mods,
+        _("Pick two modifier keys to combine with each snippet's "
+          "letter.  Press Modifier 1 + Modifier 2 + Letter to expand "
+          "the snippet.  After expansion, Tab cycles through the "
+          "$1, $2, … placeholders; $0 is the final landing position."));
+
+    GtkStringList *mod_model_1 = build_modifier_model();
+    GtkStringList *mod_model_2 = build_modifier_model();
+
+    self->row_snippet_mod1 = ADW_COMBO_ROW(adw_combo_row_new());
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_snippet_mod1),
+                                  _("Modifier 1"));
+    adw_combo_row_set_model(self->row_snippet_mod1, G_LIST_MODEL(mod_model_1));
+    adw_combo_row_set_selected(self->row_snippet_mod1,
+        modifier_choice_index_for(config_get_string("Snippets", "modifier1")));
+    g_signal_connect(self->row_snippet_mod1, "notify::selected",
+                     G_CALLBACK(on_snippet_modifier_changed), self);
+
+    self->row_snippet_mod2 = ADW_COMBO_ROW(adw_combo_row_new());
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_snippet_mod2),
+                                  _("Modifier 2"));
+    adw_combo_row_set_model(self->row_snippet_mod2, G_LIST_MODEL(mod_model_2));
+    adw_combo_row_set_selected(self->row_snippet_mod2,
+        modifier_choice_index_for(config_get_string("Snippets", "modifier2")));
+    g_signal_connect(self->row_snippet_mod2, "notify::selected",
+                     G_CALLBACK(on_snippet_modifier_changed), self);
+
+    adw_preferences_group_add(grp_mods, GTK_WIDGET(self->row_snippet_mod1));
+    adw_preferences_group_add(grp_mods, GTK_WIDGET(self->row_snippet_mod2));
+    adw_preferences_page_add(snip_page, grp_mods);
+
     /* ---- snippet selection ---- */
     AdwPreferencesGroup *grp_list = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
     adw_preferences_group_set_title(grp_list, _("Manage Snippets"));
@@ -659,7 +826,10 @@ silktex_prefs_set_snippets(SilktexPrefs *self, SilktexSnippets *snippets)
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_snippet_key), _("Tab Trigger"));
 
     self->row_snippet_accel = ADW_ENTRY_ROW(adw_entry_row_new());
-    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_snippet_accel), _("Accelerator"));
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_snippet_accel),
+                                  _("Shortcut Letter"));
+    g_signal_connect(self->row_snippet_accel, "notify::text",
+                     G_CALLBACK(on_snippet_accel_changed), self);
 
     adw_preferences_group_add(grp_list, GTK_WIDGET(self->row_snippet_pick));
     adw_preferences_group_add(grp_list, GTK_WIDGET(self->row_snippet_name));

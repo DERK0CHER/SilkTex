@@ -47,7 +47,14 @@ static const gchar default_config[] =
 "\n"
 "[Spelling]\n"
 "enabled = false\n"
-"language = en_US\n";
+"language = en_US\n"
+"\n"
+"[Snippets]\n"
+"# Two modifier keys combined with each snippet's single-letter accelerator\n"
+"# to form its shortcut. Valid values: Shift, Control, Alt, Super.\n"
+"# Leave empty to disable a modifier slot (e.g. only one modifier).\n"
+"modifier1 = Shift\n"
+"modifier2 = Alt\n";
 
 static GKeyFile *key_file = NULL;
 static gchar *conf_filepath = NULL;
@@ -73,6 +80,13 @@ void config_init(void) {
 
         g_key_file_load_from_data(key_file, default_config, strlen(default_config),
                                    G_KEY_FILE_NONE, NULL);
+        config_save();
+    }
+
+    /* Migrate older config files that predate the Snippets section. */
+    if (!g_key_file_has_group(key_file, "Snippets")) {
+        g_key_file_set_string(key_file, "Snippets", "modifier1", "Shift");
+        g_key_file_set_string(key_file, "Snippets", "modifier2", "Alt");
         config_save();
     }
 
