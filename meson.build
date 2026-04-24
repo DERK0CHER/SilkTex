@@ -14,6 +14,19 @@ project(
     ],
 )
 
+# Warning tuning. GObject/GIO idioms (short-form GActionEntry arrays,
+# fixed-signature callbacks where some params are intentionally unused)
+# trip these diagnostics constantly, so we disable them project-wide
+# while keeping the rest of -Wextra active.
+cc = meson.get_compiler('c')
+add_project_arguments(
+    cc.get_supported_arguments([
+        '-Wno-unused-parameter',
+        '-Wno-missing-field-initializers',
+    ]),
+    language: 'c',
+)
+
 i18n   = import('i18n')
 gnome  = import('gnome')
 
