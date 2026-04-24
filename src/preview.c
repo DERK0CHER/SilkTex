@@ -406,6 +406,17 @@ static void on_vadj_value_changed(GtkAdjustment *adj, gpointer user_data)
     }
 }
 
+static void on_preview_pressed(GtkGestureClick *gesture, int n_press, double x, double y,
+                               gpointer user_data)
+{
+    (void)gesture;
+    (void)n_press;
+    (void)x;
+    (void)y;
+    SilktexPreview *self = SILKTEX_PREVIEW(user_data);
+    gtk_widget_grab_focus(self->scrolled_window);
+}
+
 static void silktex_preview_init(SilktexPreview *self)
 {
     self->zoom = 1.0;
@@ -420,12 +431,19 @@ static void silktex_preview_init(SilktexPreview *self)
     gtk_widget_set_parent(self->scrolled_window, GTK_WIDGET(self));
     gtk_widget_set_vexpand(self->scrolled_window, TRUE);
     gtk_widget_set_hexpand(self->scrolled_window, TRUE);
+    gtk_widget_set_focusable(self->scrolled_window, TRUE);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(self->scrolled_window), GTK_POLICY_AUTOMATIC,
                                    GTK_POLICY_AUTOMATIC);
 
     self->drawing_area = gtk_drawing_area_new();
     gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(self->drawing_area), draw_func, self, NULL);
     gtk_widget_set_size_request(self->drawing_area, 400, 600);
+    gtk_widget_set_hexpand(self->drawing_area, TRUE);
+    gtk_widget_set_vexpand(self->drawing_area, TRUE);
+
+    GtkGesture *click = gtk_gesture_click_new();
+    gtk_widget_add_controller(self->drawing_area, GTK_EVENT_CONTROLLER(click));
+    g_signal_connect(click, "pressed", G_CALLBACK(on_preview_pressed), self);
 
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(self->scrolled_window), self->drawing_area);
 

@@ -112,8 +112,9 @@ template $SilktexWindow : Adw.ApplicationWindow {
           orientation: horizontal;
           shrink-start-child: false;
           shrink-end-child: false;
-          resize-start-child: true;
+          resize-start-child: false;
           resize-end-child: true;
+          wide-handle: false;
           vexpand: true;
           position: 780;
 
@@ -125,6 +126,8 @@ template $SilktexWindow : Adw.ApplicationWindow {
           // ------------------------------------------------------------------
           [start]
           Adw.ToolbarView editor_toolbar_view {
+            width-request: 640;
+
             [top]
             Adw.TabBar tab_bar {
               view: tab_view;
@@ -152,7 +155,29 @@ template $SilktexWindow : Adw.ApplicationWindow {
                 tooltip-text: _("Compile (Ctrl+Enter)");
                 action-name: "win.compile";
 
-                styles ["suggested-action"]
+                styles ["flat"]
+              }
+
+              Gtk.Button {
+                icon-name: "edit-undo-symbolic";
+                tooltip-text: _("Undo (Ctrl+Z)");
+                action-name: "win.undo";
+
+                styles ["flat"]
+              }
+
+              Gtk.Button {
+                icon-name: "edit-redo-symbolic";
+                tooltip-text: _("Redo (Ctrl+Shift+Z)");
+                action-name: "win.redo";
+
+                styles ["flat"]
+              }
+
+              Gtk.Separator {
+                orientation: vertical;
+                margin-start: 4;
+                margin-end: 4;
               }
 
               Gtk.MenuButton btn_insert {
@@ -196,6 +221,14 @@ template $SilktexWindow : Adw.ApplicationWindow {
               // Filler pushes the log toggle to the right edge.
               Gtk.Box {
                 hexpand: true;
+              }
+
+              Gtk.MenuButton {
+                icon-name: "document-properties-symbolic";
+                tooltip-text: _("Document Tools");
+                menu-model: document_menu;
+
+                styles ["flat"]
               }
 
               // The compile-log toggle button is injected here from window.c
@@ -247,7 +280,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
                 }
 
                 Gtk.MenuButton btn_zoom_menu {
-                  icon-name: "zoom-fit-best-symbolic";
+                  icon-name: "document-properties-symbolic";
                   tooltip-text: _("Fit");
                   menu-model: zoom_menu;
 
@@ -498,6 +531,42 @@ menu zoom_menu {
   }
 }
 
+menu document_menu {
+  section {
+    item {
+      label: _("_Compile");
+      action: "win.compile";
+    }
+
+    item {
+      label: _("Run _BibTeX");
+      action: "win.run-bibtex";
+    }
+
+    item {
+      label: _("Run Make_Index");
+      action: "win.run-makeindex";
+    }
+  }
+
+  section {
+    item {
+      label: _("_Cleanup Build Files");
+      action: "win.cleanup";
+    }
+
+    item {
+      label: _("Document _Statistics");
+      action: "win.stats";
+    }
+
+    item {
+      label: _("Show Compile _Log");
+      action: "win.toggle-log";
+    }
+  }
+}
+
 menu primary_menu {
   section {
     item {
@@ -530,101 +599,12 @@ menu primary_menu {
       action: "win.export-pdf";
     }
 
-    item {
-      label: _("_Close Tab");
-      action: "win.close-tab";
-    }
-  }
-
-  section {
-    label: _("Document");
-
-    item {
-      label: _("_Compile");
-      action: "win.compile";
-    }
-
-    item {
-      label: _("Run _BibTeX");
-      action: "win.run-bibtex";
-    }
-
-    item {
-      label: _("Run Make_Index");
-      action: "win.run-makeindex";
-    }
-
-    item {
-      label: _("_Cleanup Build Files");
-      action: "win.cleanup";
-    }
-
-    item {
-      label: _("Document _Statistics");
-      action: "win.stats";
-    }
-
-    item {
-      label: _("Show Compile _Log");
-      action: "win.toggle-log";
-    }
-  }
-
-  section {
-    item {
-      label: _("_Undo");
-      action: "win.undo";
-    }
-
-    item {
-      label: _("_Redo");
-      action: "win.redo";
-    }
-  }
-
-  section {
-    item {
-      label: _("_Find…");
-      action: "win.find";
-    }
-
-    item {
-      label: _("Find and _Replace…");
-      action: "win.find-replace";
-    }
-
-    item {
-      label: _("_Forward SyncTeX");
-      action: "win.forward-sync";
-    }
   }
 
   section {
     item {
       label: _("_Fullscreen");
       action: "win.fullscreen";
-    }
-  }
-
-  section {
-    label: _("Theme");
-
-    item {
-      label: _("Follow System");
-      action: "win.set-theme";
-      target: "follow";
-    }
-
-    item {
-      label: _("Light");
-      action: "win.set-theme";
-      target: "light";
-    }
-
-    item {
-      label: _("Dark");
-      action: "win.set-theme";
-      target: "dark";
     }
   }
 

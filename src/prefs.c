@@ -341,13 +341,12 @@ static void on_autosave_timer(AdwSpinRow *r, GParamSpec *p, gpointer ud)
 static void silktex_prefs_init(SilktexPrefs *self)
 {
     /*
-     * AdwDialog dialogs are always resizable by the user; content-width
-     * and content-height control the initial size only.  Give the
-     * preferences a roomy starting footprint so the snippet editor and
-     * the color-scheme list aren't cramped.
+     * AdwDialog dialogs are resizable; these are initial dimensions only.
+     * Keep them below the GNOME HIG 1024x600 baseline once window chrome
+     * and margins are accounted for.
      */
-    adw_dialog_set_content_width(ADW_DIALOG(self), 820);
-    adw_dialog_set_content_height(ADW_DIALOG(self), 680);
+    adw_dialog_set_content_width(ADW_DIALOG(self), 640);
+    adw_dialog_set_content_height(ADW_DIALOG(self), 520);
 
     /* ---- Editor page ---- */
     AdwPreferencesPage *editor_page = ADW_PREFERENCES_PAGE(adw_preferences_page_new());

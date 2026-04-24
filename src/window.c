@@ -18,6 +18,8 @@
 #include <glib/gstdio.h>
 #include <gio/gio.h>
 
+#define EDITOR_MIN_WIDTH 640
+
 struct _SilktexWindow {
     AdwApplicationWindow parent_instance;
 
@@ -49,11 +51,19 @@ struct _SilktexWindow {
     GtkRevealer *log_revealer;
     GtkTextBuffer *log_buf;
     GtkToggleButton *log_toggle;
+    GtkWidget *log_text_view;
+
+    /* graphical theme selector in the primary popover */
+    GtkToggleButton *theme_follow;
+    GtkToggleButton *theme_light;
+    GtkToggleButton *theme_dark;
 
     guint compile_timer_id;
     guint autosave_timer_id;
     gboolean auto_compile;
     gboolean is_fullscreen;
+    gboolean preview_narrow;
+    gboolean preview_auto_collapsed;
 
     AdwToast *current_toast;
 };
@@ -111,6 +121,40 @@ static void update_log_panel(SilktexWindow *self)
     if (!self->log_buf) return;
     const char *log = silktex_compiler_get_log(self->compiler);
     gtk_text_buffer_set_text(self->log_buf, log ? log : "", -1);
+}
+
+static const char *effective_editor_scheme(void)
+{
+    const char *mode = config_get_string("Interface", "theme");
+    if (g_strcmp0(mode, "dark") == 0) return "Adwaita-dark";
+    if (g_strcmp0(mode, "light") == 0) return "Adwaita";
+
+    AdwStyleManager *sm = adw_style_manager_get_default();
+    return adw_style_manager_get_dark(sm) ? "Adwaita-dark" : "Adwaita";
+}
+
+static void apply_theme_to_editor(SilktexEditor *editor)
+{
+    if (editor != NULL) {
+        silktex_editor_set_style_scheme(editor, effective_editor_scheme());
+    }
+}
+
+static void apply_theme_to_all_editors(SilktexWindow *self)
+{
+    guint n = adw_tab_view_get_n_pages(self->tab_view);
+    for (guint i = 0; i < n; i++) {
+        AdwTabPage *page = adw_tab_view_get_nth_page(self->tab_view, i);
+        apply_theme_to_editor(get_editor_for_page(page));
+    }
+}
+
+static void focus_active_editor(SilktexWindow *self)
+{
+    SilktexEditor *editor = silktex_window_get_active_editor(self);
+    if (editor != NULL) {
+        gtk_widget_grab_focus(silktex_editor_get_view(editor));
+    }
 }
 
 static void add_to_recent(GFile *file)
@@ -261,6 +305,7 @@ static GtkWidget *create_editor_page(SilktexWindow *self, SilktexEditor *editor)
     g_signal_connect(editor, "changed", G_CALLBACK(on_editor_changed), self);
 
     silktex_editor_apply_settings(editor);
+    apply_theme_to_editor(editor);
 
     return scrolled;
 }
@@ -756,14 +801,38 @@ static void apply_theme_from_config(void)
         adw_style_manager_set_color_scheme(sm, ADW_COLOR_SCHEME_DEFAULT);
 }
 
+static void update_theme_buttons(SilktexWindow *self, const char *mode)
+{
+    if (!mode || !*mode) mode = "follow";
+    if (self->theme_follow)
+        gtk_toggle_button_set_active(self->theme_follow, g_strcmp0(mode, "follow") == 0);
+    if (self->theme_light)
+        gtk_toggle_button_set_active(self->theme_light, g_strcmp0(mode, "light") == 0);
+    if (self->theme_dark)
+        gtk_toggle_button_set_active(self->theme_dark, g_strcmp0(mode, "dark") == 0);
+}
+
 static void change_theme(GSimpleAction *action, GVariant *value, gpointer ud)
 {
+    SilktexWindow *self = SILKTEX_WINDOW(ud);
     const char *mode = g_variant_get_string(value, NULL);
     if (g_strcmp0(mode, "light") != 0 && g_strcmp0(mode, "dark") != 0) mode = "follow";
     config_set_string("Interface", "theme", mode);
     config_save();
     apply_theme_from_config();
     g_simple_action_set_state(action, value);
+    update_theme_buttons(self, mode);
+    apply_theme_to_all_editors(self);
+}
+
+static void on_system_dark_changed(GObject *object, GParamSpec *pspec, gpointer user_data)
+{
+    (void)object;
+    (void)pspec;
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    if (g_strcmp0(config_get_string("Interface", "theme"), "follow") == 0) {
+        apply_theme_to_all_editors(self);
+    }
 }
 
 static void action_fullscreen(GSimpleAction *a, GVariant *p, gpointer ud)
@@ -782,6 +851,17 @@ static void action_toggle_log(GSimpleAction *a, GVariant *p, gpointer ud)
     if (!self->log_toggle) return;
     gboolean active = gtk_toggle_button_get_active(self->log_toggle);
     gtk_toggle_button_set_active(self->log_toggle, !active);
+}
+
+static void on_log_toggle_active(GtkToggleButton *button, GParamSpec *pspec, gpointer user_data)
+{
+    (void)pspec;
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    if (gtk_toggle_button_get_active(button)) {
+        if (self->log_text_view) gtk_widget_grab_focus(self->log_text_view);
+    } else {
+        focus_active_editor(self);
+    }
 }
 
 static void action_refresh_structure(GSimpleAction *a, GVariant *p, gpointer ud)
@@ -1048,9 +1128,6 @@ static void action_shortcuts(GSimpleAction *a, GVariant *p, gpointer ud)
         GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary><Shift>s", _("Save As"))));
     gtk_shortcuts_group_add_shortcut(
         GTK_SHORTCUTS_GROUP(g_files),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>w", _("Close tab"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_files),
         GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>q", _("Quit"))));
     gtk_shortcuts_section_add_group(GTK_SHORTCUTS_SECTION(section), GTK_SHORTCUTS_GROUP(g_files));
 
@@ -1120,6 +1197,271 @@ static void action_shortcuts(GSimpleAction *a, GVariant *p, gpointer ud)
     gtk_window_present(GTK_WINDOW(win));
 }
 
+typedef struct {
+    SilktexWindow *self;
+    char *action;
+} DeferredAction;
+
+static gboolean activate_deferred_action(gpointer user_data)
+{
+    DeferredAction *data = user_data;
+    gtk_widget_activate_action(GTK_WIDGET(data->self), data->action, NULL);
+    g_object_unref(data->self);
+    g_free(data->action);
+    g_free(data);
+    return G_SOURCE_REMOVE;
+}
+
+static void on_primary_popover_action(GtkButton *button, gpointer user_data)
+{
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    const char *action = g_object_get_data(G_OBJECT(button), "silktex-action");
+
+    GtkWidget *popover = gtk_widget_get_ancestor(GTK_WIDGET(button), GTK_TYPE_POPOVER);
+    if (popover != NULL) {
+        gtk_popover_popdown(GTK_POPOVER(popover));
+    }
+
+    if (action != NULL) {
+        DeferredAction *data = g_new0(DeferredAction, 1);
+        data->self = g_object_ref(self);
+        data->action = g_strdup(action);
+        g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, activate_deferred_action, data, NULL);
+    }
+}
+
+static GtkWidget *make_primary_popover_button(const char *label, const char *icon_name,
+                                              const char *action, SilktexWindow *self)
+{
+    GtkWidget *button = gtk_button_new();
+    gtk_widget_add_css_class(button, "flat");
+    gtk_widget_set_hexpand(button, TRUE);
+    g_object_set_data_full(G_OBJECT(button), "silktex-action", g_strdup(action), g_free);
+
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_set_margin_start(box, 6);
+    gtk_widget_set_margin_end(box, 6);
+
+    GtkWidget *icon = gtk_image_new_from_icon_name(icon_name);
+    gtk_box_append(GTK_BOX(box), icon);
+
+    GtkWidget *lbl = gtk_label_new_with_mnemonic(label);
+    gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
+    gtk_widget_set_hexpand(lbl, TRUE);
+    gtk_box_append(GTK_BOX(box), lbl);
+
+    gtk_button_set_child(GTK_BUTTON(button), box);
+    g_signal_connect(button, "clicked", G_CALLBACK(on_primary_popover_action), self);
+    return button;
+}
+
+static void install_theme_swatch_css(void)
+{
+    static gboolean installed = FALSE;
+    if (installed) return;
+    installed = TRUE;
+
+    GtkCssProvider *provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_string(
+        provider,
+        "button.theme-swatch-button,"
+        "button.theme-swatch-button:hover,"
+        "button.theme-swatch-button:checked,"
+        "button.theme-swatch-button:checked:hover {"
+        "  padding: 0;"
+        "  min-width: 0;"
+        "  min-height: 0;"
+        "  background: transparent;"
+        "  border-color: transparent;"
+        "  box-shadow: none;"
+        "  outline-color: transparent;"
+        "}");
+    gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+                                               GTK_STYLE_PROVIDER(provider),
+                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(provider);
+}
+
+static void on_theme_selector_clicked(GtkToggleButton *button, gpointer user_data)
+{
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    if (!gtk_toggle_button_get_active(button)) return;
+
+    const char *mode = g_object_get_data(G_OBJECT(button), "silktex-theme");
+    if (mode != NULL) {
+        g_action_group_activate_action(G_ACTION_GROUP(self), "set-theme", g_variant_new_string(mode));
+    }
+}
+
+static void draw_theme_swatch(GtkDrawingArea *area, cairo_t *cr, int width, int height,
+                              gpointer user_data)
+{
+    GtkToggleButton *button = GTK_TOGGLE_BUTTON(user_data);
+    const char *mode = g_object_get_data(G_OBJECT(button), "silktex-theme");
+    gboolean active = gtk_toggle_button_get_active(button);
+
+    double size = MIN(width, height) - 4.0;
+    double x = (width - size) / 2.0;
+    double y = (height - size) / 2.0;
+    double r = size / 2.0;
+    double cx = x + r;
+    double cy = y + r;
+
+    cairo_save(cr);
+    cairo_arc(cr, cx, cy, r - 1.0, 0, 2 * G_PI);
+    cairo_clip(cr);
+
+    if (g_strcmp0(mode, "follow") == 0) {
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+        cairo_paint(cr);
+        cairo_move_to(cr, x + size, y);
+        cairo_line_to(cr, x + size, y + size);
+        cairo_line_to(cr, x, y + size);
+        cairo_close_path(cr);
+        cairo_set_source_rgb(cr, 0.08, 0.08, 0.09);
+        cairo_fill(cr);
+    } else if (g_strcmp0(mode, "dark") == 0) {
+        cairo_set_source_rgb(cr, 0.08, 0.08, 0.09);
+        cairo_paint(cr);
+    } else {
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+        cairo_paint(cr);
+    }
+
+    cairo_restore(cr);
+
+    cairo_arc(cr, cx, cy, r - 1.0, 0, 2 * G_PI);
+    if (active) {
+        cairo_set_source_rgb(cr, 0.21, 0.52, 0.89);
+        cairo_set_line_width(cr, 2.0);
+    } else {
+        cairo_set_source_rgba(cr, 0.45, 0.45, 0.48, 0.35);
+        cairo_set_line_width(cr, 1.0);
+    }
+    cairo_stroke(cr);
+
+    if (active) {
+        double br = 8.5;
+        double bx = x + size - br - 1.0;
+        double by = y + size - br - 1.0;
+
+        cairo_arc(cr, bx, by, br, 0, 2 * G_PI);
+        cairo_set_source_rgb(cr, 0.21, 0.52, 0.89);
+        cairo_fill(cr);
+
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+        cairo_set_line_width(cr, 2.0);
+        cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+        cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+        cairo_move_to(cr, bx - 3.5, by);
+        cairo_line_to(cr, bx - 0.8, by + 3.0);
+        cairo_line_to(cr, bx + 4.5, by - 4.0);
+        cairo_stroke(cr);
+    }
+}
+
+static void on_theme_swatch_active_changed(GtkToggleButton *button, GParamSpec *pspec,
+                                           gpointer user_data)
+{
+    (void)pspec;
+    (void)user_data;
+    GtkWidget *child = gtk_button_get_child(GTK_BUTTON(button));
+    if (GTK_IS_DRAWING_AREA(child)) gtk_widget_queue_draw(child);
+}
+
+static GtkWidget *make_theme_toggle(const char *mode, const char *tooltip, SilktexWindow *self)
+{
+    GtkWidget *button = gtk_toggle_button_new();
+    gtk_widget_set_tooltip_text(button, tooltip);
+    gtk_widget_add_css_class(button, "flat");
+    gtk_widget_add_css_class(button, "theme-swatch-button");
+
+    g_object_set_data_full(G_OBJECT(button), "silktex-theme", g_strdup(mode), g_free);
+
+    GtkWidget *swatch = gtk_drawing_area_new();
+    gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(swatch), draw_theme_swatch, button, NULL);
+    gtk_widget_set_size_request(swatch, 52, 52);
+    gtk_widget_set_margin_start(swatch, 4);
+    gtk_widget_set_margin_end(swatch, 4);
+    gtk_widget_set_margin_top(swatch, 2);
+    gtk_widget_set_margin_bottom(swatch, 2);
+    gtk_button_set_child(GTK_BUTTON(button), swatch);
+
+    g_signal_connect(button, "clicked", G_CALLBACK(on_theme_selector_clicked), self);
+    g_signal_connect(button, "notify::active", G_CALLBACK(on_theme_swatch_active_changed), NULL);
+    return button;
+}
+
+static void install_primary_popover(SilktexWindow *self)
+{
+    install_theme_swatch_css();
+
+    GtkWidget *popover = gtk_popover_new();
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_widget_set_margin_top(box, 8);
+    gtk_widget_set_margin_bottom(box, 8);
+    gtk_widget_set_margin_start(box, 8);
+    gtk_widget_set_margin_end(box, 8);
+    gtk_popover_set_child(GTK_POPOVER(popover), box);
+
+    GtkWidget *theme = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_set_halign(theme, GTK_ALIGN_CENTER);
+
+    GtkWidget *follow = make_theme_toggle("follow", _("Follow System Theme"), self);
+    GtkWidget *light = make_theme_toggle("light", _("Light Theme"), self);
+    GtkWidget *dark = make_theme_toggle("dark", _("Dark Theme"), self);
+    gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(light), GTK_TOGGLE_BUTTON(follow));
+    gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(dark), GTK_TOGGLE_BUTTON(follow));
+
+    self->theme_follow = GTK_TOGGLE_BUTTON(follow);
+    self->theme_light = GTK_TOGGLE_BUTTON(light);
+    self->theme_dark = GTK_TOGGLE_BUTTON(dark);
+
+    gtk_box_append(GTK_BOX(theme), follow);
+    gtk_box_append(GTK_BOX(theme), light);
+    gtk_box_append(GTK_BOX(theme), dark);
+    gtk_box_append(GTK_BOX(box), theme);
+    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+
+    gtk_box_append(GTK_BOX(box),
+                   make_primary_popover_button(_("_New"), "document-new-symbolic", "win.new", self));
+    gtk_box_append(GTK_BOX(box), make_primary_popover_button(_("_Open…"),
+                                                             "document-open-symbolic", "win.open",
+                                                             self));
+    gtk_box_append(GTK_BOX(box),
+                   make_primary_popover_button(_("Open _Recent…"), "document-open-recent-symbolic",
+                                               "win.show-recent", self));
+    gtk_box_append(GTK_BOX(box),
+                   make_primary_popover_button(_("_Save"), "document-save-symbolic", "win.save", self));
+    gtk_box_append(GTK_BOX(box), make_primary_popover_button(_("Save _As…"),
+                                                             "document-save-as-symbolic",
+                                                             "win.save-as", self));
+    gtk_box_append(GTK_BOX(box),
+                   make_primary_popover_button(_("_Export to PDF…"), "document-save-as-symbolic",
+                                               "win.export-pdf", self));
+    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+    gtk_box_append(GTK_BOX(box),
+                   make_primary_popover_button(_("_Fullscreen"), "view-fullscreen-symbolic",
+                                               "win.fullscreen", self));
+    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+    gtk_box_append(GTK_BOX(box),
+                   make_primary_popover_button(_("_Preferences"), "emblem-system-symbolic",
+                                               "win.preferences", self));
+    gtk_box_append(GTK_BOX(box),
+                   make_primary_popover_button(_("Keyboard _Shortcuts"), "preferences-desktop-keyboard-symbolic",
+                                               "win.shortcuts", self));
+    gtk_box_append(GTK_BOX(box),
+                   make_primary_popover_button(_("_About SilkTex"), "help-about-symbolic",
+                                               "app.about", self));
+    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+    gtk_box_append(GTK_BOX(box),
+                   make_primary_popover_button(_("_Quit"), "application-exit-symbolic", "app.quit", self));
+
+    gtk_menu_button_set_menu_model(self->btn_menu, NULL);
+    gtk_menu_button_set_popover(self->btn_menu, popover);
+    update_theme_buttons(self, config_get_string("Interface", "theme"));
+}
+
 /* Open the primary ("hamburger") menu.  F10 activates this from anywhere. */
 static void action_open_menu(GSimpleAction *a, GVariant *p, gpointer ud)
 {
@@ -1136,7 +1478,10 @@ static void on_prefs_apply(gpointer user_data)
     for (guint i = 0; i < n; i++) {
         AdwTabPage *page = adw_tab_view_get_nth_page(self->tab_view, i);
         SilktexEditor *editor = get_editor_for_page(page);
-        if (editor) silktex_editor_apply_settings(editor);
+        if (editor) {
+            silktex_editor_apply_settings(editor);
+            apply_theme_to_editor(editor);
+        }
     }
     config_save();
     self->auto_compile = config_get_boolean("Compile", "auto_compile");
@@ -1161,6 +1506,41 @@ static void on_preview_toggled(GtkToggleButton *button, gpointer user_data)
         gtk_widget_set_visible(GTK_WIDGET(self->preview_toolbar_view), visible);
     gtk_button_set_icon_name(GTK_BUTTON(button),
                              visible ? "view-dual-symbolic" : "view-continuous-symbolic");
+}
+
+static void on_window_width_changed(GObject *object, GParamSpec *pspec, gpointer user_data)
+{
+    (void)object;
+    (void)pspec;
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+
+    int width = gtk_widget_get_width(GTK_WIDGET(self));
+    gboolean narrow = width > 0 && width < 1024;
+    if (narrow == self->preview_narrow) return;
+
+    self->preview_narrow = narrow;
+
+    if (narrow && gtk_toggle_button_get_active(self->btn_preview)) {
+        self->preview_auto_collapsed = TRUE;
+        gtk_toggle_button_set_active(self->btn_preview, FALSE);
+    } else if (!narrow && self->preview_auto_collapsed) {
+        self->preview_auto_collapsed = FALSE;
+        gtk_toggle_button_set_active(self->btn_preview, TRUE);
+    }
+}
+
+static void on_editor_paned_position_changed(GObject *object, GParamSpec *pspec, gpointer user_data)
+{
+    (void)object;
+    (void)pspec;
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+
+    if (!gtk_widget_get_visible(GTK_WIDGET(self->preview_toolbar_view))) return;
+
+    int position = gtk_paned_get_position(self->editor_paned);
+    if (position < EDITOR_MIN_WIDTH) {
+        gtk_paned_set_position(self->editor_paned, EDITOR_MIN_WIDTH);
+    }
 }
 
 static void on_tab_changed(AdwTabView *view, GParamSpec *pspec, gpointer user_data)
@@ -1381,6 +1761,9 @@ static void silktex_window_init(SilktexWindow *self)
         g_simple_action_set_state(G_SIMPLE_ACTION(theme_action), g_variant_new_string(saved));
     }
     apply_theme_from_config();
+    install_primary_popover(self);
+    g_signal_connect_object(adw_style_manager_get_default(), "notify::dark",
+                            G_CALLBACK(on_system_dark_changed), self, G_CONNECT_DEFAULT);
 
     /* ---- compiler ---- */
     self->compiler = silktex_compiler_new();
@@ -1395,6 +1778,10 @@ static void silktex_window_init(SilktexWindow *self)
     gtk_widget_set_hexpand(GTK_WIDGET(self->preview), TRUE);
     gtk_widget_set_vexpand(GTK_WIDGET(self->preview), TRUE);
     gtk_box_append(self->preview_box, GTK_WIDGET(self->preview));
+
+    if (self->editor_toolbar_view) {
+        gtk_widget_set_size_request(GTK_WIDGET(self->editor_toolbar_view), EDITOR_MIN_WIDTH, -1);
+    }
 
     g_signal_connect(self->preview, "notify::page", G_CALLBACK(on_preview_page_changed), self);
     g_signal_connect(self->preview, "notify::n-pages", G_CALLBACK(on_preview_page_changed), self);
@@ -1425,6 +1812,9 @@ static void silktex_window_init(SilktexWindow *self)
     g_signal_connect(key_ctrl, "key-released", G_CALLBACK(on_window_key_released), self);
 
     g_signal_connect(self->btn_preview, "toggled", G_CALLBACK(on_preview_toggled), self);
+    g_signal_connect(self, "notify::width", G_CALLBACK(on_window_width_changed), self);
+    g_signal_connect(self->editor_paned, "notify::position",
+                     G_CALLBACK(on_editor_paned_position_changed), self);
     g_signal_connect(self->tab_view, "notify::selected-page", G_CALLBACK(on_tab_changed), self);
     g_signal_connect(self->tab_view, "close-page", G_CALLBACK(on_close_page), self);
 
@@ -1448,10 +1838,13 @@ static void silktex_window_init(SilktexWindow *self)
         GtkWidget *log_tv = gtk_text_view_new_with_buffer(self->log_buf);
         gtk_text_view_set_editable(GTK_TEXT_VIEW(log_tv), FALSE);
         gtk_text_view_set_monospace(GTK_TEXT_VIEW(log_tv), TRUE);
+        gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(log_tv), FALSE);
         gtk_widget_set_vexpand(log_tv, TRUE);
+        gtk_widget_set_focusable(log_tv, TRUE);
+        self->log_text_view = log_tv;
 
         GtkWidget *log_scroll = gtk_scrolled_window_new();
-        gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(log_scroll), 160);
+        gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(log_scroll), 300);
         gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(log_scroll), log_tv);
         gtk_revealer_set_child(GTK_REVEALER(revealer), log_scroll);
 
@@ -1470,6 +1863,7 @@ static void silktex_window_init(SilktexWindow *self)
         }
 
         g_object_bind_property(log_toggle, "active", revealer, "reveal-child", G_BINDING_DEFAULT);
+        g_signal_connect(log_toggle, "notify::active", G_CALLBACK(on_log_toggle_active), self);
     }
 
     /* ---- initial tab ---- */
@@ -1481,7 +1875,6 @@ static void silktex_window_init(SilktexWindow *self)
         {"win.open", "<Control>o"},
         {"win.save", "<Control>s"},
         {"win.save-as", "<Control><Shift>s"},
-        {"win.close-tab", "<Control>w"},
         {"win.undo", "<Control>z"},
         {"win.redo", "<Control><Shift>z"},
         {"win.compile", "<Control>Return"},
