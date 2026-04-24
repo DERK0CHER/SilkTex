@@ -8,7 +8,7 @@
 #include "window.h"
 #include "configfile.h"
 #include "utils.h"
-#include <glib/gi18n.h>
+#include "i18n.h"
 
 struct _SilktexApplication {
     AdwApplication parent_instance;
