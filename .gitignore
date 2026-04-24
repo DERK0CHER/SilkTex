@@ -1,2 +1,15 @@
-.cache/
+# Build outputs
 build/
+build-gtk4/
+build-flatpak/
+build-flatpak-repo/
+.flatpak-builder/
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Runtime state
+.cache/

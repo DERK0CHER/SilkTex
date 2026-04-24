@@ -1,0 +1,45 @@
+# SilkTex - Modern LaTeX Editor
+# Copyright (C) 2026 Bela Georg Barthelmes
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+Language: Cpp
+BasedOnStyle: LLVM
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+BreakBeforeBraces: Linux
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+
+AlignAfterOpenBracket: Align
+AlignConsecutiveMacros: Consecutive
+AlignEscapedNewlines: Left
+AlignTrailingComments: true
+
+PointerAlignment: Right
+SpaceAfterCStyleCast: false
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+IncludeBlocks: Preserve
+SortIncludes: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 2
+
+# Keep GObject macro declarations readable.
+ForEachMacros:
+  - G_DEFINE_TYPE
+  - G_DEFINE_FINAL_TYPE
+  - G_DEFINE_TYPE_WITH_PRIVATE
+  - g_list_foreach
+  - g_ptr_array_foreach
+StatementMacros:
+  - G_DEFINE_TYPE
+  - G_DEFINE_FINAL_TYPE
+  - G_DEFINE_TYPE_WITH_PRIVATE

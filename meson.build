@@ -1,83 +1,91 @@
+# SilkTex - Modern LaTeX Editor
+# Copyright (C) 2026 Bela Georg Barthelmes
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 project(
-    'gummi',
+    'silktex',
     'c',
     version: '0.9.0',
     license: 'GPL-3.0-or-later',
-    meson_version: '>=0.56.0'
+    meson_version: '>=0.59.0',
+    default_options: [
+        'c_std=gnu11',
+        'warning_level=2',
+    ],
 )
 
-i18n = import('i18n')
-gnome = import('gnome')
+i18n   = import('i18n')
+gnome  = import('gnome')
 
+prefix      = get_option('prefix')
+bindir      = get_option('bindir')
+datadir     = get_option('datadir')
+libdir      = get_option('libdir')
+localesdir  = get_option('localedir')
 
-#dependency('setconf')
+appdir      = join_paths(datadir, 'applications')
+icondir     = join_paths(datadir, 'icons/hicolor/')
+schemadir   = join_paths(datadir, 'glib-2.0/schemas')
+mandir      = join_paths(datadir, 'man/man1/')
 
-prefix = get_option('prefix')
-bindir = get_option('bindir')
-datadir = get_option('datadir')
-libdir = get_option('libdir')
-localesdir = get_option('localedir')
-appdir = join_paths(datadir, 'applications')
-policydir = join_paths(datadir, 'polkit-1/actions')
-icondir = join_paths(datadir, 'icons/hicolor/')
-schemadir = join_paths(datadir, 'glib-2.0/schemas')
-mandir = join_paths(datadir, 'man/man1/')
-gummidir = join_paths(datadir, meson.project_name())
+# Directory the binary reads read-only data from at runtime. We keep the
+# legacy `gummi` macro name (GUMMI_DATA) because it is referenced from
+# several places, but the install path uses the project name.
+pkgdatadir  = join_paths(datadir, meson.project_name())
+# Alias kept for legacy subdirs/snippets/meson.build until they are
+# modernised; safe to remove once those files no longer reference it.
+gummidir    = pkgdatadir
 
 gtkspell_dep = dependency('gtkspell3-3.0', required: false)
-# Optional: we only need libsynctex when the app links against it.  The
-# current code invokes the `synctex` CLI at runtime, so the build works
-# with or without the library being installed.  Keeping it optional lets
-# us compile inside minimal runtimes (e.g. the GNOME Flatpak SDK, which
-# does not ship libsynctex).
-synctex_dep = dependency('synctex', required: false)
+
+# libsynctex is optional: we invoke the `synctex` CLI at runtime.
+# Keeping it optional lets us build inside minimal runtimes such as the
+# GNOME Flatpak SDK, which does not ship libsynctex.
+synctex_dep  = dependency('synctex', required: false)
 
 project_dependencies = [
     dependency('gtk4'),
     dependency('libadwaita-1'),
     dependency('glib-2.0'),
     dependency('gtksourceview-5'),
-    gtkspell_dep,
     dependency('poppler-glib'),
+    gtkspell_dep,
     synctex_dep,
 ]
 
 if gtkspell_dep.found()
-  add_project_arguments(['-DHAVE_GTKSPELL3=1'], language: 'c')
+    add_project_arguments('-DHAVE_GTKSPELL3=1', language: 'c')
 endif
 
 build_args = [
-  '-Wl,--export-dynamic',
-  '-DGUMMI_DATA=' + '"' + join_paths(meson.source_root(), 'data') + '"',
-  '-DGUMMI_LIBS=' + '"' + join_paths(prefix, libdir, meson.project_name()) + '"',
-  '-DGUMMI_LOCALES=' + '"' + join_paths(prefix, localesdir) + '"',
+    '-DGUMMI_DATA='    + '"' + join_paths(meson.project_source_root(), 'data') + '"',
+    '-DGUMMI_LIBS='    + '"' + join_paths(prefix, libdir, meson.project_name()) + '"',
+    '-DGUMMI_LOCALES=' + '"' + join_paths(prefix, localesdir) + '"',
 ]
 
+# The --export-dynamic linker flag is only meaningful on ELF targets.
+if host_machine.system() != 'darwin'
+    build_args += '-Wl,--export-dynamic'
+endif
+
 add_project_arguments(
-  ['-DGETTEXT_PACKAGE=\\"@0@\\""'.format(meson.project_name())],
-  language: 'c'
+    '-DGETTEXT_PACKAGE="' + meson.project_name() + '"',
+    language: 'c',
 )
 
-#add_project_arguments([
- #       '-DGETTEXT_PACKAGE="@0@"'.format(meson.project_name())
-  #  ],
-   # language: 'c',
-#)
-
-i18n = import('i18n')
-
 conf_data = configuration_data()
-conf_data.set('PACKAGE_NAME', 'Gummi')
+conf_data.set('PACKAGE_NAME', 'SilkTex')
 conf_data.set('PACKAGE', meson.project_name())
 conf_data.set_quoted('GETTEXT_PACKAGE', meson.project_name())
-conf_data.set_quoted('LOCALEDIR', join_paths(get_option('prefix'), get_option('localedir')))
+conf_data.set_quoted('LOCALEDIR', join_paths(prefix, localesdir))
 
-#install_data(['COPYING',], install_dir: join_paths(datadir,'licences/gummi/'))
-install_data('COPYING', install_dir: join_paths(datadir, 'licenses', 'gummi'))
+install_data(
+    'COPYING',
+    install_dir: join_paths(datadir, 'licenses', meson.project_name()),
+)
 
 subdir('data')
 subdir('src')
-subdir('lib')
 subdir('po')
 
 meson.add_install_script('meson-post-install.py')
