@@ -76,6 +76,18 @@
   </screenshots>
 
   <releases>
+    <release version="0.9.1" date="2026-04-24">
+      <description>
+        <p>First Flathub-ready release.</p>
+        <ul>
+          <li>Polished libadwaita preferences (snippet shortcut preview
+              now uses an entry-row suffix label instead of an invalid
+              subtitle cast).</li>
+          <li>AdwTabBar autohide on single-tab windows.</li>
+          <li>Updated AppStream metainfo with project URLs and screenshots.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.9.0" date="2026-04-24">
       <description>
         <p>Initial SilkTex release based on the Gummi code base.</p>
