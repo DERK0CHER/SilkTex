@@ -55,6 +55,7 @@ gtkspell_dep = dependency('gtkspell3-3.0', required: false)
 # Keeping it optional lets us build inside minimal runtimes such as the
 # GNOME Flatpak SDK, which does not ship libsynctex.
 synctex_dep  = dependency('synctex', required: false)
+math_dep     = cc.find_library('m', required: false)
 
 project_dependencies = [
     dependency('gtk4'),
@@ -64,6 +65,7 @@ project_dependencies = [
     dependency('poppler-glib'),
     gtkspell_dep,
     synctex_dep,
+    math_dep,
 ]
 
 if gtkspell_dep.found()
