@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#include "silktex-editor.h"
+#include "editor.h"
 #include "configfile.h"
 #include "constants.h"
 #include <glib/gi18n.h>
@@ -35,42 +35,31 @@ struct _SilktexEditor {
     gboolean search_match_case;
 };
 
-G_DEFINE_FINAL_TYPE(SilktexEditor, silktex_editor, G_TYPE_OBJECT)
+G_DEFINE_FINAL_TYPE (SilktexEditor, silktex_editor, G_TYPE_OBJECT)
 
-enum {
-    PROP_0,
-    PROP_MODIFIED,
-    N_PROPS
-};
+    enum { PROP_0, PROP_MODIFIED, N_PROPS };
 
 static GParamSpec *properties[N_PROPS];
 
-enum {
-    SIGNAL_CHANGED,
-    N_SIGNALS
-};
+enum { SIGNAL_CHANGED, N_SIGNALS };
 
 static guint signals[N_SIGNALS];
 
-static const char style_commands[][3][20] = {
-    { "bold", "\\textbf{", "}" },
-    { "italic", "\\emph{", "}" },
-    { "underline", "\\underline{", "}" },
-    { "left", "\\begin{flushleft}", "\\end{flushleft}"},
-    { "center", "\\begin{center}", "\\end{center}"},
-    { "right", "\\begin{flushright}", "\\end{flushright}"}
-};
+static const char style_commands[][3][20] = {{"bold", "\\textbf{", "}"},
+                                             {"italic", "\\emph{", "}"},
+                                             {"underline", "\\underline{", "}"},
+                                             {"left", "\\begin{flushleft}", "\\end{flushleft}"},
+                                             {"center", "\\begin{center}", "\\end{center}"},
+                                             {"right", "\\begin{flushright}", "\\end{flushright}"}};
 
-static void
-on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data)
+static void on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data)
 {
     SilktexEditor *self = SILKTEX_EDITOR(user_data);
     g_signal_emit(self, signals[SIGNAL_CHANGED], 0);
     g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_MODIFIED]);
 }
 
-static void
-silktex_editor_init_workfile(SilktexEditor *self)
+static void silktex_editor_init_workfile(SilktexEditor *self)
 {
     if (!g_file_test(C_TMPDIR, G_FILE_TEST_IS_DIR)) {
         g_mkdir_with_parents(C_TMPDIR, 0755);
@@ -92,8 +81,7 @@ silktex_editor_init_workfile(SilktexEditor *self)
     }
 }
 
-static void
-silktex_editor_cleanup_workfile(SilktexEditor *self)
+static void silktex_editor_cleanup_workfile(SilktexEditor *self)
 {
     if (self->workfd >= 0) {
         close(self->workfd);
@@ -114,8 +102,7 @@ silktex_editor_cleanup_workfile(SilktexEditor *self)
     }
 }
 
-static void
-silktex_editor_dispose(GObject *object)
+static void silktex_editor_dispose(GObject *object)
 {
     SilktexEditor *self = SILKTEX_EDITOR(object);
 
@@ -128,22 +115,21 @@ silktex_editor_dispose(GObject *object)
     G_OBJECT_CLASS(silktex_editor_parent_class)->dispose(object);
 }
 
-static void
-silktex_editor_get_property(GObject *object, guint prop_id, GValue *value, GParamSpec *pspec)
+static void silktex_editor_get_property(GObject *object, guint prop_id, GValue *value,
+                                        GParamSpec *pspec)
 {
     SilktexEditor *self = SILKTEX_EDITOR(object);
 
     switch (prop_id) {
-        case PROP_MODIFIED:
-            g_value_set_boolean(value, silktex_editor_get_modified(self));
-            break;
-        default:
-            G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+    case PROP_MODIFIED:
+        g_value_set_boolean(value, silktex_editor_get_modified(self));
+        break;
+    default:
+        G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
     }
 }
 
-static void
-silktex_editor_class_init(SilktexEditorClass *klass)
+static void silktex_editor_class_init(SilktexEditorClass *klass)
 {
     GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
@@ -155,16 +141,11 @@ silktex_editor_class_init(SilktexEditorClass *klass)
 
     g_object_class_install_properties(object_class, N_PROPS, properties);
 
-    signals[SIGNAL_CHANGED] =
-        g_signal_new("changed",
-                     G_TYPE_FROM_CLASS(klass),
-                     G_SIGNAL_RUN_LAST,
-                     0, NULL, NULL, NULL,
-                     G_TYPE_NONE, 0);
+    signals[SIGNAL_CHANGED] = g_signal_new("changed", G_TYPE_FROM_CLASS(klass), G_SIGNAL_RUN_LAST,
+                                           0, NULL, NULL, NULL, G_TYPE_NONE, 0);
 }
 
-static void
-silktex_editor_init(SilktexEditor *self)
+static void silktex_editor_init(SilktexEditor *self)
 {
     self->workfd = -1;
 
@@ -189,7 +170,8 @@ silktex_editor_init(SilktexEditor *self)
     self->css_provider = gtk_css_provider_new();
     gtk_widget_add_css_class(GTK_WIDGET(self->view), "silktex-editor");
 
-    GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(self->style_manager, "Adwaita");
+    GtkSourceStyleScheme *scheme =
+        gtk_source_style_scheme_manager_get_scheme(self->style_manager, "Adwaita");
     if (scheme != NULL) {
         gtk_source_buffer_set_style_scheme(self->buffer, scheme);
     }
@@ -207,28 +189,24 @@ silktex_editor_init(SilktexEditor *self)
     silktex_editor_init_workfile(self);
 }
 
-SilktexEditor *
-silktex_editor_new(void)
+SilktexEditor *silktex_editor_new(void)
 {
     return g_object_new(SILKTEX_TYPE_EDITOR, NULL);
 }
 
-GtkWidget *
-silktex_editor_get_view(SilktexEditor *self)
+GtkWidget *silktex_editor_get_view(SilktexEditor *self)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(self), NULL);
     return GTK_WIDGET(self->view);
 }
 
-GtkSourceBuffer *
-silktex_editor_get_buffer(SilktexEditor *self)
+GtkSourceBuffer *silktex_editor_get_buffer(SilktexEditor *self)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(self), NULL);
     return self->buffer;
 }
 
-void
-silktex_editor_set_filename(SilktexEditor *self, const char *filename)
+void silktex_editor_set_filename(SilktexEditor *self, const char *filename)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
@@ -246,15 +224,13 @@ silktex_editor_set_filename(SilktexEditor *self, const char *filename)
     }
 }
 
-const char *
-silktex_editor_get_filename(SilktexEditor *self)
+const char *silktex_editor_get_filename(SilktexEditor *self)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(self), NULL);
     return self->filename;
 }
 
-char *
-silktex_editor_get_basename(SilktexEditor *self)
+char *silktex_editor_get_basename(SilktexEditor *self)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(self), NULL);
 
@@ -264,8 +240,7 @@ silktex_editor_get_basename(SilktexEditor *self)
     return g_strdup(_("Untitled"));
 }
 
-void
-silktex_editor_load_file(SilktexEditor *self, GFile *file)
+void silktex_editor_load_file(SilktexEditor *self, GFile *file)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
     g_return_if_fail(G_IS_FILE(file));
@@ -290,18 +265,15 @@ silktex_editor_load_file(SilktexEditor *self, GFile *file)
     g_free(contents);
 }
 
-gboolean
-silktex_editor_save_file(SilktexEditor *self, GFile *file, GError **error)
+gboolean silktex_editor_save_file(SilktexEditor *self, GFile *file, GError **error)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(self), FALSE);
     g_return_val_if_fail(G_IS_FILE(file), FALSE);
 
     g_autofree char *text = silktex_editor_get_text(self);
 
-    gboolean result = g_file_replace_contents(file, text, strlen(text),
-                                               NULL, FALSE,
-                                               G_FILE_CREATE_NONE,
-                                               NULL, NULL, error);
+    gboolean result = g_file_replace_contents(file, text, strlen(text), NULL, FALSE,
+                                              G_FILE_CREATE_NONE, NULL, NULL, error);
     if (result) {
         char *path = g_file_get_path(file);
         silktex_editor_set_filename(self, path);
@@ -312,8 +284,7 @@ silktex_editor_save_file(SilktexEditor *self, GFile *file, GError **error)
     return result;
 }
 
-void
-silktex_editor_set_text(SilktexEditor *self, const char *text, gssize len)
+void silktex_editor_set_text(SilktexEditor *self, const char *text, gssize len)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
@@ -324,8 +295,7 @@ silktex_editor_set_text(SilktexEditor *self, const char *text, gssize len)
     gtk_text_buffer_place_cursor(GTK_TEXT_BUFFER(self->buffer), &start);
 }
 
-char *
-silktex_editor_get_text(SilktexEditor *self)
+char *silktex_editor_get_text(SilktexEditor *self)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(self), NULL);
 
@@ -334,63 +304,56 @@ silktex_editor_get_text(SilktexEditor *self)
     return gtk_text_iter_get_text(&start, &end);
 }
 
-gboolean
-silktex_editor_get_modified(SilktexEditor *self)
+gboolean silktex_editor_get_modified(SilktexEditor *self)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(self), FALSE);
     return gtk_text_buffer_get_modified(GTK_TEXT_BUFFER(self->buffer));
 }
 
-void
-silktex_editor_set_modified(SilktexEditor *self, gboolean modified)
+void silktex_editor_set_modified(SilktexEditor *self, gboolean modified)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
     gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(self->buffer), modified);
 }
 
-void
-silktex_editor_undo(SilktexEditor *self)
+void silktex_editor_undo(SilktexEditor *self)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
     gtk_text_buffer_undo(GTK_TEXT_BUFFER(self->buffer));
     silktex_editor_scroll_to_cursor(self);
 }
 
-void
-silktex_editor_redo(SilktexEditor *self)
+void silktex_editor_redo(SilktexEditor *self)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
     gtk_text_buffer_redo(GTK_TEXT_BUFFER(self->buffer));
     silktex_editor_scroll_to_cursor(self);
 }
 
-gboolean
-silktex_editor_can_undo(SilktexEditor *self)
+gboolean silktex_editor_can_undo(SilktexEditor *self)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(self), FALSE);
     return gtk_text_buffer_get_can_undo(GTK_TEXT_BUFFER(self->buffer));
 }
 
-gboolean
-silktex_editor_can_redo(SilktexEditor *self)
+gboolean silktex_editor_can_redo(SilktexEditor *self)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(self), FALSE);
     return gtk_text_buffer_get_can_redo(GTK_TEXT_BUFFER(self->buffer));
 }
 
-void
-silktex_editor_set_style_scheme(SilktexEditor *self, const char *scheme_id)
+void silktex_editor_set_style_scheme(SilktexEditor *self, const char *scheme_id)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
-    GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(self->style_manager, scheme_id);
+    GtkSourceStyleScheme *scheme =
+        gtk_source_style_scheme_manager_get_scheme(self->style_manager, scheme_id);
     if (scheme != NULL) {
         gtk_source_buffer_set_style_scheme(self->buffer, scheme);
     }
 }
 
-void
-silktex_editor_set_font(SilktexEditor *self, const char *font_desc)
+void silktex_editor_set_font(SilktexEditor *self, const char *font_desc)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
@@ -424,14 +387,12 @@ silktex_editor_set_font(SilktexEditor *self, const char *font_desc)
     }
 
     gtk_css_provider_load_from_string(self->css_provider, css);
-    gtk_style_context_add_provider_for_display(
-        gdk_display_get_default(),
-        GTK_STYLE_PROVIDER(self->css_provider),
-        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+                                               GTK_STYLE_PROVIDER(self->css_provider),
+                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 }
 
-void
-silktex_editor_scroll_to_line(SilktexEditor *self, int line)
+void silktex_editor_scroll_to_line(SilktexEditor *self, int line)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
@@ -441,8 +402,7 @@ silktex_editor_scroll_to_line(SilktexEditor *self, int line)
     silktex_editor_scroll_to_cursor(self);
 }
 
-void
-silktex_editor_scroll_to_cursor(SilktexEditor *self)
+void silktex_editor_scroll_to_cursor(SilktexEditor *self)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
@@ -450,8 +410,7 @@ silktex_editor_scroll_to_cursor(SilktexEditor *self)
     gtk_text_view_scroll_to_mark(GTK_TEXT_VIEW(self->view), mark, 0.25, FALSE, 0.0, 0.0);
 }
 
-void
-silktex_editor_apply_textstyle(SilktexEditor *self, const char *style_type)
+void silktex_editor_apply_textstyle(SilktexEditor *self, const char *style_type)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
@@ -472,10 +431,8 @@ silktex_editor_apply_textstyle(SilktexEditor *self, const char *style_type)
     if (selected < 0) return;
 
     g_autofree char *selected_text = gtk_text_iter_get_text(&start, &end);
-    g_autofree char *new_text = g_strdup_printf("%s%s%s",
-                                                 style_commands[selected][1],
-                                                 selected_text,
-                                                 style_commands[selected][2]);
+    g_autofree char *new_text = g_strdup_printf("%s%s%s", style_commands[selected][1],
+                                                selected_text, style_commands[selected][2]);
 
     gtk_text_buffer_begin_user_action(GTK_TEXT_BUFFER(self->buffer));
     gtk_text_buffer_delete(GTK_TEXT_BUFFER(self->buffer), &start, &end);
@@ -483,8 +440,7 @@ silktex_editor_apply_textstyle(SilktexEditor *self, const char *style_type)
     gtk_text_buffer_end_user_action(GTK_TEXT_BUFFER(self->buffer));
 }
 
-void
-silktex_editor_insert_package(SilktexEditor *self, const char *package, const char *options)
+void silktex_editor_insert_package(SilktexEditor *self, const char *package, const char *options)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
@@ -505,9 +461,8 @@ silktex_editor_insert_package(SilktexEditor *self, const char *package, const ch
     }
 }
 
-void
-silktex_editor_search(SilktexEditor *self, const char *term, gboolean backwards,
-                      gboolean whole_word, gboolean match_case)
+void silktex_editor_search(SilktexEditor *self, const char *term, gboolean backwards,
+                           gboolean whole_word, gboolean match_case)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
@@ -520,8 +475,7 @@ silktex_editor_search(SilktexEditor *self, const char *term, gboolean backwards,
     silktex_editor_search_next(self, FALSE);
 }
 
-void
-silktex_editor_search_next(SilktexEditor *self, gboolean backwards)
+void silktex_editor_search_next(SilktexEditor *self, gboolean backwards)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
@@ -532,19 +486,18 @@ silktex_editor_search_next(SilktexEditor *self, gboolean backwards)
     gtk_text_buffer_get_iter_at_mark(GTK_TEXT_BUFFER(self->buffer), &current, mark);
 
     GtkTextSearchFlags flags = 0;
-    if (!self->search_match_case)
-        flags |= GTK_TEXT_SEARCH_CASE_INSENSITIVE;
+    if (!self->search_match_case) flags |= GTK_TEXT_SEARCH_CASE_INSENSITIVE;
 
     gboolean go_back = self->search_backwards ^ backwards;
 
     /* Advance past the current selection so we don't re-find it */
-    if (!go_back)
-        gtk_text_iter_forward_chars(&current, (int)g_utf8_strlen(self->search_term, -1));
+    if (!go_back) gtk_text_iter_forward_chars(&current, (int)g_utf8_strlen(self->search_term, -1));
 
     while (TRUE) {
-        gboolean found = go_back
-            ? gtk_text_iter_backward_search(&current, self->search_term, flags, &mstart, &mend, NULL)
-            : gtk_text_iter_forward_search (&current, self->search_term, flags, &mstart, &mend, NULL);
+        gboolean found = go_back ? gtk_text_iter_backward_search(&current, self->search_term, flags,
+                                                                 &mstart, &mend, NULL)
+                                 : gtk_text_iter_forward_search(&current, self->search_term, flags,
+                                                                &mstart, &mend, NULL);
 
         if (!found) return;
 
@@ -559,17 +512,16 @@ silktex_editor_search_next(SilktexEditor *self, gboolean backwards)
     }
 }
 
-void
-silktex_editor_replace(SilktexEditor *self, const char *term, const char *replacement,
-                       gboolean backwards, gboolean whole_word, gboolean match_case)
+void silktex_editor_replace(SilktexEditor *self, const char *term, const char *replacement,
+                            gboolean backwards, gboolean whole_word, gboolean match_case)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
     GtkTextIter start, end;
     if (gtk_text_buffer_get_selection_bounds(GTK_TEXT_BUFFER(self->buffer), &start, &end)) {
         g_autofree char *selected = gtk_text_iter_get_text(&start, &end);
-        gboolean matches = match_case ? g_strcmp0(selected, term) == 0
-                                      : g_ascii_strcasecmp(selected, term) == 0;
+        gboolean matches =
+            match_case ? g_strcmp0(selected, term) == 0 : g_ascii_strcasecmp(selected, term) == 0;
         if (matches) {
             gtk_text_buffer_begin_user_action(GTK_TEXT_BUFFER(self->buffer));
             gtk_text_buffer_delete(GTK_TEXT_BUFFER(self->buffer), &start, &end);
@@ -581,9 +533,8 @@ silktex_editor_replace(SilktexEditor *self, const char *term, const char *replac
     silktex_editor_search(self, term, backwards, whole_word, match_case);
 }
 
-void
-silktex_editor_replace_all(SilktexEditor *self, const char *term, const char *replacement,
-                            gboolean whole_word, gboolean match_case)
+void silktex_editor_replace_all(SilktexEditor *self, const char *term, const char *replacement,
+                                gboolean whole_word, gboolean match_case)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
@@ -597,8 +548,7 @@ silktex_editor_replace_all(SilktexEditor *self, const char *term, const char *re
 
     gtk_text_buffer_begin_user_action(GTK_TEXT_BUFFER(self->buffer));
     while (gtk_text_iter_forward_search(&start, term, flags, &mstart, &mend, NULL)) {
-        if (!whole_word ||
-            (gtk_text_iter_starts_word(&mstart) && gtk_text_iter_ends_word(&mend))) {
+        if (!whole_word || (gtk_text_iter_starts_word(&mstart) && gtk_text_iter_ends_word(&mend))) {
             gtk_text_buffer_delete(GTK_TEXT_BUFFER(self->buffer), &mstart, &mend);
             gtk_text_buffer_insert(GTK_TEXT_BUFFER(self->buffer), &mstart, replacement, -1);
             start = mstart;
@@ -609,8 +559,7 @@ silktex_editor_replace_all(SilktexEditor *self, const char *term, const char *re
     gtk_text_buffer_end_user_action(GTK_TEXT_BUFFER(self->buffer));
 }
 
-void
-silktex_editor_goto_line(SilktexEditor *self, int line)
+void silktex_editor_goto_line(SilktexEditor *self, int line)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
     GtkTextIter it;
@@ -619,8 +568,7 @@ silktex_editor_goto_line(SilktexEditor *self, int line)
     silktex_editor_scroll_to_cursor(self);
 }
 
-int
-silktex_editor_get_cursor_line(SilktexEditor *self)
+int silktex_editor_get_cursor_line(SilktexEditor *self)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(self), 0);
     GtkTextIter it;
@@ -629,54 +577,44 @@ silktex_editor_get_cursor_line(SilktexEditor *self)
     return gtk_text_iter_get_line(&it);
 }
 
-void
-silktex_editor_apply_settings(SilktexEditor *self)
+void silktex_editor_apply_settings(SilktexEditor *self)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
-    gtk_source_view_set_show_line_numbers(self->view,
-        config_get_boolean("Editor", "line_numbers"));
+    gtk_source_view_set_show_line_numbers(self->view, config_get_boolean("Editor", "line_numbers"));
     gtk_source_view_set_highlight_current_line(self->view,
-        config_get_boolean("Editor", "highlighting"));
-    gtk_source_view_set_auto_indent(self->view,
-        config_get_boolean("Editor", "autoindentation"));
-    gtk_source_view_set_insert_spaces_instead_of_tabs(self->view,
-        config_get_boolean("Editor", "spaces_instof_tabs"));
-    gtk_source_view_set_tab_width(self->view,
-        (guint)config_get_integer("Editor", "tabwidth"));
+                                               config_get_boolean("Editor", "highlighting"));
+    gtk_source_view_set_auto_indent(self->view, config_get_boolean("Editor", "autoindentation"));
+    gtk_source_view_set_insert_spaces_instead_of_tabs(
+        self->view, config_get_boolean("Editor", "spaces_instof_tabs"));
+    gtk_source_view_set_tab_width(self->view, (guint)config_get_integer("Editor", "tabwidth"));
 
     GtkWrapMode wrap = GTK_WRAP_NONE;
     if (config_get_boolean("Editor", "textwrapping")) {
-        wrap = config_get_boolean("Editor", "wordwrapping")
-               ? GTK_WRAP_WORD : GTK_WRAP_CHAR;
+        wrap = config_get_boolean("Editor", "wordwrapping") ? GTK_WRAP_WORD : GTK_WRAP_CHAR;
     }
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(self->view), wrap);
 
     const char *scheme = config_get_string("Editor", "style_scheme");
-    if (scheme && *scheme)
-        silktex_editor_set_style_scheme(self, scheme);
+    if (scheme && *scheme) silktex_editor_set_style_scheme(self, scheme);
 
     const char *font = config_get_string("Editor", "font");
-    if (font && *font)
-        silktex_editor_set_font(self, font);
+    if (font && *font) silktex_editor_set_font(self, font);
 }
 
-const char *
-silktex_editor_get_workfile(SilktexEditor *self)
+const char *silktex_editor_get_workfile(SilktexEditor *self)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(self), NULL);
     return self->workfile;
 }
 
-const char *
-silktex_editor_get_pdffile(SilktexEditor *self)
+const char *silktex_editor_get_pdffile(SilktexEditor *self)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(self), NULL);
     return self->pdffile;
 }
 
-void
-silktex_editor_update_workfile(SilktexEditor *self)
+void silktex_editor_update_workfile(SilktexEditor *self)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 

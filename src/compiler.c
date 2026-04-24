@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#include "silktex-compiler.h"
+#include "compiler.h"
 #include "configfile.h"
 #include <glib/gstdio.h>
 #include <signal.h>
@@ -32,35 +32,27 @@ struct _SilktexCompiler {
     GPid typesetter_pid;
 };
 
-G_DEFINE_FINAL_TYPE(SilktexCompiler, silktex_compiler, G_TYPE_OBJECT)
+G_DEFINE_FINAL_TYPE (SilktexCompiler, silktex_compiler, G_TYPE_OBJECT)
 
-enum {
-    SIGNAL_COMPILE_STARTED,
-    SIGNAL_COMPILE_FINISHED,
-    SIGNAL_COMPILE_ERROR,
-    N_SIGNALS
-};
+    enum { SIGNAL_COMPILE_STARTED, SIGNAL_COMPILE_FINISHED, SIGNAL_COMPILE_ERROR, N_SIGNALS };
 
 static guint signals[N_SIGNALS];
 
-static gboolean
-emit_compile_finished(gpointer user_data)
+static gboolean emit_compile_finished(gpointer user_data)
 {
     SilktexCompiler *self = SILKTEX_COMPILER(user_data);
     g_signal_emit(self, signals[SIGNAL_COMPILE_FINISHED], 0);
     return G_SOURCE_REMOVE;
 }
 
-static gboolean
-emit_compile_error(gpointer user_data)
+static gboolean emit_compile_error(gpointer user_data)
 {
     SilktexCompiler *self = SILKTEX_COMPILER(user_data);
     g_signal_emit(self, signals[SIGNAL_COMPILE_ERROR], 0);
     return G_SOURCE_REMOVE;
 }
 
-static gboolean
-run_typesetter(SilktexCompiler *self, const char *workfile, const char *workdir)
+static gboolean run_typesetter(SilktexCompiler *self, const char *workfile, const char *workdir)
 {
     g_autofree char *cmd = NULL;
     g_autofree char *stdout_buf = NULL;
@@ -83,7 +75,8 @@ run_typesetter(SilktexCompiler *self, const char *workfile, const char *workdir)
 
     cmd = g_string_free(args, FALSE);
 
-    gboolean result = g_spawn_command_line_sync(cmd, &stdout_buf, &stderr_buf, &exit_status, &error);
+    gboolean result =
+        g_spawn_command_line_sync(cmd, &stdout_buf, &stderr_buf, &exit_status, &error);
 
     if (!result) {
         g_warning("Failed to run typesetter: %s", error->message);
@@ -99,8 +92,7 @@ run_typesetter(SilktexCompiler *self, const char *workfile, const char *workdir)
     return exit_status == 0;
 }
 
-static gpointer
-compile_thread_func(gpointer data)
+static gpointer compile_thread_func(gpointer data)
 {
     SilktexCompiler *self = SILKTEX_COMPILER(data);
 
@@ -160,8 +152,7 @@ compile_thread_func(gpointer data)
     return NULL;
 }
 
-static void
-silktex_compiler_dispose(GObject *object)
+static void silktex_compiler_dispose(GObject *object)
 {
     SilktexCompiler *self = SILKTEX_COMPILER(object);
 
@@ -174,8 +165,7 @@ silktex_compiler_dispose(GObject *object)
     G_OBJECT_CLASS(silktex_compiler_parent_class)->dispose(object);
 }
 
-static void
-silktex_compiler_finalize(GObject *object)
+static void silktex_compiler_finalize(GObject *object)
 {
     SilktexCompiler *self = SILKTEX_COMPILER(object);
 
@@ -185,8 +175,7 @@ silktex_compiler_finalize(GObject *object)
     G_OBJECT_CLASS(silktex_compiler_parent_class)->finalize(object);
 }
 
-static void
-silktex_compiler_class_init(SilktexCompilerClass *klass)
+static void silktex_compiler_class_init(SilktexCompilerClass *klass)
 {
     GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
@@ -194,26 +183,19 @@ silktex_compiler_class_init(SilktexCompilerClass *klass)
     object_class->finalize = silktex_compiler_finalize;
 
     signals[SIGNAL_COMPILE_STARTED] =
-        g_signal_new("compile-started",
-                     G_TYPE_FROM_CLASS(klass),
-                     G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL,
-                     G_TYPE_NONE, 0);
+        g_signal_new("compile-started", G_TYPE_FROM_CLASS(klass), G_SIGNAL_RUN_LAST, 0, NULL, NULL,
+                     NULL, G_TYPE_NONE, 0);
 
     signals[SIGNAL_COMPILE_FINISHED] =
-        g_signal_new("compile-finished",
-                     G_TYPE_FROM_CLASS(klass),
-                     G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL,
-                     G_TYPE_NONE, 0);
+        g_signal_new("compile-finished", G_TYPE_FROM_CLASS(klass), G_SIGNAL_RUN_LAST, 0, NULL, NULL,
+                     NULL, G_TYPE_NONE, 0);
 
     signals[SIGNAL_COMPILE_ERROR] =
-        g_signal_new("compile-error",
-                     G_TYPE_FROM_CLASS(klass),
-                     G_SIGNAL_RUN_LAST, 0, NULL, NULL, NULL,
-                     G_TYPE_NONE, 0);
+        g_signal_new("compile-error", G_TYPE_FROM_CLASS(klass), G_SIGNAL_RUN_LAST, 0, NULL, NULL,
+                     NULL, G_TYPE_NONE, 0);
 }
 
-static void
-silktex_compiler_init(SilktexCompiler *self)
+static void silktex_compiler_init(SilktexCompiler *self)
 {
     g_mutex_init(&self->compile_mutex);
     g_cond_init(&self->compile_cv);
@@ -227,14 +209,12 @@ silktex_compiler_init(SilktexCompiler *self)
     self->compile_requested = FALSE;
 }
 
-SilktexCompiler *
-silktex_compiler_new(void)
+SilktexCompiler *silktex_compiler_new(void)
 {
     return g_object_new(SILKTEX_TYPE_COMPILER, NULL);
 }
 
-void
-silktex_compiler_set_typesetter(SilktexCompiler *self, const char *typesetter)
+void silktex_compiler_set_typesetter(SilktexCompiler *self, const char *typesetter)
 {
     g_return_if_fail(SILKTEX_IS_COMPILER(self));
 
@@ -244,15 +224,13 @@ silktex_compiler_set_typesetter(SilktexCompiler *self, const char *typesetter)
     g_mutex_unlock(&self->compile_mutex);
 }
 
-const char *
-silktex_compiler_get_typesetter(SilktexCompiler *self)
+const char *silktex_compiler_get_typesetter(SilktexCompiler *self)
 {
     g_return_val_if_fail(SILKTEX_IS_COMPILER(self), NULL);
     return self->typesetter;
 }
 
-void
-silktex_compiler_start(SilktexCompiler *self)
+void silktex_compiler_start(SilktexCompiler *self)
 {
     g_return_if_fail(SILKTEX_IS_COMPILER(self));
 
@@ -267,8 +245,7 @@ silktex_compiler_start(SilktexCompiler *self)
     g_mutex_unlock(&self->compile_mutex);
 }
 
-void
-silktex_compiler_stop(SilktexCompiler *self)
+void silktex_compiler_stop(SilktexCompiler *self)
 {
     g_return_if_fail(SILKTEX_IS_COMPILER(self));
 
@@ -289,8 +266,7 @@ silktex_compiler_stop(SilktexCompiler *self)
     g_mutex_unlock(&self->compile_mutex);
 }
 
-void
-silktex_compiler_pause(SilktexCompiler *self)
+void silktex_compiler_pause(SilktexCompiler *self)
 {
     g_return_if_fail(SILKTEX_IS_COMPILER(self));
 
@@ -299,8 +275,7 @@ silktex_compiler_pause(SilktexCompiler *self)
     g_mutex_unlock(&self->compile_mutex);
 }
 
-void
-silktex_compiler_resume(SilktexCompiler *self)
+void silktex_compiler_resume(SilktexCompiler *self)
 {
     g_return_if_fail(SILKTEX_IS_COMPILER(self));
 
@@ -310,8 +285,7 @@ silktex_compiler_resume(SilktexCompiler *self)
     g_mutex_unlock(&self->compile_mutex);
 }
 
-void
-silktex_compiler_request_compile(SilktexCompiler *self, SilktexEditor *editor)
+void silktex_compiler_request_compile(SilktexCompiler *self, SilktexEditor *editor)
 {
     g_return_if_fail(SILKTEX_IS_COMPILER(self));
     g_return_if_fail(editor == NULL || SILKTEX_IS_EDITOR(editor));
@@ -323,14 +297,12 @@ silktex_compiler_request_compile(SilktexCompiler *self, SilktexEditor *editor)
     g_mutex_unlock(&self->compile_mutex);
 }
 
-void
-silktex_compiler_force_compile(SilktexCompiler *self, SilktexEditor *editor)
+void silktex_compiler_force_compile(SilktexCompiler *self, SilktexEditor *editor)
 {
     silktex_compiler_request_compile(self, editor);
 }
 
-void
-silktex_compiler_cancel(SilktexCompiler *self)
+void silktex_compiler_cancel(SilktexCompiler *self)
 {
     g_return_if_fail(SILKTEX_IS_COMPILER(self));
 
@@ -341,61 +313,52 @@ silktex_compiler_cancel(SilktexCompiler *self)
     g_mutex_unlock(&self->compile_mutex);
 }
 
-gboolean
-silktex_compiler_is_running(SilktexCompiler *self)
+gboolean silktex_compiler_is_running(SilktexCompiler *self)
 {
     g_return_val_if_fail(SILKTEX_IS_COMPILER(self), FALSE);
     return self->compile_thread != NULL;
 }
 
-gboolean
-silktex_compiler_is_compiling(SilktexCompiler *self)
+gboolean silktex_compiler_is_compiling(SilktexCompiler *self)
 {
     g_return_val_if_fail(SILKTEX_IS_COMPILER(self), FALSE);
     return self->compiling;
 }
 
-void
-silktex_compiler_set_shell_escape(SilktexCompiler *self, gboolean enabled)
+void silktex_compiler_set_shell_escape(SilktexCompiler *self, gboolean enabled)
 {
     g_return_if_fail(SILKTEX_IS_COMPILER(self));
     self->shell_escape = enabled;
 }
 
-void
-silktex_compiler_set_synctex(SilktexCompiler *self, gboolean enabled)
+void silktex_compiler_set_synctex(SilktexCompiler *self, gboolean enabled)
 {
     g_return_if_fail(SILKTEX_IS_COMPILER(self));
     self->synctex = enabled;
 }
 
-void
-silktex_compiler_apply_config(SilktexCompiler *self)
+void silktex_compiler_apply_config(SilktexCompiler *self)
 {
     g_return_if_fail(SILKTEX_IS_COMPILER(self));
     const char *ts = config_get_string("Compile", "typesetter");
-    if (ts && *ts)
-        silktex_compiler_set_typesetter(self, ts);
+    if (ts && *ts) silktex_compiler_set_typesetter(self, ts);
     silktex_compiler_set_shell_escape(self, config_get_boolean("Compile", "shellescape"));
-    silktex_compiler_set_synctex(self,   config_get_boolean("Compile", "synctex"));
+    silktex_compiler_set_synctex(self, config_get_boolean("Compile", "synctex"));
 }
 
-const char *
-silktex_compiler_get_log(SilktexCompiler *self)
+const char *silktex_compiler_get_log(SilktexCompiler *self)
 {
     g_return_val_if_fail(SILKTEX_IS_COMPILER(self), NULL);
     return self->compile_log;
 }
 
-int *
-silktex_compiler_get_error_lines(SilktexCompiler *self)
+int *silktex_compiler_get_error_lines(SilktexCompiler *self)
 {
     g_return_val_if_fail(SILKTEX_IS_COMPILER(self), NULL);
     return self->error_lines;
 }
 
-gboolean
-silktex_compiler_run_makeindex(SilktexCompiler *self, SilktexEditor *editor)
+gboolean silktex_compiler_run_makeindex(SilktexCompiler *self, SilktexEditor *editor)
 {
     g_return_val_if_fail(SILKTEX_IS_COMPILER(self), FALSE);
     g_return_val_if_fail(SILKTEX_IS_EDITOR(editor), FALSE);
@@ -418,8 +381,7 @@ silktex_compiler_run_makeindex(SilktexCompiler *self, SilktexEditor *editor)
     return result && exit_status == 0;
 }
 
-gboolean
-silktex_compiler_run_bibtex(SilktexCompiler *self, SilktexEditor *editor)
+gboolean silktex_compiler_run_bibtex(SilktexCompiler *self, SilktexEditor *editor)
 {
     g_return_val_if_fail(SILKTEX_IS_COMPILER(self), FALSE);
     g_return_val_if_fail(SILKTEX_IS_EDITOR(editor), FALSE);

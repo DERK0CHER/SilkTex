@@ -10,19 +10,19 @@
 #include <glib.h>
 
 #ifdef WIN32
-    #define DIR_PERMS (S_IRWXU)
+#define DIR_PERMS (S_IRWXU)
 #else
-    #define DIR_PERMS (S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)
+#define DIR_PERMS (S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)
 #endif
 
 #define STR_EQU(X, Y) (g_strcmp0((X), (Y)) == 0)
 
 #define L_IS_TYPE(level, type) ((level & type) == type)
-#define L_INFO      0x00
-#define L_WARNING   0x01
-#define L_DEBUG     0x02
-#define L_ERROR     0x04
-#define L_FATAL     0x08
+#define L_INFO                 0x00
+#define L_WARNING              0x01
+#define L_DEBUG                0x02
+#define L_ERROR                0x04
+#define L_FATAL                0x08
 
 typedef struct _slist {
     struct _slist *next;

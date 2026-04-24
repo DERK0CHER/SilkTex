@@ -7,10 +7,9 @@
 #include <glib/gi18n.h>
 #include <locale.h>
 
-#include "silktex-application.h"
+#include "application.h"
 
-int
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     setlocale(LC_ALL, "");
     bindtextdomain("silktex", NULL);

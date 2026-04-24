@@ -17,7 +17,7 @@
  *     \tbody line 2
  */
 
-#include "silktex-snippets.h"
+#include "snippets.h"
 #include "configfile.h"
 #include "constants.h"
 #include "utils.h"
@@ -28,40 +28,40 @@
 /* ------------------------------------------------------------------ types */
 
 typedef struct {
-    guint           keyval;
+    guint keyval;
     GdkModifierType mods;
-    char           *keyword;   /* points into the slist, do NOT free separately */
+    char *keyword; /* points into the slist, do NOT free separately */
 } SnippetAccel;
 
 typedef struct {
-    glong        group;   /* $N → N; macro ($FILENAME etc.) → -1  */
-    int          start;   /* char offset in raw body                */
-    int          len;     /* char length of placeholder syntax      */
-    char        *deftext; /* default text or macro name             */
-    GtkTextMark *lmark;   /* left-gravity mark (inserted-at = stays left)  */
-    GtkTextMark *rmark;   /* right-gravity mark                     */
+    glong group;        /* $N → N; macro ($FILENAME etc.) → -1  */
+    int start;          /* char offset in raw body                */
+    int len;            /* char length of placeholder syntax      */
+    char *deftext;      /* default text or macro name             */
+    GtkTextMark *lmark; /* left-gravity mark (inserted-at = stays left)  */
+    GtkTextMark *rmark; /* right-gravity mark                     */
 } Holder;
 
 typedef struct {
-    char  *expanded;      /* raw body, inserted as-is then cleaned up */
-    int    start_offset;  /* char offset in buffer where snippet starts */
-    GList *holders;       /* Holder*, position-sorted                  */
-    GList *unique;        /* one representative per group, group-sorted */
-    GList *current;       /* pointer into unique – focused group        */
-    char  *sel_text;      /* captured selection for $SELECTED_TEXT      */
+    char *expanded;   /* raw body, inserted as-is then cleaned up */
+    int start_offset; /* char offset in buffer where snippet starts */
+    GList *holders;   /* Holder*, position-sorted                  */
+    GList *unique;    /* one representative per group, group-sorted */
+    GList *current;   /* pointer into unique – focused group        */
+    char *sel_text;   /* captured selection for $SELECTED_TEXT      */
 } SnippetState;
 
 struct _SilktexSnippets {
-    GObject       parent_instance;
-    char         *filename;
-    slist        *head;     /* linked list of snippets (first=header, second=body) */
-    GList        *accels;   /* SnippetAccel* for keyboard shortcuts                */
+    GObject parent_instance;
+    char *filename;
+    slist *head;                 /* linked list of snippets (first=header, second=body) */
+    GList *accels;               /* SnippetAccel* for keyboard shortcuts                */
     GdkModifierType global_mods; /* modifiers combined with single-letter accels    */
     SnippetState *active;
-    GList        *stack;
+    GList *stack;
 };
 
-G_DEFINE_FINAL_TYPE(SilktexSnippets, silktex_snippets, G_TYPE_OBJECT)
+G_DEFINE_FINAL_TYPE (SilktexSnippets, silktex_snippets, G_TYPE_OBJECT)
 
 /* ---------------------------------------------------------------- default content
  *
@@ -75,26 +75,24 @@ G_DEFINE_FINAL_TYPE(SilktexSnippets, silktex_snippets, G_TYPE_OBJECT)
 #define GUMMI_DATA "/usr/share/silktex"
 #endif
 
-static char *
-find_default_snippets_path(void)
-{
-    /* 1) development: GUMMI_DATA/snippets/snippets.cfg               */
-    char *p = g_build_filename(GUMMI_DATA, "snippets", "snippets.cfg", NULL);
-    if (g_file_test(p, G_FILE_TEST_IS_REGULAR)) return p;
-    g_free(p);
+    static char *find_default_snippets_path(void)
+    {
+        /* 1) development: GUMMI_DATA/snippets/snippets.cfg               */
+        char *p = g_build_filename(GUMMI_DATA, "snippets", "snippets.cfg", NULL);
+        if (g_file_test(p, G_FILE_TEST_IS_REGULAR)) return p;
+        g_free(p);
 
-    /* 2) installed prefix next to this binary (datadir/silktex/…)    */
-    const char * const *dirs = g_get_system_data_dirs();
-    for (int i = 0; dirs && dirs[i]; i++) {
-        char *q = g_build_filename(dirs[i], "silktex", "snippets", "snippets.cfg", NULL);
-        if (g_file_test(q, G_FILE_TEST_IS_REGULAR)) return q;
-        g_free(q);
+        /* 2) installed prefix next to this binary (datadir/silktex/…)    */
+        const char *const *dirs = g_get_system_data_dirs();
+        for (int i = 0; dirs && dirs[i]; i++) {
+            char *q = g_build_filename(dirs[i], "silktex", "snippets", "snippets.cfg", NULL);
+            if (g_file_test(q, G_FILE_TEST_IS_REGULAR)) return q;
+            g_free(q);
+        }
+        return NULL;
     }
-    return NULL;
-}
 
-static gboolean
-copy_default_snippets(const char *dest)
+static gboolean copy_default_snippets(const char *dest)
 {
     g_autofree char *src = find_default_snippets_path();
     if (!src) return FALSE;
@@ -106,7 +104,8 @@ copy_default_snippets(const char *dest)
 
 /* ------------------------------------------------------------------ file I/O */
 
-static void free_accels(GList *accels) {
+static void free_accels(GList *accels)
+{
     for (GList *c = accels; c; c = c->next) {
         g_free(((SnippetAccel *)c->data)->keyword);
         g_free(c->data);
@@ -114,9 +113,16 @@ static void free_accels(GList *accels) {
     g_list_free(accels);
 }
 
-static void free_slist(slist *head) {
+static void free_slist(slist *head)
+{
     slist *c = head;
-    while (c) { slist *nx = c->next; g_free(c->first); g_free(c->second); g_free(c); c = nx; }
+    while (c) {
+        slist *nx = c->next;
+        g_free(c->first);
+        g_free(c->second);
+        g_free(c);
+        c = nx;
+    }
 }
 
 /*
@@ -130,14 +136,16 @@ static void free_slist(slist *head) {
  *
  * Empty / missing → no shortcut.
  */
-static void
-parse_and_store_accel(SilktexSnippets *self, const char *header)
+static void parse_and_store_accel(SilktexSnippets *self, const char *header)
 {
     gchar **parts = g_strsplit(header, ",", 3);
-    if (!parts[0] || !parts[1] || !*parts[1]) { g_strfreev(parts); return; }
+    if (!parts[0] || !parts[1] || !*parts[1]) {
+        g_strfreev(parts);
+        return;
+    }
 
     const char *accel = parts[1];
-    guint           kv   = 0;
+    guint kv = 0;
     GdkModifierType mods = 0;
 
     if (strchr(accel, '<') != NULL) {
@@ -145,7 +153,7 @@ parse_and_store_accel(SilktexSnippets *self, const char *header)
         gtk_accelerator_parse(accel, &kv, &mods);
     } else {
         /* Short form: just the letter; combine with global modifiers. */
-        kv   = gdk_keyval_from_name(accel);
+        kv = gdk_keyval_from_name(accel);
         mods = self->global_mods;
     }
 
@@ -158,8 +166,8 @@ parse_and_store_accel(SilktexSnippets *self, const char *header)
      */
     if (kv != 0 && kv != GDK_KEY_VoidSymbol && mods != 0) {
         SnippetAccel *a = g_new0(SnippetAccel, 1);
-        a->keyval  = kv;
-        a->mods    = mods & gtk_accelerator_get_default_mod_mask();
+        a->keyval = kv;
+        a->mods = mods & gtk_accelerator_get_default_mod_mask();
         a->keyword = g_strdup(parts[0]);
         self->accels = g_list_append(self->accels, a);
     }
@@ -170,43 +178,39 @@ parse_and_store_accel(SilktexSnippets *self, const char *header)
  * Walk all stored snippet headers and (re)build self->accels.
  * Called after the file reloads or the global modifiers change.
  */
-static void
-rebuild_accels(SilktexSnippets *self)
+static void rebuild_accels(SilktexSnippets *self)
 {
     free_accels(self->accels);
     self->accels = NULL;
     for (slist *c = self->head; c; c = c->next) {
-        if (c->first)
-            parse_and_store_accel(self, c->first);
+        if (c->first) parse_and_store_accel(self, c->first);
     }
 }
 
-static GdkModifierType
-modifier_from_name(const char *name)
+static GdkModifierType modifier_from_name(const char *name)
 {
     if (!name || !*name) return 0;
-    if (g_ascii_strcasecmp(name, "Shift")   == 0) return GDK_SHIFT_MASK;
+    if (g_ascii_strcasecmp(name, "Shift") == 0) return GDK_SHIFT_MASK;
     if (g_ascii_strcasecmp(name, "Control") == 0) return GDK_CONTROL_MASK;
-    if (g_ascii_strcasecmp(name, "Ctrl")    == 0) return GDK_CONTROL_MASK;
-    if (g_ascii_strcasecmp(name, "Alt")     == 0) return GDK_ALT_MASK;
-    if (g_ascii_strcasecmp(name, "Meta")    == 0) return GDK_META_MASK;
-    if (g_ascii_strcasecmp(name, "Super")   == 0) return GDK_SUPER_MASK;
+    if (g_ascii_strcasecmp(name, "Ctrl") == 0) return GDK_CONTROL_MASK;
+    if (g_ascii_strcasecmp(name, "Alt") == 0) return GDK_ALT_MASK;
+    if (g_ascii_strcasecmp(name, "Meta") == 0) return GDK_META_MASK;
+    if (g_ascii_strcasecmp(name, "Super") == 0) return GDK_SUPER_MASK;
     return 0;
 }
 
-static void
-load_snippets_file(SilktexSnippets *self)
+static void load_snippets_file(SilktexSnippets *self)
 {
-    free_slist(self->head);  self->head = NULL;
-    free_accels(self->accels); self->accels = NULL;
+    free_slist(self->head);
+    self->head = NULL;
+    free_accels(self->accels);
+    self->accels = NULL;
 
     FILE *fh = fopen(self->filename, "r");
     if (!fh) {
-        slog(L_WARNING, "Snippets: seeding %s from default template\n",
-             self->filename);
+        slog(L_WARNING, "Snippets: seeding %s from default template\n", self->filename);
         if (!copy_default_snippets(self->filename)) {
-            slog(L_WARNING,
-                 "Snippets: no default template found; starting empty\n");
+            slog(L_WARNING, "Snippets: no default template found; starting empty\n");
             g_file_set_contents(self->filename, "", 0, NULL);
         }
         fh = fopen(self->filename, "r");
@@ -218,7 +222,7 @@ load_snippets_file(SilktexSnippets *self)
 
     while (fgets(buf, sizeof(buf), fh)) {
         int len = (int)strlen(buf);
-        if (len > 0 && buf[len-1] == '\n') buf[len-1] = '\0';
+        if (len > 0 && buf[len - 1] == '\n') buf[len - 1] = '\0';
         if (!buf[0] || buf[0] == '#') continue;
 
         if (buf[0] != '\t') {
@@ -247,14 +251,12 @@ load_snippets_file(SilktexSnippets *self)
     rebuild_accels(self);
 }
 
-static const char *
-snippet_lookup(SilktexSnippets *self, const char *keyword)
+static const char *snippet_lookup(SilktexSnippets *self, const char *keyword)
 {
     for (slist *c = self->head; c; c = c->next) {
         const char *comma = strchr(c->first, ',');
         int klen = comma ? (int)(comma - c->first) : (int)strlen(c->first);
-        if ((int)strlen(keyword) == klen &&
-            strncmp(c->first, keyword, (size_t)klen) == 0)
+        if ((int)strlen(keyword) == klen && strncmp(c->first, keyword, (size_t)klen) == 0)
             return c->second;
     }
     return NULL;
@@ -262,39 +264,47 @@ snippet_lookup(SilktexSnippets *self, const char *keyword)
 
 /* ------------------------------------------------------------------ parser */
 
-static gint cmp_by_start(gconstpointer a, gconstpointer b) {
-    return ((Holder*)a)->start - ((Holder*)b)->start;
+static gint cmp_by_start(gconstpointer a, gconstpointer b)
+{
+    return ((Holder *)a)->start - ((Holder *)b)->start;
 }
-static gint cmp_by_group(gconstpointer a, gconstpointer b) {
-    glong ga = ((Holder*)a)->group, gb = ((Holder*)b)->group;
+static gint cmp_by_group(gconstpointer a, gconstpointer b)
+{
+    glong ga = ((Holder *)a)->group, gb = ((Holder *)b)->group;
     return (ga < gb) ? -1 : (ga > gb) ? 1 : 0;
 }
 
 /* byte offset in UTF-8 string → character offset */
-static int boff2coff(const char *s, int boff) {
+static int boff2coff(const char *s, int boff)
+{
     return (int)g_utf8_strlen(s, boff);
 }
 
-static SnippetState *
-parse_snippet(const char *body, const char *sel_text)
+static SnippetState *parse_snippet(const char *body, const char *sel_text)
 {
     SnippetState *s = g_new0(SnippetState, 1);
-    s->expanded = g_strdup(body);   /* inserted verbatim, cleaned up later */
+    s->expanded = g_strdup(body); /* inserted verbatim, cleaned up later */
     s->sel_text = g_strdup(sel_text ? sel_text : "");
 
-    static const struct { const char *pat; gboolean is_num; } pats[] = {
-        { "\\$\\{([0-9]+):?([^}]*)\\}", TRUE  },
-        { "\\$([0-9]+)",                TRUE  },
-        { "\\$(SELECTED_TEXT|FILENAME|BASENAME)", FALSE },
-        { "\\$\\{(SELECTED_TEXT|FILENAME|BASENAME)\\}", FALSE },
+    static const struct {
+        const char *pat;
+        gboolean is_num;
+    } pats[] = {
+        {"\\$\\{([0-9]+):?([^}]*)\\}", TRUE},
+        {"\\$([0-9]+)", TRUE},
+        {"\\$(SELECTED_TEXT|FILENAME|BASENAME)", FALSE},
+        {"\\$\\{(SELECTED_TEXT|FILENAME|BASENAME)\\}", FALSE},
     };
 
     GList *holders = NULL;
 
     for (int pi = 0; pi < (int)G_N_ELEMENTS(pats); pi++) {
         GError *err = NULL;
-        GRegex *re  = g_regex_new(pats[pi].pat, G_REGEX_DOTALL, 0, &err);
-        if (!re) { g_clear_error(&err); continue; }
+        GRegex *re = g_regex_new(pats[pi].pat, G_REGEX_DOTALL, 0, &err);
+        if (!re) {
+            g_clear_error(&err);
+            continue;
+        }
 
         GMatchInfo *mi = NULL;
         g_regex_match(re, body, 0, &mi);
@@ -302,18 +312,18 @@ parse_snippet(const char *body, const char *sel_text)
             int sb, eb;
             g_match_info_fetch_pos(mi, 0, &sb, &eb);
 
-            Holder *h   = g_new0(Holder, 1);
-            h->start    = boff2coff(body, sb);
-            h->len      = boff2coff(body, eb) - h->start;
+            Holder *h = g_new0(Holder, 1);
+            h->start = boff2coff(body, sb);
+            h->len = boff2coff(body, eb) - h->start;
 
             if (pats[pi].is_num) {
                 g_autofree char *gn = g_match_info_fetch(mi, 1);
                 g_autofree char *dt = g_match_info_fetch(mi, 2);
-                h->group   = atol(gn ? gn : "0");
+                h->group = atol(gn ? gn : "0");
                 h->deftext = g_strdup(dt ? dt : "");
             } else {
                 g_autofree char *kw = g_match_info_fetch(mi, 1);
-                h->group   = -1;
+                h->group = -1;
                 h->deftext = g_strdup(kw ? kw : "");
             }
             holders = g_list_prepend(holders, h);
@@ -342,8 +352,7 @@ parse_snippet(const char *body, const char *sel_text)
 
 /* ------------------------------------------------------------------ marks */
 
-static void
-create_marks(SnippetState *s, GtkTextBuffer *buf)
+static void create_marks(SnippetState *s, GtkTextBuffer *buf)
 {
     for (GList *c = s->holders; c; c = c->next) {
         Holder *h = c->data;
@@ -355,8 +364,7 @@ create_marks(SnippetState *s, GtkTextBuffer *buf)
     }
 }
 
-static void
-delete_marks(SnippetState *s, GtkTextBuffer *buf)
+static void delete_marks(SnippetState *s, GtkTextBuffer *buf)
 {
     for (GList *c = s->holders; c; c = c->next) {
         Holder *h = c->data;
@@ -367,13 +375,12 @@ delete_marks(SnippetState *s, GtkTextBuffer *buf)
     }
 }
 
-static void
-free_state(SnippetState *s, GtkTextBuffer *buf)
+static void free_state(SnippetState *s, GtkTextBuffer *buf)
 {
     if (!s) return;
     delete_marks(s, buf);
     for (GList *c = s->holders; c; c = c->next) {
-        g_free(((Holder*)c->data)->deftext);
+        g_free(((Holder *)c->data)->deftext);
         g_free(c->data);
     }
     g_list_free(s->holders);
@@ -391,17 +398,14 @@ free_state(SnippetState *s, GtkTextBuffer *buf)
  * valid after each deletion+insertion (though marks handle this anyway, this
  * order avoids mark-overlap edge cases).
  */
-static void
-initial_expand(SnippetState *s, GtkTextBuffer *buf,
-               const char *filename, const char *basename)
+static void initial_expand(SnippetState *s, GtkTextBuffer *buf, const char *filename,
+                           const char *basename)
 {
     /* Build group→representative_deftext map */
     GHashTable *group_text = g_hash_table_new(g_direct_hash, g_direct_equal);
     for (GList *c = s->unique; c; c = c->next) {
         Holder *h = c->data;
-        g_hash_table_insert(group_text,
-                            GINT_TO_POINTER((int)h->group),
-                            h->deftext);
+        g_hash_table_insert(group_text, GINT_TO_POINTER((int)h->group), h->deftext);
     }
 
     /* Reverse list of holders so we process last-to-first */
@@ -428,8 +432,7 @@ initial_expand(SnippetState *s, GtkTextBuffer *buf,
         } else {
             repl = g_hash_table_lookup(group_text, GINT_TO_POINTER((int)h->group));
         }
-        if (repl && *repl)
-            gtk_text_buffer_insert(buf, &ls, repl, -1);
+        if (repl && *repl) gtk_text_buffer_insert(buf, &ls, repl, -1);
     }
 
     g_list_free(rev);
@@ -438,19 +441,16 @@ initial_expand(SnippetState *s, GtkTextBuffer *buf,
 
 /* ------------------------------------------------------------------ focus/nav */
 
-static void
-focus_holder(Holder *h, GtkTextBuffer *buf, GtkTextView *view)
+static void focus_holder(Holder *h, GtkTextBuffer *buf, GtkTextView *view)
 {
     GtkTextIter start, end;
     gtk_text_buffer_get_iter_at_mark(buf, &start, h->lmark);
-    gtk_text_buffer_get_iter_at_mark(buf, &end,   h->rmark);
+    gtk_text_buffer_get_iter_at_mark(buf, &end, h->rmark);
     gtk_text_buffer_select_range(buf, &start, &end);
-    gtk_text_view_scroll_to_mark(view,
-        gtk_text_buffer_get_insert(buf), 0.1, FALSE, 0.0, 0.5);
+    gtk_text_view_scroll_to_mark(view, gtk_text_buffer_get_insert(buf), 0.1, FALSE, 0.0, 0.5);
 }
 
-static gboolean
-goto_next(SnippetState *s, GtkTextBuffer *buf, GtkTextView *view)
+static gboolean goto_next(SnippetState *s, GtkTextBuffer *buf, GtkTextView *view)
 {
     if (!s->current)
         s->current = s->unique;
@@ -458,7 +458,7 @@ goto_next(SnippetState *s, GtkTextBuffer *buf, GtkTextView *view)
         s->current = g_list_next(s->current);
 
     while (s->current) {
-        glong g = ((Holder*)s->current->data)->group;
+        glong g = ((Holder *)s->current->data)->group;
         if (g > 0) break;
         s->current = g_list_next(s->current);
     }
@@ -466,7 +466,7 @@ goto_next(SnippetState *s, GtkTextBuffer *buf, GtkTextView *view)
     if (!s->current) {
         /* Gummi behavior: final landing on $0 if present */
         for (GList *c = s->unique; c; c = c->next) {
-            if (((Holder*)c->data)->group == 0) {
+            if (((Holder *)c->data)->group == 0) {
                 focus_holder(c->data, buf, view);
                 return FALSE;
             }
@@ -478,12 +478,11 @@ goto_next(SnippetState *s, GtkTextBuffer *buf, GtkTextView *view)
     return TRUE;
 }
 
-static gboolean
-goto_prev(SnippetState *s, GtkTextBuffer *buf, GtkTextView *view)
+static gboolean goto_prev(SnippetState *s, GtkTextBuffer *buf, GtkTextView *view)
 {
     GList *prev = s->current ? g_list_previous(s->current) : NULL;
     while (prev) {
-        if (((Holder*)prev->data)->group >= 0) break;
+        if (((Holder *)prev->data)->group >= 0) break;
         prev = g_list_previous(prev);
     }
     if (!prev) return FALSE;
@@ -494,8 +493,7 @@ goto_prev(SnippetState *s, GtkTextBuffer *buf, GtkTextView *view)
 
 /* ------------------------------------------------------------------ mirror */
 
-static void
-sync_group(SnippetState *s, GtkTextBuffer *buf)
+static void sync_group(SnippetState *s, GtkTextBuffer *buf)
 {
     if (!s->current) return;
     Holder *active = s->current->data;
@@ -519,15 +517,14 @@ sync_group(SnippetState *s, GtkTextBuffer *buf)
 
 /* ------------------------------------------------------------------ activate */
 
-static void
-deactivate(SilktexSnippets *self, GtkTextBuffer *buf)
+static void deactivate(SilktexSnippets *self, GtkTextBuffer *buf)
 {
     if (!self->active) return;
     free_state(self->active, buf);
     GList *last = g_list_last(self->stack);
     if (last) {
         self->active = last->data;
-        self->stack  = g_list_delete_link(self->stack, last);
+        self->stack = g_list_delete_link(self->stack, last);
     } else {
         self->active = NULL;
     }
@@ -538,24 +535,21 @@ deactivate(SilktexSnippets *self, GtkTextBuffer *buf)
  *   @delete_keyword: TRUE when expanding via Tab (delete typed word first),
  *                    FALSE when expanding via accelerator (insert at cursor).
  */
-static void
-activate_snippet(SilktexSnippets *self,
-                 SilktexEditor   *editor,
-                 const char      *keyword,
-                 gboolean         delete_keyword)
+static void activate_snippet(SilktexSnippets *self, SilktexEditor *editor, const char *keyword,
+                             gboolean delete_keyword)
 {
     const char *body = snippet_lookup(self, keyword);
     if (!body) return;
 
     GtkSourceBuffer *sbuf = silktex_editor_get_buffer(editor);
-    GtkTextBuffer   *buf  = GTK_TEXT_BUFFER(sbuf);
-    GtkTextView     *view = GTK_TEXT_VIEW(silktex_editor_get_view(editor));
+    GtkTextBuffer *buf = GTK_TEXT_BUFFER(sbuf);
+    GtkTextView *view = GTK_TEXT_VIEW(silktex_editor_get_view(editor));
 
     /* Capture selection for $SELECTED_TEXT */
     GtkTextIter sel_s, sel_e;
     gtk_text_buffer_get_selection_bounds(buf, &sel_s, &sel_e);
-    g_autofree char *sel      = gtk_text_iter_get_text(&sel_s, &sel_e);
-    const char *filename      = silktex_editor_get_filename(editor);
+    g_autofree char *sel = gtk_text_iter_get_text(&sel_s, &sel_e);
+    const char *filename = silktex_editor_get_filename(editor);
     g_autofree char *basename = filename ? g_path_get_basename(filename) : g_strdup("");
 
     SnippetState *s = parse_snippet(body, sel);
@@ -565,8 +559,7 @@ activate_snippet(SilktexSnippets *self,
     if (delete_keyword) {
         /* Tab expansion: delete the typed keyword */
         GtkTextIter cur;
-        gtk_text_buffer_get_iter_at_mark(buf, &cur,
-            gtk_text_buffer_get_insert(buf));
+        gtk_text_buffer_get_iter_at_mark(buf, &cur, gtk_text_buffer_get_insert(buf));
         GtkTextIter word_start = cur;
         gtk_text_iter_backward_word_start(&word_start);
         gtk_text_buffer_delete(buf, &word_start, &cur);
@@ -577,8 +570,7 @@ activate_snippet(SilktexSnippets *self,
 
     /* Record insertion point */
     GtkTextIter anchor_it;
-    gtk_text_buffer_get_iter_at_mark(buf, &anchor_it,
-        gtk_text_buffer_get_insert(buf));
+    gtk_text_buffer_get_iter_at_mark(buf, &anchor_it, gtk_text_buffer_get_insert(buf));
     GtkTextMark *anchor = gtk_text_buffer_create_mark(buf, NULL, &anchor_it, TRUE);
 
     /* Insert raw body (with $1, ${2:default} etc.) */
@@ -601,14 +593,12 @@ activate_snippet(SilktexSnippets *self,
     }
     self->active = s;
 
-    if (!goto_next(s, buf, view))
-        deactivate(self, buf);
+    if (!goto_next(s, buf, view)) deactivate(self, buf);
 }
 
 /* ------------------------------------------------------------------ GObject */
 
-static void
-silktex_snippets_finalize(GObject *obj)
+static void silktex_snippets_finalize(GObject *obj)
 {
     SilktexSnippets *self = SILKTEX_SNIPPETS(obj);
     g_free(self->filename);
@@ -616,15 +606,15 @@ silktex_snippets_finalize(GObject *obj)
     free_accels(self->accels);
     G_OBJECT_CLASS(silktex_snippets_parent_class)->finalize(obj);
 }
-static void silktex_snippets_class_init(SilktexSnippetsClass *klass) {
+static void silktex_snippets_class_init(SilktexSnippetsClass *klass)
+{
     G_OBJECT_CLASS(klass)->finalize = silktex_snippets_finalize;
 }
 static void silktex_snippets_init(SilktexSnippets *self) {}
 
 /* ------------------------------------------------------------------ public */
 
-SilktexSnippets *
-silktex_snippets_new(void)
+SilktexSnippets *silktex_snippets_new(void)
 {
     SilktexSnippets *self = g_object_new(SILKTEX_TYPE_SNIPPETS, NULL);
     char *confdir = C_GUMMI_CONFDIR;
@@ -660,27 +650,21 @@ void silktex_snippets_reset_to_default(SilktexSnippets *self)
     load_snippets_file(self);
 }
 
-void
-silktex_snippets_set_modifiers(SilktexSnippets *self,
-                               const char      *modifier1,
-                               const char      *modifier2)
+void silktex_snippets_set_modifiers(SilktexSnippets *self, const char *modifier1,
+                                    const char *modifier2)
 {
     g_return_if_fail(SILKTEX_IS_SNIPPETS(self));
-    GdkModifierType m = modifier_from_name(modifier1) |
-                        modifier_from_name(modifier2);
+    GdkModifierType m = modifier_from_name(modifier1) | modifier_from_name(modifier2);
     self->global_mods = m;
     rebuild_accels(self);
 }
 
-gboolean
-silktex_snippets_handle_key(SilktexSnippets *self,
-                             SilktexEditor   *editor,
-                             guint            keyval,
-                             GdkModifierType  state)
+gboolean silktex_snippets_handle_key(SilktexSnippets *self, SilktexEditor *editor, guint keyval,
+                                     GdkModifierType state)
 {
     GtkSourceBuffer *sbuf = silktex_editor_get_buffer(editor);
-    GtkTextBuffer   *buf  = GTK_TEXT_BUFFER(sbuf);
-    GtkTextView     *view = GTK_TEXT_VIEW(silktex_editor_get_view(editor));
+    GtkTextBuffer *buf = GTK_TEXT_BUFFER(sbuf);
+    GtkTextView *view = GTK_TEXT_VIEW(silktex_editor_get_view(editor));
 
     /* Escape: deactivate */
     if (keyval == GDK_KEY_Escape && self->active) {
@@ -702,8 +686,7 @@ silktex_snippets_handle_key(SilktexSnippets *self,
     /* Gummi behavior: on Tab, try keyword expansion before placeholder nav */
     if (keyval == GDK_KEY_Tab && !(state & GDK_SHIFT_MASK)) {
         GtkTextIter cur;
-        gtk_text_buffer_get_iter_at_mark(buf, &cur,
-            gtk_text_buffer_get_insert(buf));
+        gtk_text_buffer_get_iter_at_mark(buf, &cur, gtk_text_buffer_get_insert(buf));
         if (gtk_text_iter_ends_word(&cur)) {
             GtkTextIter ws = cur;
             gtk_text_iter_backward_word_start(&ws);
@@ -714,18 +697,15 @@ silktex_snippets_handle_key(SilktexSnippets *self,
             }
         }
         if (self->active) {
-            if (!goto_next(self->active, buf, view))
-                deactivate(self, buf);
+            if (!goto_next(self->active, buf, view)) deactivate(self, buf);
             return TRUE;
         }
     }
 
     /* Shift-Tab: previous placeholder */
-    if ((keyval == GDK_KEY_ISO_Left_Tab || keyval == GDK_KEY_Tab) &&
-        (state & GDK_SHIFT_MASK)) {
+    if ((keyval == GDK_KEY_ISO_Left_Tab || keyval == GDK_KEY_Tab) && (state & GDK_SHIFT_MASK)) {
         if (self->active) {
-            if (!goto_prev(self->active, buf, view))
-                deactivate(self, buf);
+            if (!goto_prev(self->active, buf, view)) deactivate(self, buf);
             return TRUE;
         }
     }
@@ -738,13 +718,11 @@ silktex_snippets_handle_key(SilktexSnippets *self,
         if (last_node) {
             Holder *last_h = last_node->data;
             GtkTextIter cur_it, bound_it;
-            gtk_text_buffer_get_iter_at_mark(buf, &cur_it,
-                gtk_text_buffer_get_insert(buf));
+            gtk_text_buffer_get_iter_at_mark(buf, &cur_it, gtk_text_buffer_get_insert(buf));
             gtk_text_buffer_get_iter_at_mark(buf, &bound_it, last_h->lmark);
-            int cur_off   = gtk_text_iter_get_offset(&cur_it);
+            int cur_off = gtk_text_iter_get_offset(&cur_it);
             int bound_end = gtk_text_iter_get_offset(&bound_it);
-            if (cur_off < self->active->start_offset || cur_off > bound_end)
-                deactivate(self, buf);
+            if (cur_off < self->active->start_offset || cur_off > bound_end) deactivate(self, buf);
         }
     }
 
@@ -759,19 +737,15 @@ silktex_snippets_handle_key(SilktexSnippets *self,
  * buffer (GTK processes input between key-press and key-release).
  * This matches Gummi's snippets_key_release_cb() behaviour exactly.
  */
-gboolean
-silktex_snippets_handle_key_release(SilktexSnippets *self,
-                                     SilktexEditor   *editor,
-                                     guint            keyval,
-                                     GdkModifierType  state)
+gboolean silktex_snippets_handle_key_release(SilktexSnippets *self, SilktexEditor *editor,
+                                             guint keyval, GdkModifierType state)
 {
     (void)state;
-    if (keyval == GDK_KEY_Tab)
-        return FALSE;
+    if (keyval == GDK_KEY_Tab) return FALSE;
     if (!self->active) return FALSE;
 
     GtkSourceBuffer *sbuf = silktex_editor_get_buffer(editor);
-    GtkTextBuffer   *buf  = GTK_TEXT_BUFFER(sbuf);
+    GtkTextBuffer *buf = GTK_TEXT_BUFFER(sbuf);
     sync_group(self->active, buf);
     return FALSE;
 }

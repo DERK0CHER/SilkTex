@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#include "silktex-window.h"
-#include "silktex-prefs.h"
-#include "silktex-searchbar.h"
-#include "silktex-snippets.h"
-#include "silktex-synctex.h"
-#include "silktex-structure.h"
-#include "silktex-latex.h"
+#include "window.h"
+#include "prefs.h"
+#include "searchbar.h"
+#include "snippets.h"
+#include "synctex.h"
+#include "structure.h"
+#include "latex.h"
 #include "configfile.h"
 #include "constants.h"
 #include "utils.h"
@@ -54,14 +54,13 @@ struct _SilktexWindow {
     AdwToast *current_toast;
 };
 
-G_DEFINE_FINAL_TYPE(SilktexWindow, silktex_window, ADW_TYPE_APPLICATION_WINDOW)
+G_DEFINE_FINAL_TYPE (SilktexWindow, silktex_window, ADW_TYPE_APPLICATION_WINDOW)
 
-static void on_prefs_apply(gpointer user_data);
+    static void on_prefs_apply(gpointer user_data);
 
 /* ------------------------------------------------------------ helpers === */
 
-static SilktexEditor *
-get_editor_for_page(AdwTabPage *page)
+static SilktexEditor *get_editor_for_page(AdwTabPage *page)
 {
     if (page == NULL) return NULL;
     GtkWidget *child = adw_tab_page_get_child(page);
@@ -69,8 +68,7 @@ get_editor_for_page(AdwTabPage *page)
     return g_object_get_data(G_OBJECT(child), "silktex-editor");
 }
 
-static void
-update_window_title(SilktexWindow *self)
+static void update_window_title(SilktexWindow *self)
 {
     SilktexEditor *editor = silktex_window_get_active_editor(self);
     if (editor != NULL) {
@@ -83,8 +81,7 @@ update_window_title(SilktexWindow *self)
     }
 }
 
-static void
-update_tab_title(SilktexWindow *self, AdwTabPage *page, SilktexEditor *editor)
+static void update_tab_title(SilktexWindow *self, AdwTabPage *page, SilktexEditor *editor)
 {
     g_autofree char *basename = silktex_editor_get_basename(editor);
     const char *modified = silktex_editor_get_modified(editor) ? "*" : "";
@@ -92,8 +89,7 @@ update_tab_title(SilktexWindow *self, AdwTabPage *page, SilktexEditor *editor)
     adw_tab_page_set_title(page, title);
 }
 
-static void
-update_page_label(SilktexWindow *self)
+static void update_page_label(SilktexWindow *self)
 {
     if (!self->page_label) return;
     int page = silktex_preview_get_page(self->preview) + 1;
@@ -106,16 +102,14 @@ update_page_label(SilktexWindow *self)
     gtk_label_set_label(self->page_label, s);
 }
 
-static void
-update_log_panel(SilktexWindow *self)
+static void update_log_panel(SilktexWindow *self)
 {
     if (!self->log_buf) return;
     const char *log = silktex_compiler_get_log(self->compiler);
     gtk_text_buffer_set_text(self->log_buf, log ? log : "", -1);
 }
 
-static void
-add_to_recent(GFile *file)
+static void add_to_recent(GFile *file)
 {
     if (!file) return;
     GtkRecentManager *mgr = gtk_recent_manager_get_default();
@@ -128,8 +122,7 @@ add_to_recent(GFile *file)
 
 /* ------------------------------------------------------------ timers === */
 
-static gboolean
-on_compile_timer(gpointer user_data)
+static gboolean on_compile_timer(gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     self->compile_timer_id = 0;
@@ -144,8 +137,7 @@ on_compile_timer(gpointer user_data)
     return G_SOURCE_REMOVE;
 }
 
-static void
-restart_compile_timer(SilktexWindow *self)
+static void restart_compile_timer(SilktexWindow *self)
 {
     if (self->compile_timer_id > 0) {
         g_source_remove(self->compile_timer_id);
@@ -156,8 +148,7 @@ restart_compile_timer(SilktexWindow *self)
     self->compile_timer_id = g_timeout_add_seconds((guint)delay, on_compile_timer, self);
 }
 
-static gboolean
-on_autosave_timer(gpointer user_data)
+static gboolean on_autosave_timer(gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     guint n = adw_tab_view_get_n_pages(self->tab_view);
@@ -176,8 +167,7 @@ on_autosave_timer(gpointer user_data)
     return G_SOURCE_CONTINUE;
 }
 
-static void
-restart_autosave_timer(SilktexWindow *self)
+static void restart_autosave_timer(SilktexWindow *self)
 {
     if (self->autosave_timer_id > 0) {
         g_source_remove(self->autosave_timer_id);
@@ -186,15 +176,13 @@ restart_autosave_timer(SilktexWindow *self)
     if (config_get_boolean("File", "autosaving")) {
         int delay = config_get_integer("File", "autosave_timer");
         if (delay < 1) delay = 1;
-        self->autosave_timer_id = g_timeout_add_seconds((guint)delay * 60,
-                                                         on_autosave_timer, self);
+        self->autosave_timer_id = g_timeout_add_seconds((guint)delay * 60, on_autosave_timer, self);
     }
 }
 
 /* ------------------------------------------------------------ signals === */
 
-static void
-on_editor_changed(SilktexEditor *editor, gpointer user_data)
+static void on_editor_changed(SilktexEditor *editor, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
 
@@ -209,8 +197,7 @@ on_editor_changed(SilktexEditor *editor, gpointer user_data)
     }
 }
 
-static void
-on_compile_finished(SilktexCompiler *compiler, gpointer user_data)
+static void on_compile_finished(SilktexCompiler *compiler, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
 
@@ -222,39 +209,33 @@ on_compile_finished(SilktexCompiler *compiler, gpointer user_data)
         }
     }
     update_log_panel(self);
-    if (self->preview_status)
-        gtk_label_set_label(self->preview_status, _("Compiled"));
+    if (self->preview_status) gtk_label_set_label(self->preview_status, _("Compiled"));
 }
 
-static void
-on_compile_error(SilktexCompiler *compiler, gpointer user_data)
+static void on_compile_error(SilktexCompiler *compiler, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     silktex_window_show_toast(self, _("Compilation error — see compile log"));
     update_log_panel(self);
-    if (self->preview_status)
-        gtk_label_set_label(self->preview_status, _("Compile error"));
+    if (self->preview_status) gtk_label_set_label(self->preview_status, _("Compile error"));
 }
 
-static void
-on_preview_page_changed(GObject *p, GParamSpec *ps, gpointer ud)
+static void on_preview_page_changed(GObject *p, GParamSpec *ps, gpointer ud)
 {
     update_page_label(SILKTEX_WINDOW(ud));
 }
 
 /* ------------------------------------------------------------ pages === */
 
-static GtkWidget *
-create_editor_page(SilktexWindow *self, SilktexEditor *editor)
+static GtkWidget *create_editor_page(SilktexWindow *self, SilktexEditor *editor)
 {
     GtkWidget *scrolled = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled),
-                                   silktex_editor_get_view(editor));
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), silktex_editor_get_view(editor));
     gtk_widget_set_vexpand(scrolled, TRUE);
     gtk_widget_set_hexpand(scrolled, TRUE);
 
-    g_object_set_data_full(G_OBJECT(scrolled), "silktex-editor",
-                           g_object_ref(editor), g_object_unref);
+    g_object_set_data_full(G_OBJECT(scrolled), "silktex-editor", g_object_ref(editor),
+                           g_object_unref);
 
     g_signal_connect(editor, "changed", G_CALLBACK(on_editor_changed), self);
 
@@ -265,14 +246,12 @@ create_editor_page(SilktexWindow *self, SilktexEditor *editor)
 
 /* ------------------------------------------------------------ file actions */
 
-static void
-action_new(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+static void action_new(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
     silktex_window_new_tab(SILKTEX_WINDOW(user_data));
 }
 
-static void
-on_open_response(GObject *source, GAsyncResult *result, gpointer user_data)
+static void on_open_response(GObject *source, GAsyncResult *result, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     GtkFileDialog *dialog = GTK_FILE_DIALOG(source);
@@ -291,8 +270,7 @@ on_open_response(GObject *source, GAsyncResult *result, gpointer user_data)
     g_object_unref(file);
 }
 
-static void
-action_open(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+static void action_open(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
 
@@ -318,8 +296,7 @@ action_open(GSimpleAction *action, GVariant *parameter, gpointer user_data)
     g_object_unref(filter);
 }
 
-static void
-on_save_response(GObject *source, GAsyncResult *result, gpointer user_data)
+static void on_save_response(GObject *source, GAsyncResult *result, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     GtkFileDialog *dialog = GTK_FILE_DIALOG(source);
@@ -352,8 +329,7 @@ on_save_response(GObject *source, GAsyncResult *result, gpointer user_data)
     g_object_unref(file);
 }
 
-static void
-action_save(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+static void action_save(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     SilktexEditor *editor = silktex_window_get_active_editor(self);
@@ -382,8 +358,7 @@ action_save(GSimpleAction *action, GVariant *parameter, gpointer user_data)
     }
 }
 
-static void
-action_save_as(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+static void action_save_as(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
 
@@ -395,15 +370,17 @@ action_save_as(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 
 /* ------------------------------------------------------------ export --- */
 
-static void
-on_export_response(GObject *source, GAsyncResult *res, gpointer user_data)
+static void on_export_response(GObject *source, GAsyncResult *res, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     GFile *file = gtk_file_dialog_save_finish(GTK_FILE_DIALOG(source), res, NULL);
     if (!file) return;
 
     SilktexEditor *editor = silktex_window_get_active_editor(self);
-    if (!editor) { g_object_unref(file); return; }
+    if (!editor) {
+        g_object_unref(file);
+        return;
+    }
 
     const char *src_pdf = silktex_editor_get_pdffile(editor);
     if (!src_pdf || !g_file_test(src_pdf, G_FILE_TEST_EXISTS)) {
@@ -424,8 +401,7 @@ on_export_response(GObject *source, GAsyncResult *res, gpointer user_data)
     g_object_unref(file);
 }
 
-static void
-action_export_pdf(GSimpleAction *a, GVariant *p, gpointer ud)
+static void action_export_pdf(GSimpleAction *a, GVariant *p, gpointer ud)
 {
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     GtkFileDialog *dlg = gtk_file_dialog_new();
@@ -443,124 +419,144 @@ action_export_pdf(GSimpleAction *a, GVariant *p, gpointer ud)
 
 /* ------------------------------------------------------------ close --- */
 
-static void
-action_close_tab(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+static void action_close_tab(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     AdwTabPage *page = adw_tab_view_get_selected_page(self->tab_view);
-    if (page != NULL)
-        adw_tab_view_close_page(self->tab_view, page);
+    if (page != NULL) adw_tab_view_close_page(self->tab_view, page);
 }
 
 /* ------------------------------------------------------------ editing */
 
-static void action_undo(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_undo(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_editor_undo(e);
 }
-static void action_redo(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_redo(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_editor_redo(e);
 }
 
-static void action_compile(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_compile(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (e) {
-        if (self->preview_status)
-            gtk_label_set_label(self->preview_status, _("Compiling…"));
+        if (self->preview_status) gtk_label_set_label(self->preview_status, _("Compiling…"));
         silktex_compiler_force_compile(self->compiler, e);
     }
 }
 
-static void action_bold(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_bold(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_editor_apply_textstyle(e, "bold");
 }
-static void action_italic(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_italic(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_editor_apply_textstyle(e, "italic");
 }
-static void action_underline(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_underline(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_editor_apply_textstyle(e, "underline");
 }
-static void action_align_left(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_align_left(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_editor_apply_textstyle(e, "left");
 }
-static void action_align_center(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_align_center(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_editor_apply_textstyle(e, "center");
 }
-static void action_align_right(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_align_right(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_editor_apply_textstyle(e, "right");
 }
 
 /* ------------------------------------------------------------ insert */
 
-static void action_insert_section(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_insert_section(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_latex_insert_structure(e, "section");
 }
-static void action_insert_subsection(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_insert_subsection(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_latex_insert_structure(e, "subsection");
 }
-static void action_insert_subsubsection(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_insert_subsubsection(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_latex_insert_structure(e, "subsubsection");
 }
-static void action_insert_chapter(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_insert_chapter(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_latex_insert_structure(e, "chapter");
 }
-static void action_insert_paragraph(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_insert_paragraph(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_latex_insert_structure(e, "paragraph");
 }
 
-static void action_insert_itemize(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_insert_itemize(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
-    if (e) silktex_latex_insert_at_cursor(e,
-        "\\begin{itemize}\n\t\\item ", "\n\\end{itemize}\n");
+    if (e) silktex_latex_insert_at_cursor(e, "\\begin{itemize}\n\t\\item ", "\n\\end{itemize}\n");
 }
-static void action_insert_enumerate(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_insert_enumerate(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
-    if (e) silktex_latex_insert_at_cursor(e,
-        "\\begin{enumerate}\n\t\\item ", "\n\\end{enumerate}\n");
+    if (e)
+        silktex_latex_insert_at_cursor(e, "\\begin{enumerate}\n\t\\item ", "\n\\end{enumerate}\n");
 }
-static void action_insert_description(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_insert_description(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
-    if (e) silktex_latex_insert_at_cursor(e,
-        "\\begin{description}\n\t\\item[term] ", "\n\\end{description}\n");
+    if (e)
+        silktex_latex_insert_at_cursor(e, "\\begin{description}\n\t\\item[term] ",
+                                       "\n\\end{description}\n");
 }
-static void action_insert_equation(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_insert_equation(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_latex_insert_environment(e, "equation");
 }
-static void action_insert_quote(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_insert_quote(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
     if (e) silktex_latex_insert_environment(e, "quote");
 }
 
-static void action_insert_image(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_insert_image(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (e) silktex_latex_insert_image_dialog(GTK_WINDOW(self), e);
 }
-static void action_insert_table(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_insert_table(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (e) silktex_latex_insert_table_dialog(GTK_WINDOW(self), e);
 }
-static void action_insert_matrix(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_insert_matrix(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (e) silktex_latex_insert_matrix_dialog(GTK_WINDOW(self), e);
 }
-static void action_insert_biblio(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_insert_biblio(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (e) silktex_latex_insert_biblio_dialog(GTK_WINDOW(self), e);
@@ -568,55 +564,63 @@ static void action_insert_biblio(GSimpleAction *a, GVariant *p, gpointer ud) {
 
 /* ------------------------------------------------------------ preview */
 
-static void action_zoom_in(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_zoom_in(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     silktex_preview_zoom_in(SILKTEX_WINDOW(ud)->preview);
 }
-static void action_zoom_out(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_zoom_out(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     silktex_preview_zoom_out(SILKTEX_WINDOW(ud)->preview);
 }
-static void action_zoom_fit(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_zoom_fit(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     silktex_preview_zoom_fit_width(SILKTEX_WINDOW(ud)->preview);
 }
-static void action_zoom_fit_page(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_zoom_fit_page(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     silktex_preview_zoom_fit_page(SILKTEX_WINDOW(ud)->preview);
 }
-static void action_zoom_reset(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_zoom_reset(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     silktex_preview_set_zoom(SILKTEX_WINDOW(ud)->preview, 1.0);
 }
-static void action_prev_page(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_prev_page(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     silktex_preview_prev_page(SILKTEX_WINDOW(ud)->preview);
 }
-static void action_next_page(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_next_page(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     silktex_preview_next_page(SILKTEX_WINDOW(ud)->preview);
 }
 
-static void
-change_preview_layout(GSimpleAction *action, GVariant *value, gpointer ud)
+static void change_preview_layout(GSimpleAction *action, GVariant *value, gpointer ud)
 {
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     const char *mode = g_variant_get_string(value, NULL);
     SilktexPreviewLayout layout = SILKTEX_PREVIEW_LAYOUT_CONTINUOUS;
-    if (g_strcmp0(mode, "single") == 0)
-        layout = SILKTEX_PREVIEW_LAYOUT_SINGLE_PAGE;
+    if (g_strcmp0(mode, "single") == 0) layout = SILKTEX_PREVIEW_LAYOUT_SINGLE_PAGE;
     silktex_preview_set_layout(self->preview, layout);
     g_simple_action_set_state(action, value);
 }
 
 /* ------------------------------------------------------------ search */
 
-static void action_find(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_find(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (e) silktex_searchbar_set_editor(self->searchbar, e);
     silktex_searchbar_open(self->searchbar, FALSE);
 }
-static void action_find_replace(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_find_replace(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (e) silktex_searchbar_set_editor(self->searchbar, e);
     silktex_searchbar_open(self->searchbar, TRUE);
 }
-static void action_forward_sync(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_forward_sync(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (!e) return;
@@ -628,22 +632,22 @@ static void action_forward_sync(GSimpleAction *a, GVariant *p, gpointer ud) {
 
 /* ------------------------------------------------------------ misc */
 
-static void
-action_toggle_preview(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_toggle_preview(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     gboolean active = gtk_toggle_button_get_active(self->btn_preview);
     gtk_toggle_button_set_active(self->btn_preview, !active);
 }
 
-static void
-action_toggle_sidebar(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_toggle_sidebar(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     gboolean active = gtk_toggle_button_get_active(self->btn_sidebar);
     gtk_toggle_button_set_active(self->btn_sidebar, !active);
 }
 
-static void
-action_preferences(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_preferences(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     /* AdwDialog releases its floating ref when closed, so build a fresh
      * preferences dialog every time. */
@@ -653,8 +657,8 @@ action_preferences(GSimpleAction *a, GVariant *p, gpointer ud) {
     silktex_prefs_present(prefs, GTK_WINDOW(self));
 }
 
-static void
-action_fullscreen(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_fullscreen(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     self->is_fullscreen = !self->is_fullscreen;
     if (self->is_fullscreen)
@@ -663,25 +667,24 @@ action_fullscreen(GSimpleAction *a, GVariant *p, gpointer ud) {
         gtk_window_unfullscreen(GTK_WINDOW(self));
 }
 
-static void
-action_toggle_log(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_toggle_log(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     if (!self->log_toggle) return;
     gboolean active = gtk_toggle_button_get_active(self->log_toggle);
     gtk_toggle_button_set_active(self->log_toggle, !active);
 }
 
-static void
-action_refresh_structure(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_refresh_structure(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
-    if (self->structure)
-        silktex_structure_refresh(self->structure);
+    if (self->structure) silktex_structure_refresh(self->structure);
 }
 
 /* ------------------------------------------------------------ compile aux */
 
-static void
-action_run_bibtex(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_run_bibtex(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (!e) return;
@@ -689,8 +692,8 @@ action_run_bibtex(GSimpleAction *a, GVariant *p, gpointer ud) {
     silktex_window_show_toast(self, ok ? _("BibTeX finished") : _("BibTeX failed"));
 }
 
-static void
-action_run_makeindex(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_run_makeindex(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (!e) return;
@@ -698,32 +701,31 @@ action_run_makeindex(GSimpleAction *a, GVariant *p, gpointer ud) {
     silktex_window_show_toast(self, ok ? _("Makeindex finished") : _("Makeindex failed"));
 }
 
-static void
-action_cleanup(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_cleanup(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (!e) return;
     const char *work = silktex_editor_get_workfile(e);
     if (!work) return;
-    g_autofree char *dir  = g_path_get_dirname(work);
+    g_autofree char *dir = g_path_get_dirname(work);
     g_autofree char *base = g_path_get_basename(work);
     char *dot = strrchr(base, '.');
     if (dot) *dot = '\0';
 
-    const char *exts[] = { "aux","log","out","toc","bbl","blg",
-                           "idx","ilg","ind","lof","lot","synctex.gz", NULL };
+    const char *exts[] = {"aux", "log", "out", "toc", "bbl",        "blg", "idx",
+                          "ilg", "ind", "lof", "lot", "synctex.gz", NULL};
     int removed = 0;
     for (int i = 0; exts[i]; i++) {
         g_autofree char *f = g_strdup_printf("%s/%s.%s", dir, base, exts[i]);
-        if (g_file_test(f, G_FILE_TEST_EXISTS) && g_remove(f) == 0)
-            removed++;
+        if (g_file_test(f, G_FILE_TEST_EXISTS) && g_remove(f) == 0) removed++;
     }
     g_autofree char *msg = g_strdup_printf(_("Removed %d build file(s)"), removed);
     silktex_window_show_toast(self, msg);
 }
 
-static void
-action_stats(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_stats(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (!e) return;
@@ -748,19 +750,17 @@ action_stats(GSimpleAction *a, GVariant *p, gpointer ud) {
         }
     }
 
-    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(
-        adw_alert_dialog_new(_("Document Statistics"), NULL));
+    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(adw_alert_dialog_new(_("Document Statistics"), NULL));
     g_autofree char *body = g_strdup_printf(
-        _("Words: %d\nLines: %d\nCharacters: %d\nInline math: %d"),
-        words, lines, chars, math);
+        _("Words: %d\nLines: %d\nCharacters: %d\nInline math: %d"), words, lines, chars, math);
     adw_alert_dialog_set_body(dlg, body);
     adw_alert_dialog_add_response(dlg, "ok", _("OK"));
     adw_alert_dialog_set_default_response(dlg, "ok");
     adw_dialog_present(ADW_DIALOG(dlg), GTK_WIDGET(self));
 }
 
-static void
-action_open_pdf_external(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_open_pdf_external(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (!e) return;
@@ -770,28 +770,25 @@ action_open_pdf_external(GSimpleAction *a, GVariant *p, gpointer ud) {
         return;
     }
     g_autofree char *uri = g_filename_to_uri(pdf, NULL, NULL);
-    if (uri)
-        g_app_info_launch_default_for_uri(uri, NULL, NULL);
+    if (uri) g_app_info_launch_default_for_uri(uri, NULL, NULL);
 }
 
 /* ------------------------------------------------------------ recent files */
 
 typedef struct {
     SilktexWindow *self;
-    AdwDialog     *dialog;
-    char          *uri;
+    AdwDialog *dialog;
+    char *uri;
 } RecentItem;
 
-static void
-recent_item_free(gpointer data)
+static void recent_item_free(gpointer data)
 {
     RecentItem *r = data;
     g_free(r->uri);
     g_free(r);
 }
 
-static void
-on_recent_row_activated(GtkListBox *box, GtkListBoxRow *row, gpointer ud)
+static void on_recent_row_activated(GtkListBox *box, GtkListBoxRow *row, gpointer ud)
 {
     RecentItem *r = g_object_get_data(G_OBJECT(row), "recent-item");
     if (!r || !r->uri) return;
@@ -801,8 +798,7 @@ on_recent_row_activated(GtkListBox *box, GtkListBoxRow *row, gpointer ud)
     if (r->dialog) adw_dialog_close(r->dialog);
 }
 
-static void
-on_recent_clear(GtkButton *btn, gpointer ud)
+static void on_recent_clear(GtkButton *btn, gpointer ud)
 {
     AdwDialog *dlg = ADW_DIALOG(ud);
     GtkRecentManager *mgr = gtk_recent_manager_get_default();
@@ -810,8 +806,7 @@ on_recent_clear(GtkButton *btn, gpointer ud)
     adw_dialog_close(dlg);
 }
 
-static void
-action_show_recent(GSimpleAction *a, GVariant *p, gpointer ud)
+static void action_show_recent(GSimpleAction *a, GVariant *p, gpointer ud)
 {
     SilktexWindow *self = SILKTEX_WINDOW(ud);
 
@@ -834,8 +829,7 @@ action_show_recent(GSimpleAction *a, GVariant *p, gpointer ud)
     GtkWidget *list = gtk_list_box_new();
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(list), GTK_SELECTION_NONE);
     gtk_widget_add_css_class(list, "navigation-sidebar");
-    g_signal_connect(list, "row-activated",
-                     G_CALLBACK(on_recent_row_activated), self);
+    g_signal_connect(list, "row-activated", G_CALLBACK(on_recent_row_activated), self);
 
     GtkRecentManager *mgr = gtk_recent_manager_get_default();
     GList *items = gtk_recent_manager_get_items(mgr);
@@ -851,14 +845,14 @@ action_show_recent(GSimpleAction *a, GVariant *p, gpointer ud)
         if (g_str_has_suffix(uri, ".tex") || g_str_has_suffix(uri, ".ltx") ||
             g_str_has_suffix(uri, ".sty") || g_str_has_suffix(uri, ".cls"))
             is_tex = TRUE;
-        if (mime && (g_str_has_prefix(mime, "text/x-tex") ||
-                     g_str_has_prefix(mime, "text/x-latex")))
+        if (mime &&
+            (g_str_has_prefix(mime, "text/x-tex") || g_str_has_prefix(mime, "text/x-latex")))
             is_tex = TRUE;
         if (!is_tex) continue;
 
         GtkWidget *row = adw_action_row_new();
         adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row),
-            name ? name : gtk_recent_info_get_short_name(info));
+                                      name ? name : gtk_recent_info_get_short_name(info));
         g_autofree char *path = g_filename_from_uri(uri, NULL, NULL);
         if (path) adw_action_row_set_subtitle(ADW_ACTION_ROW(row), path);
         gtk_list_box_row_set_activatable(GTK_LIST_BOX_ROW(row), TRUE);
@@ -880,7 +874,7 @@ action_show_recent(GSimpleAction *a, GVariant *p, gpointer ud)
         adw_status_page_set_icon_name(ADW_STATUS_PAGE(status), "document-open-recent-symbolic");
         adw_status_page_set_title(ADW_STATUS_PAGE(status), _("No Recent Files"));
         adw_status_page_set_description(ADW_STATUS_PAGE(status),
-            _("Recently opened LaTeX files will appear here."));
+                                        _("Recently opened LaTeX files will appear here."));
         adw_toolbar_view_set_content(ADW_TOOLBAR_VIEW(toolbarview), status);
     } else {
         gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), list);
@@ -891,42 +885,38 @@ action_show_recent(GSimpleAction *a, GVariant *p, gpointer ud)
     adw_dialog_present(dlg, GTK_WIDGET(self));
 }
 
-static void
-action_shortcuts(GSimpleAction *a, GVariant *p, gpointer ud) {
+static void action_shortcuts(GSimpleAction *a, GVariant *p, gpointer ud)
+{
     SilktexWindow *self = SILKTEX_WINDOW(ud);
-    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(
-        adw_alert_dialog_new(_("Keyboard Shortcuts"), NULL));
-    adw_alert_dialog_set_body(dlg,
-        "Ctrl+N   New tab\n"
-        "Ctrl+O   Open\n"
-        "Ctrl+S   Save      Ctrl+Shift+S  Save As\n"
-        "Ctrl+W   Close tab\n"
-        "Ctrl+Z   Undo      Ctrl+Shift+Z  Redo\n"
-        "Ctrl+Return   Compile\n"
-        "Ctrl+B / I / U  Bold / Italic / Underline\n"
-        "Ctrl + / -      Zoom in / out\n"
-        "Ctrl+0         Fit width\n"
-        "Ctrl+F / H     Find / Find & Replace\n"
-        "F2             Toggle outline\n"
-        "F9             Toggle preview\n"
-        "F11            Fullscreen\n"
-        "Ctrl+Shift+F   Forward SyncTeX\n");
+    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(adw_alert_dialog_new(_("Keyboard Shortcuts"), NULL));
+    adw_alert_dialog_set_body(dlg, "Ctrl+N   New tab\n"
+                                   "Ctrl+O   Open\n"
+                                   "Ctrl+S   Save      Ctrl+Shift+S  Save As\n"
+                                   "Ctrl+W   Close tab\n"
+                                   "Ctrl+Z   Undo      Ctrl+Shift+Z  Redo\n"
+                                   "Ctrl+Return   Compile\n"
+                                   "Ctrl+B / I / U  Bold / Italic / Underline\n"
+                                   "Ctrl + / -      Zoom in / out\n"
+                                   "Ctrl+0         Fit width\n"
+                                   "Ctrl+F / H     Find / Find & Replace\n"
+                                   "F2             Toggle outline\n"
+                                   "F9             Toggle preview\n"
+                                   "F11            Fullscreen\n"
+                                   "Ctrl+Shift+F   Forward SyncTeX\n");
     adw_alert_dialog_add_response(dlg, "ok", _("OK"));
     adw_dialog_present(ADW_DIALOG(dlg), GTK_WIDGET(self));
 }
 
 /* ------------------------------------------------------------ preferences */
 
-static void
-on_prefs_apply(gpointer user_data)
+static void on_prefs_apply(gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     guint n = adw_tab_view_get_n_pages(self->tab_view);
     for (guint i = 0; i < n; i++) {
         AdwTabPage *page = adw_tab_view_get_nth_page(self->tab_view, i);
         SilktexEditor *editor = get_editor_for_page(page);
-        if (editor)
-            silktex_editor_apply_settings(editor);
+        if (editor) silktex_editor_apply_settings(editor);
     }
     config_save();
     self->auto_compile = config_get_boolean("Compile", "auto_compile");
@@ -936,26 +926,23 @@ on_prefs_apply(gpointer user_data)
     /* Snippet shortcuts may have changed; push the new modifier pair
      * through to the running engine so shortcuts update immediately. */
     if (self->snippets) {
-        silktex_snippets_set_modifiers(self->snippets,
-            config_get_string("Snippets", "modifier1"),
-            config_get_string("Snippets", "modifier2"));
+        silktex_snippets_set_modifiers(self->snippets, config_get_string("Snippets", "modifier1"),
+                                       config_get_string("Snippets", "modifier2"));
     }
 }
 
 /* ------------------------------------------------------------ preview toggle */
 
-static void
-on_preview_toggled(GtkToggleButton *button, gpointer user_data)
+static void on_preview_toggled(GtkToggleButton *button, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     gboolean visible = gtk_toggle_button_get_active(button);
     gtk_widget_set_visible(GTK_WIDGET(self->preview_box), visible);
     gtk_button_set_icon_name(GTK_BUTTON(button),
-        visible ? "view-dual-symbolic" : "view-continuous-symbolic");
+                             visible ? "view-dual-symbolic" : "view-continuous-symbolic");
 }
 
-static void
-on_tab_changed(AdwTabView *view, GParamSpec *pspec, gpointer user_data)
+static void on_tab_changed(AdwTabView *view, GParamSpec *pspec, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     update_window_title(self);
@@ -964,21 +951,18 @@ on_tab_changed(AdwTabView *view, GParamSpec *pspec, gpointer user_data)
     if (editor != NULL) {
         silktex_searchbar_set_editor(self->searchbar, editor);
         silktex_structure_set_editor(self->structure, editor);
-        if (self->auto_compile)
-            restart_compile_timer(self);
+        if (self->auto_compile) restart_compile_timer(self);
     }
 }
 
 typedef struct {
-    AdwTabView  *view;
-    AdwTabPage  *page;
+    AdwTabView *view;
+    AdwTabPage *page;
     SilktexWindow *win;
 } ClosePageData;
 
-static void
-on_close_dialog_response(AdwAlertDialog *dialog,
-                          const char      *response,
-                          gpointer         user_data)
+static void on_close_dialog_response(AdwAlertDialog *dialog, const char *response,
+                                     gpointer user_data)
 {
     ClosePageData *d = user_data;
     SilktexEditor *editor = get_editor_for_page(d->page);
@@ -1000,28 +984,25 @@ on_close_dialog_response(AdwAlertDialog *dialog,
     g_free(d);
 }
 
-static gboolean
-on_close_page(AdwTabView *view, AdwTabPage *page, gpointer user_data)
+static gboolean on_close_page(AdwTabView *view, AdwTabPage *page, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     SilktexEditor *editor = get_editor_for_page(page);
 
-    if (editor == NULL || !silktex_editor_get_modified(editor))
-        return GDK_EVENT_PROPAGATE;
+    if (editor == NULL || !silktex_editor_get_modified(editor)) return GDK_EVENT_PROPAGATE;
 
     ClosePageData *d = g_new(ClosePageData, 1);
     d->view = view;
     d->page = page;
-    d->win  = self;
+    d->win = self;
 
-    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(
-        adw_alert_dialog_new(_("Save Changes?"),
-            _("This document has unsaved changes. Save before closing?")));
-    adw_alert_dialog_add_response(dlg, "cancel",  _("Cancel"));
+    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(adw_alert_dialog_new(
+        _("Save Changes?"), _("This document has unsaved changes. Save before closing?")));
+    adw_alert_dialog_add_response(dlg, "cancel", _("Cancel"));
     adw_alert_dialog_add_response(dlg, "discard", _("Discard"));
-    adw_alert_dialog_add_response(dlg, "save",    _("Save"));
+    adw_alert_dialog_add_response(dlg, "save", _("Save"));
     adw_alert_dialog_set_response_appearance(dlg, "discard", ADW_RESPONSE_DESTRUCTIVE);
-    adw_alert_dialog_set_response_appearance(dlg, "save",    ADW_RESPONSE_SUGGESTED);
+    adw_alert_dialog_set_response_appearance(dlg, "save", ADW_RESPONSE_SUGGESTED);
     adw_alert_dialog_set_default_response(dlg, "save");
     adw_alert_dialog_set_close_response(dlg, "cancel");
 
@@ -1034,69 +1015,65 @@ on_close_page(AdwTabView *view, AdwTabPage *page, gpointer user_data)
 /* ------------------------------------------------------------ actions[] */
 
 static const GActionEntry win_actions[] = {
-    { "new",               action_new },
-    { "open",              action_open },
-    { "save",              action_save },
-    { "save-as",           action_save_as },
-    { "export-pdf",        action_export_pdf },
-    { "close-tab",         action_close_tab },
-    { "undo",              action_undo },
-    { "redo",              action_redo },
-    { "compile",           action_compile },
-    { "bold",              action_bold },
-    { "italic",            action_italic },
-    { "underline",         action_underline },
-    { "align-left",        action_align_left },
-    { "align-center",      action_align_center },
-    { "align-right",       action_align_right },
-    { "insert-section",       action_insert_section },
-    { "insert-subsection",    action_insert_subsection },
-    { "insert-subsubsection", action_insert_subsubsection },
-    { "insert-chapter",       action_insert_chapter },
-    { "insert-paragraph",     action_insert_paragraph },
-    { "insert-itemize",       action_insert_itemize },
-    { "insert-enumerate",     action_insert_enumerate },
-    { "insert-description",   action_insert_description },
-    { "insert-equation",      action_insert_equation },
-    { "insert-quote",         action_insert_quote },
-    { "insert-image",         action_insert_image },
-    { "insert-table",         action_insert_table },
-    { "insert-matrix",        action_insert_matrix },
-    { "insert-biblio",        action_insert_biblio },
-    { "zoom-in",           action_zoom_in },
-    { "zoom-out",          action_zoom_out },
-    { "zoom-fit",          action_zoom_fit },
-    { "zoom-fit-page",     action_zoom_fit_page },
-    { "zoom-reset",        action_zoom_reset },
-    { "prev-page",         action_prev_page },
-    { "next-page",         action_next_page },
-    { "preview-layout",    NULL, "s", "'continuous'", change_preview_layout },
-    { "show-recent",       action_show_recent },
-    { "find",              action_find },
-    { "find-replace",      action_find_replace },
-    { "forward-sync",      action_forward_sync },
-    { "toggle-preview",    action_toggle_preview },
-    { "toggle-sidebar",    action_toggle_sidebar },
-    { "toggle-log",        action_toggle_log },
-    { "refresh-structure", action_refresh_structure },
-    { "preferences",       action_preferences },
-    { "shortcuts",         action_shortcuts },
-    { "fullscreen",        action_fullscreen },
-    { "run-bibtex",        action_run_bibtex },
-    { "run-makeindex",     action_run_makeindex },
-    { "cleanup",           action_cleanup },
-    { "stats",             action_stats },
-    { "open-pdf-external", action_open_pdf_external },
+    {"new", action_new},
+    {"open", action_open},
+    {"save", action_save},
+    {"save-as", action_save_as},
+    {"export-pdf", action_export_pdf},
+    {"close-tab", action_close_tab},
+    {"undo", action_undo},
+    {"redo", action_redo},
+    {"compile", action_compile},
+    {"bold", action_bold},
+    {"italic", action_italic},
+    {"underline", action_underline},
+    {"align-left", action_align_left},
+    {"align-center", action_align_center},
+    {"align-right", action_align_right},
+    {"insert-section", action_insert_section},
+    {"insert-subsection", action_insert_subsection},
+    {"insert-subsubsection", action_insert_subsubsection},
+    {"insert-chapter", action_insert_chapter},
+    {"insert-paragraph", action_insert_paragraph},
+    {"insert-itemize", action_insert_itemize},
+    {"insert-enumerate", action_insert_enumerate},
+    {"insert-description", action_insert_description},
+    {"insert-equation", action_insert_equation},
+    {"insert-quote", action_insert_quote},
+    {"insert-image", action_insert_image},
+    {"insert-table", action_insert_table},
+    {"insert-matrix", action_insert_matrix},
+    {"insert-biblio", action_insert_biblio},
+    {"zoom-in", action_zoom_in},
+    {"zoom-out", action_zoom_out},
+    {"zoom-fit", action_zoom_fit},
+    {"zoom-fit-page", action_zoom_fit_page},
+    {"zoom-reset", action_zoom_reset},
+    {"prev-page", action_prev_page},
+    {"next-page", action_next_page},
+    {"preview-layout", NULL, "s", "'continuous'", change_preview_layout},
+    {"show-recent", action_show_recent},
+    {"find", action_find},
+    {"find-replace", action_find_replace},
+    {"forward-sync", action_forward_sync},
+    {"toggle-preview", action_toggle_preview},
+    {"toggle-sidebar", action_toggle_sidebar},
+    {"toggle-log", action_toggle_log},
+    {"refresh-structure", action_refresh_structure},
+    {"preferences", action_preferences},
+    {"shortcuts", action_shortcuts},
+    {"fullscreen", action_fullscreen},
+    {"run-bibtex", action_run_bibtex},
+    {"run-makeindex", action_run_makeindex},
+    {"cleanup", action_cleanup},
+    {"stats", action_stats},
+    {"open-pdf-external", action_open_pdf_external},
 };
 
 /* ------------------------------------------------------------ key routing */
 
-static gboolean
-on_window_key_pressed(GtkEventControllerKey *ctrl,
-                      guint                  keyval,
-                      guint                  keycode,
-                      GdkModifierType        state,
-                      gpointer               user_data)
+static gboolean on_window_key_pressed(GtkEventControllerKey *ctrl, guint keyval, guint keycode,
+                                      GdkModifierType state, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     SilktexEditor *editor = silktex_window_get_active_editor(self);
@@ -1104,12 +1081,8 @@ on_window_key_pressed(GtkEventControllerKey *ctrl,
     return silktex_snippets_handle_key(self->snippets, editor, keyval, state);
 }
 
-static gboolean
-on_window_key_released(GtkEventControllerKey *ctrl,
-                       guint                  keyval,
-                       guint                  keycode,
-                       GdkModifierType        state,
-                       gpointer               user_data)
+static gboolean on_window_key_released(GtkEventControllerKey *ctrl, guint keyval, guint keycode,
+                                       GdkModifierType state, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     SilktexEditor *editor = silktex_window_get_active_editor(self);
@@ -1119,8 +1092,7 @@ on_window_key_released(GtkEventControllerKey *ctrl,
 
 /* ------------------------------------------------------------ class */
 
-static void
-silktex_window_dispose(GObject *object)
+static void silktex_window_dispose(GObject *object)
 {
     SilktexWindow *self = SILKTEX_WINDOW(object);
 
@@ -1142,8 +1114,7 @@ silktex_window_dispose(GObject *object)
     G_OBJECT_CLASS(silktex_window_parent_class)->dispose(object);
 }
 
-static void
-silktex_window_class_init(SilktexWindowClass *klass)
+static void silktex_window_class_init(SilktexWindowClass *klass)
 {
     GObjectClass *object_class = G_OBJECT_CLASS(klass);
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
@@ -1167,24 +1138,21 @@ silktex_window_class_init(SilktexWindowClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_compile);
 }
 
-static void
-silktex_window_init(SilktexWindow *self)
+static void silktex_window_init(SilktexWindow *self)
 {
     g_type_ensure(SILKTEX_TYPE_PREVIEW);
     gtk_widget_init_template(GTK_WIDGET(self));
 
-    g_action_map_add_action_entries(G_ACTION_MAP(self), win_actions,
-                                    G_N_ELEMENTS(win_actions), self);
+    g_action_map_add_action_entries(G_ACTION_MAP(self), win_actions, G_N_ELEMENTS(win_actions),
+                                    self);
 
     /* ---- compiler ---- */
     self->compiler = silktex_compiler_new();
     silktex_compiler_apply_config(self->compiler);
     silktex_compiler_start(self->compiler);
 
-    g_signal_connect(self->compiler, "compile-finished",
-                     G_CALLBACK(on_compile_finished), self);
-    g_signal_connect(self->compiler, "compile-error",
-                     G_CALLBACK(on_compile_error), self);
+    g_signal_connect(self->compiler, "compile-finished", G_CALLBACK(on_compile_finished), self);
+    g_signal_connect(self->compiler, "compile-error", G_CALLBACK(on_compile_error), self);
 
     /* ---- preview ---- */
     self->preview = silktex_preview_new();
@@ -1192,10 +1160,8 @@ silktex_window_init(SilktexWindow *self)
     gtk_widget_set_vexpand(GTK_WIDGET(self->preview), TRUE);
     gtk_box_append(self->preview_box, GTK_WIDGET(self->preview));
 
-    g_signal_connect(self->preview, "notify::page",
-                     G_CALLBACK(on_preview_page_changed), self);
-    g_signal_connect(self->preview, "notify::n-pages",
-                     G_CALLBACK(on_preview_page_changed), self);
+    g_signal_connect(self->preview, "notify::page", G_CALLBACK(on_preview_page_changed), self);
+    g_signal_connect(self->preview, "notify::n-pages", G_CALLBACK(on_preview_page_changed), self);
 
     /* ---- structure sidebar ---- */
     self->structure = silktex_structure_new();
@@ -1211,25 +1177,17 @@ silktex_window_init(SilktexWindow *self)
 
     /* ---- snippets ---- */
     self->snippets = silktex_snippets_new();
-    silktex_snippets_set_modifiers(self->snippets,
-        config_get_string("Snippets", "modifier1"),
-        config_get_string("Snippets", "modifier2"));
-    GtkEventControllerKey *key_ctrl = GTK_EVENT_CONTROLLER_KEY(
-        gtk_event_controller_key_new());
-    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(key_ctrl),
-                                               GTK_PHASE_CAPTURE);
+    silktex_snippets_set_modifiers(self->snippets, config_get_string("Snippets", "modifier1"),
+                                   config_get_string("Snippets", "modifier2"));
+    GtkEventControllerKey *key_ctrl = GTK_EVENT_CONTROLLER_KEY(gtk_event_controller_key_new());
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(key_ctrl), GTK_PHASE_CAPTURE);
     gtk_widget_add_controller(GTK_WIDGET(self), GTK_EVENT_CONTROLLER(key_ctrl));
-    g_signal_connect(key_ctrl, "key-pressed",
-                     G_CALLBACK(on_window_key_pressed), self);
-    g_signal_connect(key_ctrl, "key-released",
-                     G_CALLBACK(on_window_key_released), self);
+    g_signal_connect(key_ctrl, "key-pressed", G_CALLBACK(on_window_key_pressed), self);
+    g_signal_connect(key_ctrl, "key-released", G_CALLBACK(on_window_key_released), self);
 
-    g_signal_connect(self->btn_preview, "toggled",
-                     G_CALLBACK(on_preview_toggled), self);
-    g_signal_connect(self->tab_view, "notify::selected-page",
-                     G_CALLBACK(on_tab_changed), self);
-    g_signal_connect(self->tab_view, "close-page",
-                     G_CALLBACK(on_close_page), self);
+    g_signal_connect(self->btn_preview, "toggled", G_CALLBACK(on_preview_toggled), self);
+    g_signal_connect(self->tab_view, "notify::selected-page", G_CALLBACK(on_tab_changed), self);
+    g_signal_connect(self->tab_view, "close-page", G_CALLBACK(on_close_page), self);
 
     self->auto_compile = config_get_boolean("Compile", "auto_compile");
     restart_autosave_timer(self);
@@ -1263,8 +1221,7 @@ silktex_window_init(SilktexWindow *self)
         gtk_box_append(GTK_BOX(paned_child), log_toggle);
         gtk_box_append(GTK_BOX(paned_child), revealer);
 
-        g_object_bind_property(log_toggle, "active", revealer, "reveal-child",
-                               G_BINDING_DEFAULT);
+        g_object_bind_property(log_toggle, "active", revealer, "reveal-child", G_BINDING_DEFAULT);
     }
 
     /* ---- initial tab ---- */
@@ -1272,34 +1229,34 @@ silktex_window_init(SilktexWindow *self)
 
     /* ---- accelerators ---- */
     const char *accels[][2] = {
-        { "win.new", "<Control>n" },
-        { "win.open", "<Control>o" },
-        { "win.save", "<Control>s" },
-        { "win.save-as", "<Control><Shift>s" },
-        { "win.close-tab", "<Control>w" },
-        { "win.undo", "<Control>z" },
-        { "win.redo", "<Control><Shift>z" },
-        { "win.compile", "<Control>Return" },
-        { "win.bold", "<Control>b" },
-        { "win.italic", "<Control>i" },
-        { "win.underline", "<Control>u" },
-        { "win.zoom-in", "<Control>plus" },
-        { "win.zoom-out", "<Control>minus" },
-        { "win.zoom-fit", "<Control>0" },
-        { "win.find", "<Control>f" },
-        { "win.find-replace", "<Control>h" },
-        { "win.forward-sync", "<Control><Shift>f" },
-        { "win.toggle-preview", "F9" },
-        { "win.toggle-sidebar", "F2" },
-        { "win.fullscreen", "F11" },
-        { "win.preferences", "<Control>comma" },
-        { "win.next-page", "<Control>Page_Down" },
-        { "win.prev-page", "<Control>Page_Up" },
+        {"win.new", "<Control>n"},
+        {"win.open", "<Control>o"},
+        {"win.save", "<Control>s"},
+        {"win.save-as", "<Control><Shift>s"},
+        {"win.close-tab", "<Control>w"},
+        {"win.undo", "<Control>z"},
+        {"win.redo", "<Control><Shift>z"},
+        {"win.compile", "<Control>Return"},
+        {"win.bold", "<Control>b"},
+        {"win.italic", "<Control>i"},
+        {"win.underline", "<Control>u"},
+        {"win.zoom-in", "<Control>plus"},
+        {"win.zoom-out", "<Control>minus"},
+        {"win.zoom-fit", "<Control>0"},
+        {"win.find", "<Control>f"},
+        {"win.find-replace", "<Control>h"},
+        {"win.forward-sync", "<Control><Shift>f"},
+        {"win.toggle-preview", "F9"},
+        {"win.toggle-sidebar", "F2"},
+        {"win.fullscreen", "F11"},
+        {"win.preferences", "<Control>comma"},
+        {"win.next-page", "<Control>Page_Down"},
+        {"win.prev-page", "<Control>Page_Up"},
     };
 
     GtkApplication *app = GTK_APPLICATION(g_application_get_default());
     for (size_t i = 0; i < G_N_ELEMENTS(accels); i++) {
-        const char *accel_list[] = { accels[i][1], NULL };
+        const char *accel_list[] = {accels[i][1], NULL};
         gtk_application_set_accels_for_action(app, accels[i][0], accel_list);
     }
 
@@ -1308,14 +1265,12 @@ silktex_window_init(SilktexWindow *self)
 
 /* ------------------------------------------------------------ public */
 
-SilktexWindow *
-silktex_window_new(AdwApplication *app)
+SilktexWindow *silktex_window_new(AdwApplication *app)
 {
     return g_object_new(SILKTEX_TYPE_WINDOW, "application", app, NULL);
 }
 
-void
-silktex_window_open_file(SilktexWindow *self, GFile *file)
+void silktex_window_open_file(SilktexWindow *self, GFile *file)
 {
     g_return_if_fail(SILKTEX_IS_WINDOW(self));
     g_return_if_fail(G_IS_FILE(file));
@@ -1340,8 +1295,7 @@ silktex_window_open_file(SilktexWindow *self, GFile *file)
     }
 }
 
-void
-silktex_window_new_tab(SilktexWindow *self)
+void silktex_window_new_tab(SilktexWindow *self)
 {
     g_return_if_fail(SILKTEX_IS_WINDOW(self));
 
@@ -1365,8 +1319,7 @@ silktex_window_new_tab(SilktexWindow *self)
     update_window_title(self);
 }
 
-SilktexEditor *
-silktex_window_get_active_editor(SilktexWindow *self)
+SilktexEditor *silktex_window_get_active_editor(SilktexWindow *self)
 {
     g_return_val_if_fail(SILKTEX_IS_WINDOW(self), NULL);
 
@@ -1374,30 +1327,25 @@ silktex_window_get_active_editor(SilktexWindow *self)
     return get_editor_for_page(page);
 }
 
-SilktexCompiler *
-silktex_window_get_compiler(SilktexWindow *self)
+SilktexCompiler *silktex_window_get_compiler(SilktexWindow *self)
 {
     g_return_val_if_fail(SILKTEX_IS_WINDOW(self), NULL);
     return self->compiler;
 }
 
-SilktexPreview *
-silktex_window_get_preview(SilktexWindow *self)
+SilktexPreview *silktex_window_get_preview(SilktexWindow *self)
 {
     g_return_val_if_fail(SILKTEX_IS_WINDOW(self), NULL);
     return self->preview;
 }
 
-static void
-on_current_toast_dismissed(AdwToast *toast, gpointer user_data)
+static void on_current_toast_dismissed(AdwToast *toast, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
-    if (self->current_toast == toast)
-        self->current_toast = NULL;
+    if (self->current_toast == toast) self->current_toast = NULL;
 }
 
-void
-silktex_window_show_toast(SilktexWindow *self, const char *message)
+void silktex_window_show_toast(SilktexWindow *self, const char *message)
 {
     g_return_if_fail(SILKTEX_IS_WINDOW(self));
 
@@ -1409,8 +1357,7 @@ silktex_window_show_toast(SilktexWindow *self, const char *message)
     AdwToast *toast = adw_toast_new(message);
     adw_toast_set_timeout(toast, 3);
     adw_toast_set_priority(toast, ADW_TOAST_PRIORITY_HIGH);
-    g_signal_connect(toast, "dismissed",
-                     G_CALLBACK(on_current_toast_dismissed), self);
+    g_signal_connect(toast, "dismissed", G_CALLBACK(on_current_toast_dismissed), self);
     self->current_toast = toast;
     adw_toast_overlay_add_toast(self->toast_overlay, toast);
 }

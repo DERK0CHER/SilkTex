@@ -8,8 +8,8 @@
  */
 #pragma once
 #include <glib-object.h>
-#include "silktex-editor.h"
-#include "silktex-preview.h"
+#include "editor.h"
+#include "preview.h"
 
 G_BEGIN_DECLS
 
@@ -26,9 +26,8 @@ G_BEGIN_DECLS
  *
  * Returns: TRUE on success.
  */
-gboolean silktex_synctex_forward(SilktexEditor  *editor,
-                                  SilktexPreview *preview,
-                                  const char     *pdf_path);
+gboolean silktex_synctex_forward(SilktexEditor *editor, SilktexPreview *preview,
+                                 const char *pdf_path);
 
 /* Inverse sync ------------------------------------------------------------ */
 
@@ -45,10 +44,7 @@ gboolean silktex_synctex_forward(SilktexEditor  *editor,
  *
  * Returns: TRUE on success.
  */
-gboolean silktex_synctex_inverse(SilktexEditor  *editor,
-                                  const char     *pdf_path,
-                                  int             page,
-                                  double          x,
-                                  double          y);
+gboolean silktex_synctex_inverse(SilktexEditor *editor, const char *pdf_path, int page, double x,
+                                 double y);
 
 G_END_DECLS

@@ -6,7 +6,7 @@
  * We call the command-line `synctex view` / `synctex edit` tools rather than
  * linking libsynctex directly, so the build has no extra dependency.
  */
-#include "silktex-synctex.h"
+#include "synctex.h"
 #include "utils.h"
 #include <glib.h>
 #include <string.h>
@@ -16,23 +16,27 @@
 
 /* Run `synctex <args>` and return its stdout as a string, or NULL on error.
  * Caller must g_free() the result. */
-static char *
-run_synctex(const char *args)
+static char *run_synctex(const char *args)
 {
     g_autofree char *cmd = g_strdup_printf("synctex %s", args);
     char *output = NULL;
-    int   status = 0;
-    GError *err  = NULL;
+    int status = 0;
+    GError *err = NULL;
 
     g_spawn_command_line_sync(cmd, &output, NULL, &status, &err);
-    if (err) { g_error_free(err); return NULL; }
-    if (status != 0) { g_free(output); return NULL; }
+    if (err) {
+        g_error_free(err);
+        return NULL;
+    }
+    if (status != 0) {
+        g_free(output);
+        return NULL;
+    }
     return output;
 }
 
 /* Parse a key: value pair from synctex output, e.g. "Page:3\n" → 3 */
-static gboolean
-parse_int_field(const char *output, const char *key, int *out)
+static gboolean parse_int_field(const char *output, const char *key, int *out)
 {
     const char *p = strstr(output, key);
     if (!p) return FALSE;
@@ -40,8 +44,7 @@ parse_int_field(const char *output, const char *key, int *out)
     *out = (int)strtol(p, NULL, 10);
     return TRUE;
 }
-static gboolean
-parse_double_field(const char *output, const char *key, double *out)
+static gboolean parse_double_field(const char *output, const char *key, double *out)
 {
     const char *p = strstr(output, key);
     if (!p) return FALSE;
@@ -52,10 +55,8 @@ parse_double_field(const char *output, const char *key, double *out)
 
 /* ---------------------------------------------------------------- forward */
 
-gboolean
-silktex_synctex_forward(SilktexEditor  *editor,
-                         SilktexPreview *preview,
-                         const char     *pdf_path)
+gboolean silktex_synctex_forward(SilktexEditor *editor, SilktexPreview *preview,
+                                 const char *pdf_path)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(editor), FALSE);
     g_return_val_if_fail(SILKTEX_IS_PREVIEW(preview), FALSE);
@@ -67,8 +68,8 @@ silktex_synctex_forward(SilktexEditor  *editor,
     /* Get cursor line (1-based for synctex) */
     int line = silktex_editor_get_cursor_line(editor) + 1;
 
-    g_autofree char *args = g_strdup_printf(
-        "view -i %d:0:\"%s\" -o \"%s\"", line, tex_path, pdf_path);
+    g_autofree char *args =
+        g_strdup_printf("view -i %d:0:\"%s\" -o \"%s\"", line, tex_path, pdf_path);
 
     g_autofree char *out = run_synctex(args);
     if (!out) {
@@ -76,8 +77,8 @@ silktex_synctex_forward(SilktexEditor  *editor,
         return FALSE;
     }
 
-    int    page = 0;
-    double x    = 0.0, y = 0.0;
+    int page = 0;
+    double x = 0.0, y = 0.0;
     parse_int_field(out, "Page:", &page);
     parse_double_field(out, "x:", &x);
     parse_double_field(out, "y:", &y);
@@ -92,19 +93,14 @@ silktex_synctex_forward(SilktexEditor  *editor,
 
 /* --------------------------------------------------------------- inverse */
 
-gboolean
-silktex_synctex_inverse(SilktexEditor  *editor,
-                         const char     *pdf_path,
-                         int             page,
-                         double          x,
-                         double          y)
+gboolean silktex_synctex_inverse(SilktexEditor *editor, const char *pdf_path, int page, double x,
+                                 double y)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(editor), FALSE);
     g_return_val_if_fail(pdf_path != NULL, FALSE);
 
     /* synctex edit -o "page:x:y:pdf" */
-    g_autofree char *args = g_strdup_printf(
-        "edit -o \"%d:%g:%g:%s\"", page + 1, x, y, pdf_path);
+    g_autofree char *args = g_strdup_printf("edit -o \"%d:%g:%g:%s\"", page + 1, x, y, pdf_path);
 
     g_autofree char *out = run_synctex(args);
     if (!out) {
@@ -114,8 +110,7 @@ silktex_synctex_inverse(SilktexEditor  *editor,
 
     /* Parse "Line:" field */
     int line = 0;
-    if (!parse_int_field(out, "Line:", &line) || line < 1)
-        return FALSE;
+    if (!parse_int_field(out, "Line:", &line) || line < 1) return FALSE;
 
     silktex_editor_goto_line(editor, line - 1);
     return TRUE;

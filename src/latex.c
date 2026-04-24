@@ -3,31 +3,28 @@
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-#include "silktex-latex.h"
+#include "latex.h"
 #include <glib/gi18n.h>
 #include <string.h>
 
 /* ------------------------------------------------------------------ table */
 
-static const char align_chars[][2]   = { "l", "c", "r" };
-static const char bracket_names[][16]= {
-    "matrix", "pmatrix", "bmatrix", "Bmatrix", "vmatrix", "Vmatrix"
-};
+static const char align_chars[][2] = {"l", "c", "r"};
+static const char bracket_names[][16] = {"matrix",  "pmatrix", "bmatrix",
+                                         "Bmatrix", "vmatrix", "Vmatrix"};
 
-char *
-silktex_latex_generate_table(int rows, int cols, int borders, int alignment)
+char *silktex_latex_generate_table(int rows, int cols, int borders, int alignment)
 {
     if (rows < 1) rows = 1;
     if (cols < 1) cols = 1;
     if (alignment < 0 || alignment > 2) alignment = 1;
-    if (borders  < 0 || borders  > 2) borders  = 0;
+    if (borders < 0 || borders > 2) borders = 0;
 
     GString *col_spec = g_string_new("{");
     if (borders) g_string_append(col_spec, "|");
     for (int j = 0; j < cols; j++) {
         g_string_append(col_spec, align_chars[alignment]);
-        if (borders == 2 || (borders == 1 && j == cols - 1))
-            g_string_append(col_spec, "|");
+        if (borders == 2 || (borders == 1 && j == cols - 1)) g_string_append(col_spec, "|");
     }
     g_string_append(col_spec, "}");
 
@@ -39,19 +36,16 @@ silktex_latex_generate_table(int rows, int cols, int borders, int alignment)
             g_string_append_printf(body, "%d%d", i + 1, j + 1);
             g_string_append(body, j != cols - 1 ? " & " : "\\\\");
         }
-        if (borders == 2 || (borders == 1 && i == rows - 1))
-            g_string_append(body, "\n\\hline");
+        if (borders == 2 || (borders == 1 && i == rows - 1)) g_string_append(body, "\n\\hline");
     }
 
-    char *out = g_strdup_printf("\\begin{tabular}%s%s\n\\end{tabular}\n",
-                                col_spec->str, body->str);
+    char *out = g_strdup_printf("\\begin{tabular}%s%s\n\\end{tabular}\n", col_spec->str, body->str);
     g_string_free(col_spec, TRUE);
     g_string_free(body, TRUE);
     return out;
 }
 
-char *
-silktex_latex_generate_matrix(int bracket, int rows, int cols)
+char *silktex_latex_generate_matrix(int bracket, int rows, int cols)
 {
     if (bracket < 0 || bracket >= (int)G_N_ELEMENTS(bracket_names)) bracket = 1;
     if (rows < 1) rows = 1;
@@ -70,40 +64,33 @@ silktex_latex_generate_matrix(int bracket, int rows, int cols)
     return g_string_free(s, FALSE);
 }
 
-char *
-silktex_latex_generate_image(const char *path, const char *caption,
-                             const char *label, double scale)
+char *silktex_latex_generate_image(const char *path, const char *caption, const char *label,
+                                   double scale)
 {
     if (scale <= 0.0) scale = 1.0;
     g_autofree char *scale_str = g_strdup_printf("%.2f", scale);
     /* replace decimal comma with period for LaTeX */
-    for (char *p = scale_str; *p; p++) if (*p == ',') *p = '.';
+    for (char *p = scale_str; *p; p++)
+        if (*p == ',') *p = '.';
 
-    return g_strdup_printf(
-        "\\begin{figure}[htp]\n"
-        "\\centering\n"
-        "\\includegraphics[scale=%s]{%s}\n"
-        "\\caption{%s}\n"
-        "\\label{%s}\n"
-        "\\end{figure}\n",
-        scale_str,
-        path    ? path    : "",
-        caption ? caption : "",
-        label   ? label   : "");
+    return g_strdup_printf("\\begin{figure}[htp]\n"
+                           "\\centering\n"
+                           "\\includegraphics[scale=%s]{%s}\n"
+                           "\\caption{%s}\n"
+                           "\\label{%s}\n"
+                           "\\end{figure}\n",
+                           scale_str, path ? path : "", caption ? caption : "", label ? label : "");
 }
 
 /* ------------------------------------------------------------------ insert */
 
-void
-silktex_latex_insert_at_cursor(SilktexEditor *editor,
-                               const char    *before,
-                               const char    *after)
+void silktex_latex_insert_at_cursor(SilktexEditor *editor, const char *before, const char *after)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(editor));
     if (!before) return;
 
     GtkSourceBuffer *sbuf = silktex_editor_get_buffer(editor);
-    GtkTextBuffer   *buf  = GTK_TEXT_BUFFER(sbuf);
+    GtkTextBuffer *buf = GTK_TEXT_BUFFER(sbuf);
 
     GtkTextIter s, e;
     gboolean have_sel = gtk_text_buffer_get_selection_bounds(buf, &s, &e);
@@ -133,20 +120,18 @@ silktex_latex_insert_at_cursor(SilktexEditor *editor,
     silktex_editor_scroll_to_cursor(editor);
 }
 
-void
-silktex_latex_insert_structure(SilktexEditor *editor, const char *command)
+void silktex_latex_insert_structure(SilktexEditor *editor, const char *command)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(editor));
     g_autofree char *before = g_strdup_printf("\\%s{", command);
     silktex_latex_insert_at_cursor(editor, before, "}\n");
 }
 
-void
-silktex_latex_insert_environment(SilktexEditor *editor, const char *env)
+void silktex_latex_insert_environment(SilktexEditor *editor, const char *env)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(editor));
     g_autofree char *before = g_strdup_printf("\\begin{%s}\n\t", env);
-    g_autofree char *after  = g_strdup_printf("\n\\end{%s}\n", env);
+    g_autofree char *after = g_strdup_printf("\n\\end{%s}\n", env);
     silktex_latex_insert_at_cursor(editor, before, after);
 }
 
@@ -154,15 +139,14 @@ silktex_latex_insert_environment(SilktexEditor *editor, const char *env)
 
 typedef struct {
     SilktexEditor *editor;
-    GtkWidget     *dialog;
-    GtkWidget     *file_entry;
-    GtkWidget     *caption_entry;
-    GtkWidget     *label_entry;
-    GtkWidget     *scale_spin;
+    GtkWidget *dialog;
+    GtkWidget *file_entry;
+    GtkWidget *caption_entry;
+    GtkWidget *label_entry;
+    GtkWidget *scale_spin;
 } ImgCtx;
 
-static char *
-relativize(const char *file, SilktexEditor *editor)
+static char *relativize(const char *file, SilktexEditor *editor)
 {
     const char *base = silktex_editor_get_filename(editor);
     if (!base) return g_strdup(file);
@@ -175,8 +159,7 @@ relativize(const char *file, SilktexEditor *editor)
     return rel ? rel : g_strdup(file);
 }
 
-static void
-img_pick_response(GObject *src, GAsyncResult *res, gpointer ud)
+static void img_pick_response(GObject *src, GAsyncResult *res, gpointer ud)
 {
     ImgCtx *ctx = ud;
     GFile *f = gtk_file_dialog_open_finish(GTK_FILE_DIALOG(src), res, NULL);
@@ -188,8 +171,7 @@ img_pick_response(GObject *src, GAsyncResult *res, gpointer ud)
     }
 }
 
-static void
-on_img_browse(GtkButton *b, gpointer ud)
+static void on_img_browse(GtkButton *b, gpointer ud)
 {
     ImgCtx *ctx = ud;
     GtkFileDialog *d = gtk_file_dialog_new();
@@ -207,14 +189,13 @@ on_img_browse(GtkButton *b, gpointer ud)
     g_list_store_append(ls, flt);
     gtk_file_dialog_set_filters(d, G_LIST_MODEL(ls));
     gtk_file_dialog_set_default_filter(d, flt);
-    gtk_file_dialog_open(d, GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(b))),
-                          NULL, img_pick_response, ctx);
+    gtk_file_dialog_open(d, GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(b))), NULL, img_pick_response,
+                         ctx);
     g_object_unref(ls);
     g_object_unref(flt);
 }
 
-static void
-on_img_response(AdwAlertDialog *dlg, const char *resp, gpointer ud)
+static void on_img_response(AdwAlertDialog *dlg, const char *resp, gpointer ud)
 {
     ImgCtx *ctx = ud;
     if (g_strcmp0(resp, "apply") == 0 && ctx->editor) {
@@ -232,18 +213,16 @@ on_img_response(AdwAlertDialog *dlg, const char *resp, gpointer ud)
     g_free(ctx);
 }
 
-void
-silktex_latex_insert_image_dialog(GtkWindow *parent, SilktexEditor *editor)
+void silktex_latex_insert_image_dialog(GtkWindow *parent, SilktexEditor *editor)
 {
     g_return_if_fail(editor);
 
     ImgCtx *ctx = g_new0(ImgCtx, 1);
     ctx->editor = editor;
 
-    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(
-        adw_alert_dialog_new(_("Insert Image"), NULL));
+    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(adw_alert_dialog_new(_("Insert Image"), NULL));
     adw_alert_dialog_add_response(dlg, "cancel", _("Cancel"));
-    adw_alert_dialog_add_response(dlg, "apply",  _("Insert"));
+    adw_alert_dialog_add_response(dlg, "apply", _("Insert"));
     adw_alert_dialog_set_response_appearance(dlg, "apply", ADW_RESPONSE_SUGGESTED);
     adw_alert_dialog_set_default_response(dlg, "apply");
 
@@ -287,14 +266,13 @@ silktex_latex_insert_image_dialog(GtkWindow *parent, SilktexEditor *editor)
 
 typedef struct {
     SilktexEditor *editor;
-    AdwSpinRow    *rows;
-    AdwSpinRow    *cols;
-    AdwComboRow   *border;
-    AdwComboRow   *align;
+    AdwSpinRow *rows;
+    AdwSpinRow *cols;
+    AdwComboRow *border;
+    AdwComboRow *align;
 } TblCtx;
 
-static void
-on_tbl_response(AdwAlertDialog *dlg, const char *resp, gpointer ud)
+static void on_tbl_response(AdwAlertDialog *dlg, const char *resp, gpointer ud)
 {
     TblCtx *ctx = ud;
     if (g_strcmp0(resp, "apply") == 0 && ctx->editor) {
@@ -308,17 +286,15 @@ on_tbl_response(AdwAlertDialog *dlg, const char *resp, gpointer ud)
     g_free(ctx);
 }
 
-void
-silktex_latex_insert_table_dialog(GtkWindow *parent, SilktexEditor *editor)
+void silktex_latex_insert_table_dialog(GtkWindow *parent, SilktexEditor *editor)
 {
     g_return_if_fail(editor);
     TblCtx *ctx = g_new0(TblCtx, 1);
     ctx->editor = editor;
 
-    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(
-        adw_alert_dialog_new(_("Insert Table"), NULL));
+    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(adw_alert_dialog_new(_("Insert Table"), NULL));
     adw_alert_dialog_add_response(dlg, "cancel", _("Cancel"));
-    adw_alert_dialog_add_response(dlg, "apply",  _("Insert"));
+    adw_alert_dialog_add_response(dlg, "apply", _("Insert"));
     adw_alert_dialog_set_response_appearance(dlg, "apply", ADW_RESPONSE_SUGGESTED);
 
     GtkWidget *list = gtk_list_box_new();
@@ -334,13 +310,13 @@ silktex_latex_insert_table_dialog(GtkWindow *parent, SilktexEditor *editor)
     adw_spin_row_set_value(ctx->cols, 3);
 
     GtkStringList *b_model = gtk_string_list_new(
-        (const char *[]){ _("No borders"), _("Outer border"), _("All borders"), NULL });
+        (const char *[]){_("No borders"), _("Outer border"), _("All borders"), NULL});
     ctx->border = ADW_COMBO_ROW(adw_combo_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(ctx->border), _("Borders"));
     adw_combo_row_set_model(ctx->border, G_LIST_MODEL(b_model));
 
-    GtkStringList *a_model = gtk_string_list_new(
-        (const char *[]){ _("Left"), _("Center"), _("Right"), NULL });
+    GtkStringList *a_model =
+        gtk_string_list_new((const char *[]){_("Left"), _("Center"), _("Right"), NULL});
     ctx->align = ADW_COMBO_ROW(adw_combo_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(ctx->align), _("Alignment"));
     adw_combo_row_set_model(ctx->align, G_LIST_MODEL(a_model));
@@ -360,13 +336,12 @@ silktex_latex_insert_table_dialog(GtkWindow *parent, SilktexEditor *editor)
 
 typedef struct {
     SilktexEditor *editor;
-    AdwSpinRow    *rows;
-    AdwSpinRow    *cols;
-    AdwComboRow   *bracket;
+    AdwSpinRow *rows;
+    AdwSpinRow *cols;
+    AdwComboRow *bracket;
 } MtxCtx;
 
-static void
-on_mtx_response(AdwAlertDialog *dlg, const char *resp, gpointer ud)
+static void on_mtx_response(AdwAlertDialog *dlg, const char *resp, gpointer ud)
 {
     MtxCtx *ctx = ud;
     if (g_strcmp0(resp, "apply") == 0 && ctx->editor) {
@@ -380,17 +355,15 @@ on_mtx_response(AdwAlertDialog *dlg, const char *resp, gpointer ud)
     g_free(ctx);
 }
 
-void
-silktex_latex_insert_matrix_dialog(GtkWindow *parent, SilktexEditor *editor)
+void silktex_latex_insert_matrix_dialog(GtkWindow *parent, SilktexEditor *editor)
 {
     g_return_if_fail(editor);
     MtxCtx *ctx = g_new0(MtxCtx, 1);
     ctx->editor = editor;
 
-    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(
-        adw_alert_dialog_new(_("Insert Matrix"), NULL));
+    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(adw_alert_dialog_new(_("Insert Matrix"), NULL));
     adw_alert_dialog_add_response(dlg, "cancel", _("Cancel"));
-    adw_alert_dialog_add_response(dlg, "apply",  _("Insert"));
+    adw_alert_dialog_add_response(dlg, "apply", _("Insert"));
     adw_alert_dialog_set_response_appearance(dlg, "apply", ADW_RESPONSE_SUGGESTED);
 
     GtkWidget *list = gtk_list_box_new();
@@ -405,9 +378,9 @@ silktex_latex_insert_matrix_dialog(GtkWindow *parent, SilktexEditor *editor)
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(ctx->cols), _("Columns"));
     adw_spin_row_set_value(ctx->cols, 3);
 
-    GtkStringList *b_model = gtk_string_list_new((const char *[]){
-        "matrix", "pmatrix (())", "bmatrix ([])",
-        "Bmatrix ({})", "vmatrix (||)", "Vmatrix (‖‖)", NULL });
+    GtkStringList *b_model =
+        gtk_string_list_new((const char *[]){"matrix", "pmatrix (())", "bmatrix ([])",
+                                             "Bmatrix ({})", "vmatrix (||)", "Vmatrix (‖‖)", NULL});
     ctx->bracket = ADW_COMBO_ROW(adw_combo_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(ctx->bracket), _("Bracket"));
     adw_combo_row_set_model(ctx->bracket, G_LIST_MODEL(b_model));
@@ -426,11 +399,10 @@ silktex_latex_insert_matrix_dialog(GtkWindow *parent, SilktexEditor *editor)
 
 typedef struct {
     SilktexEditor *editor;
-    AdwEntryRow   *file_row;
+    AdwEntryRow *file_row;
 } BibCtx;
 
-static void
-bib_pick_response(GObject *src, GAsyncResult *res, gpointer ud)
+static void bib_pick_response(GObject *src, GAsyncResult *res, gpointer ud)
 {
     BibCtx *ctx = ud;
     GFile *f = gtk_file_dialog_open_finish(GTK_FILE_DIALOG(src), res, NULL);
@@ -442,8 +414,7 @@ bib_pick_response(GObject *src, GAsyncResult *res, gpointer ud)
     }
 }
 
-static void
-on_bib_browse(GtkButton *b, gpointer ud)
+static void on_bib_browse(GtkButton *b, gpointer ud)
 {
     BibCtx *ctx = ud;
     GtkFileDialog *d = gtk_file_dialog_new();
@@ -455,14 +426,13 @@ on_bib_browse(GtkButton *b, gpointer ud)
     g_list_store_append(ls, flt);
     gtk_file_dialog_set_filters(d, G_LIST_MODEL(ls));
     gtk_file_dialog_set_default_filter(d, flt);
-    gtk_file_dialog_open(d, GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(b))),
-                         NULL, bib_pick_response, ctx);
+    gtk_file_dialog_open(d, GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(b))), NULL, bib_pick_response,
+                         ctx);
     g_object_unref(ls);
     g_object_unref(flt);
 }
 
-static void
-on_bib_response(AdwAlertDialog *dlg, const char *resp, gpointer ud)
+static void on_bib_response(AdwAlertDialog *dlg, const char *resp, gpointer ud)
 {
     BibCtx *ctx = ud;
     if (g_strcmp0(resp, "apply") == 0 && ctx->editor) {
@@ -473,8 +443,8 @@ on_bib_response(AdwAlertDialog *dlg, const char *resp, gpointer ud)
             char *base = g_strdup(rel);
             char *dot = g_strrstr(base, ".bib");
             if (dot) *dot = '\0';
-            g_autofree char *snippet = g_strdup_printf(
-                "\\bibliographystyle{plain}\n\\bibliography{%s}\n", base);
+            g_autofree char *snippet =
+                g_strdup_printf("\\bibliographystyle{plain}\n\\bibliography{%s}\n", base);
             silktex_latex_insert_at_cursor(ctx->editor, snippet, NULL);
             g_free(base);
         }
@@ -482,19 +452,17 @@ on_bib_response(AdwAlertDialog *dlg, const char *resp, gpointer ud)
     g_free(ctx);
 }
 
-void
-silktex_latex_insert_biblio_dialog(GtkWindow *parent, SilktexEditor *editor)
+void silktex_latex_insert_biblio_dialog(GtkWindow *parent, SilktexEditor *editor)
 {
     g_return_if_fail(editor);
 
     BibCtx *ctx = g_new0(BibCtx, 1);
     ctx->editor = editor;
 
-    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(
-        adw_alert_dialog_new(_("Insert Bibliography"),
-                             _("Insert \\bibliography command pointing to a .bib file.")));
+    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(adw_alert_dialog_new(
+        _("Insert Bibliography"), _("Insert \\bibliography command pointing to a .bib file.")));
     adw_alert_dialog_add_response(dlg, "cancel", _("Cancel"));
-    adw_alert_dialog_add_response(dlg, "apply",  _("Insert"));
+    adw_alert_dialog_add_response(dlg, "apply", _("Insert"));
     adw_alert_dialog_set_response_appearance(dlg, "apply", ADW_RESPONSE_SUGGESTED);
 
     GtkWidget *list = gtk_list_box_new();

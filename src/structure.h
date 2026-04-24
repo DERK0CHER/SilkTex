@@ -10,7 +10,7 @@
 #pragma once
 
 #include <gtk/gtk.h>
-#include "silktex-editor.h"
+#include "editor.h"
 
 G_BEGIN_DECLS
 

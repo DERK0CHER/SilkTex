@@ -14,10 +14,10 @@
 #include <unistd.h>
 
 #ifdef WIN32
-    #include <windows.h>
+#include <windows.h>
 #else
-    #include <sys/types.h>
-    #include <sys/wait.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #endif
 
 #include "utils.h"
@@ -31,16 +31,19 @@ static gchar *slogmsg_fatal = "\e[1;37;41m[Fatal]\e[0m ";
 static gint slog_debug = 0;
 GThread *main_thread = NULL;
 
-void slog_init(gint debug) {
+void slog_init(gint debug)
+{
     slog_debug = debug;
     main_thread = g_thread_self();
 }
 
-gboolean in_debug_mode(void) {
+gboolean in_debug_mode(void)
+{
     return slog_debug;
 }
 
-void slog(gint level, const gchar *fmt, ...) {
+void slog(gint level, const gchar *fmt, ...)
+{
     gchar message[BUFSIZ];
     va_list vap;
 
@@ -67,20 +70,21 @@ void slog(gint level, const gchar *fmt, ...) {
     }
 }
 
-gboolean utils_path_exists(const gchar *path) {
+gboolean utils_path_exists(const gchar *path)
+{
     if (path == NULL) return FALSE;
     return g_file_test(path, G_FILE_TEST_EXISTS);
 }
 
-gboolean utils_copy_file(const gchar *source, const gchar *dest, GError **err) {
+gboolean utils_copy_file(const gchar *source, const gchar *dest, GError **err)
+{
     gchar *contents;
     gsize length;
 
     g_return_val_if_fail(source != NULL, FALSE);
     g_return_val_if_fail(dest != NULL, FALSE);
 
-    if (!g_file_get_contents(source, &contents, &length, err))
-        return FALSE;
+    if (!g_file_get_contents(source, &contents, &length, err)) return FALSE;
 
     if (!g_file_set_contents(dest, contents, length, err)) {
         g_free(contents);
@@ -91,7 +95,8 @@ gboolean utils_copy_file(const gchar *source, const gchar *dest, GError **err) {
     return TRUE;
 }
 
-gboolean utils_subinstr(const gchar *substr, const gchar *target, gboolean case_insens) {
+gboolean utils_subinstr(const gchar *substr, const gchar *target, gboolean case_insens)
+{
     if (target == NULL || substr == NULL) return FALSE;
 
     if (case_insens) {
@@ -102,23 +107,23 @@ gboolean utils_subinstr(const gchar *substr, const gchar *target, gboolean case_
     return g_strstr_len(target, -1, substr) != NULL;
 }
 
-gchar *g_substr(gchar *src, gint start, gint end) {
+gchar *g_substr(gchar *src, gint start, gint end)
+{
     gint len = end - start + 1;
     gchar *dst = g_malloc0(len);
     return strncpy(dst, &src[start], end - start);
 }
 
-slist *slist_find(slist *head, const gchar *term, gboolean n, gboolean create) {
+slist *slist_find(slist *head, const gchar *term, gboolean n, gboolean create)
+{
     slist *current = head;
     slist *prev = NULL;
 
     while (current) {
         if (n) {
-            if (strncmp(current->first, term, strlen(term)) == 0)
-                return current;
+            if (strncmp(current->first, term, strlen(term)) == 0) return current;
         } else {
-            if (g_strcmp0(current->first, term) == 0)
-                return current;
+            if (g_strcmp0(current->first, term) == 0) return current;
         }
         prev = current;
         current = current->next;
@@ -133,7 +138,8 @@ slist *slist_find(slist *head, const gchar *term, gboolean n, gboolean create) {
     return current;
 }
 
-slist *slist_append(slist *head, slist *node) {
+slist *slist_append(slist *head, slist *node)
+{
     slist *current = head;
     slist *prev = NULL;
 
@@ -147,7 +153,8 @@ slist *slist_append(slist *head, slist *node) {
     return head;
 }
 
-slist *slist_remove(slist *head, slist *node) {
+slist *slist_remove(slist *head, slist *node)
+{
     slist *current = head;
     slist *prev = NULL;
 

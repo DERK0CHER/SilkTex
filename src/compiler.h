@@ -7,7 +7,7 @@
 #pragma once
 
 #include <glib-object.h>
-#include "silktex-editor.h"
+#include "editor.h"
 
 G_BEGIN_DECLS
 

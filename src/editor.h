@@ -45,7 +45,7 @@ void silktex_editor_scroll_to_cursor(SilktexEditor *self);
 
 /* Navigate by line (0-based) */
 void silktex_editor_goto_line(SilktexEditor *self, int line);
-int  silktex_editor_get_cursor_line(SilktexEditor *self);
+int silktex_editor_get_cursor_line(SilktexEditor *self);
 
 /* Apply all editor settings from configfile */
 void silktex_editor_apply_settings(SilktexEditor *self);
@@ -60,7 +60,7 @@ void silktex_editor_search_next(SilktexEditor *self, gboolean backwards);
 void silktex_editor_replace(SilktexEditor *self, const char *term, const char *replacement,
                             gboolean backwards, gboolean whole_word, gboolean match_case);
 void silktex_editor_replace_all(SilktexEditor *self, const char *term, const char *replacement,
-                                 gboolean whole_word, gboolean match_case);
+                                gboolean whole_word, gboolean match_case);
 
 const char *silktex_editor_get_workfile(SilktexEditor *self);
 const char *silktex_editor_get_pdffile(SilktexEditor *self);

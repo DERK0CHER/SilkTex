@@ -7,9 +7,9 @@
 #pragma once
 
 #include <adwaita.h>
-#include "silktex-editor.h"
-#include "silktex-compiler.h"
-#include "silktex-preview.h"
+#include "editor.h"
+#include "compiler.h"
+#include "preview.h"
 
 G_BEGIN_DECLS
 

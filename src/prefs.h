@@ -5,8 +5,8 @@
  */
 #pragma once
 #include <adwaita.h>
-#include "silktex-editor.h"
-#include "silktex-snippets.h"
+#include "editor.h"
+#include "snippets.h"
 
 G_BEGIN_DECLS
 
@@ -18,8 +18,7 @@ G_DECLARE_FINAL_TYPE(SilktexPrefs, silktex_prefs, SILKTEX, PREFS, AdwPreferences
 typedef void (*SilktexPrefsApplyFunc)(gpointer user_data);
 
 SilktexPrefs *silktex_prefs_new(void);
-void silktex_prefs_set_apply_callback(SilktexPrefs *self,
-                                      SilktexPrefsApplyFunc func,
+void silktex_prefs_set_apply_callback(SilktexPrefs *self, SilktexPrefsApplyFunc func,
                                       gpointer user_data);
 void silktex_prefs_set_snippets(SilktexPrefs *self, SilktexSnippets *snippets);
 void silktex_prefs_present(SilktexPrefs *self, GtkWindow *parent);
