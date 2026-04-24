@@ -11,56 +11,57 @@
 #include <sys/stat.h>
 
 static const gchar default_config[] =
-"[General]\n"
-"config_version = " C_PACKAGE_VERSION "\n"
-"\n"
-"[Interface]\n"
-"mainwindow_w = 1200\n"
-"mainwindow_h = 800\n"
-"mainwindow_max = false\n"
-"\n"
-"[Editor]\n"
-"font = Monospace 14\n"
-"line_numbers = true\n"
-"highlighting = true\n"
-"textwrapping = true\n"
-"wordwrapping = true\n"
-"tabwidth = 4\n"
-"spaces_instof_tabs = false\n"
-"autoindentation = true\n"
-"style_scheme = Adwaita\n"
-"\n"
-"[Preview]\n"
-"zoom = 1.0\n"
-"autosync = false\n"
-"\n"
-"[Compile]\n"
-"typesetter = pdflatex\n"
-"auto_compile = true\n"
-"timer = 1\n"
-"shellescape = false\n"
-"synctex = false\n"
-"\n"
-"[File]\n"
-"autosaving = false\n"
-"autosave_timer = 10\n"
-"autoexport = false\n"
-"\n"
-"[Spelling]\n"
-"enabled = false\n"
-"language = en_US\n"
-"\n"
-"[Snippets]\n"
-"# Two modifier keys combined with each snippet's single-letter accelerator\n"
-"# to form its shortcut. Valid values: Shift, Control, Alt, Super.\n"
-"# Leave empty to disable a modifier slot (e.g. only one modifier).\n"
-"modifier1 = Shift\n"
-"modifier2 = Alt\n";
+    "[General]\n"
+    "config_version = " C_PACKAGE_VERSION "\n"
+    "\n"
+    "[Interface]\n"
+    "mainwindow_w = 1200\n"
+    "mainwindow_h = 800\n"
+    "mainwindow_max = false\n"
+    "\n"
+    "[Editor]\n"
+    "font = Monospace 14\n"
+    "line_numbers = true\n"
+    "highlighting = true\n"
+    "textwrapping = true\n"
+    "wordwrapping = true\n"
+    "tabwidth = 4\n"
+    "spaces_instof_tabs = false\n"
+    "autoindentation = true\n"
+    "style_scheme = Adwaita\n"
+    "\n"
+    "[Preview]\n"
+    "zoom = 1.0\n"
+    "autosync = false\n"
+    "\n"
+    "[Compile]\n"
+    "typesetter = pdflatex\n"
+    "auto_compile = true\n"
+    "timer = 1\n"
+    "shellescape = false\n"
+    "synctex = false\n"
+    "\n"
+    "[File]\n"
+    "autosaving = false\n"
+    "autosave_timer = 10\n"
+    "autoexport = false\n"
+    "\n"
+    "[Spelling]\n"
+    "enabled = false\n"
+    "language = en_US\n"
+    "\n"
+    "[Snippets]\n"
+    "# Two modifier keys combined with each snippet's single-letter accelerator\n"
+    "# to form its shortcut. Valid values: Shift, Control, Alt, Super.\n"
+    "# Leave empty to disable a modifier slot (e.g. only one modifier).\n"
+    "modifier1 = Shift\n"
+    "modifier2 = Alt\n";
 
 static GKeyFile *key_file = NULL;
 static gchar *conf_filepath = NULL;
 
-void config_init(void) {
+void config_init(void)
+{
     gchar *confdir = C_GUMMI_CONFDIR;
 
     if (!g_file_test(confdir, G_FILE_TEST_IS_DIR)) {
@@ -79,8 +80,8 @@ void config_init(void) {
         }
         g_clear_error(&error);
 
-        g_key_file_load_from_data(key_file, default_config, strlen(default_config),
-                                   G_KEY_FILE_NONE, NULL);
+        g_key_file_load_from_data(key_file, default_config, strlen(default_config), G_KEY_FILE_NONE,
+                                  NULL);
         config_save();
     }
 
@@ -94,7 +95,8 @@ void config_init(void) {
     slog(L_INFO, "Configuration file: %s\n", conf_filepath);
 }
 
-void config_save(void) {
+void config_save(void)
+{
     if (key_file == NULL || conf_filepath == NULL) return;
 
     GError *error = NULL;
@@ -104,7 +106,8 @@ void config_save(void) {
     }
 }
 
-const gchar *config_get_string(const gchar *group, const gchar *key) {
+const gchar *config_get_string(const gchar *group, const gchar *key)
+{
     if (key_file == NULL) return "";
 
     GError *error = NULL;
@@ -117,7 +120,8 @@ const gchar *config_get_string(const gchar *group, const gchar *key) {
     return value;
 }
 
-gboolean config_get_boolean(const gchar *group, const gchar *key) {
+gboolean config_get_boolean(const gchar *group, const gchar *key)
+{
     if (key_file == NULL) return FALSE;
 
     GError *error = NULL;
@@ -130,7 +134,8 @@ gboolean config_get_boolean(const gchar *group, const gchar *key) {
     return value;
 }
 
-gint config_get_integer(const gchar *group, const gchar *key) {
+gint config_get_integer(const gchar *group, const gchar *key)
+{
     if (key_file == NULL) return 0;
 
     GError *error = NULL;
@@ -143,17 +148,20 @@ gint config_get_integer(const gchar *group, const gchar *key) {
     return value;
 }
 
-void config_set_string(const gchar *group, const gchar *key, const gchar *value) {
+void config_set_string(const gchar *group, const gchar *key, const gchar *value)
+{
     if (key_file == NULL) return;
     g_key_file_set_string(key_file, group, key, value);
 }
 
-void config_set_boolean(const gchar *group, const gchar *key, gboolean value) {
+void config_set_boolean(const gchar *group, const gchar *key, gboolean value)
+{
     if (key_file == NULL) return;
     g_key_file_set_boolean(key_file, group, key, value);
 }
 
-void config_set_integer(const gchar *group, const gchar *key, gint value) {
+void config_set_integer(const gchar *group, const gchar *key, gint value)
+{
     if (key_file == NULL) return;
     g_key_file_set_integer(key_file, group, key, value);
 }
