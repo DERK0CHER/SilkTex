@@ -64,6 +64,7 @@ void silktex_editor_replace_all(SilktexEditor *self, const char *term, const cha
 
 const char *silktex_editor_get_workfile(SilktexEditor *self);
 const char *silktex_editor_get_pdffile(SilktexEditor *self);
+char *silktex_editor_get_source_dir(SilktexEditor *self);
 void silktex_editor_update_workfile(SilktexEditor *self);
 
 G_END_DECLS

@@ -52,44 +52,88 @@ static gboolean emit_compile_error(gpointer user_data)
     return G_SOURCE_REMOVE;
 }
 
-static gboolean run_typesetter(SilktexCompiler *self, const char *workfile, const char *workdir)
+/*
+ * Run the configured typesetter on `workfile`, producing aux/log/pdf in
+ * `outdir` under the job name derived from `workfile`.  `source_dir` is
+ * passed as the child's working directory so relative \input{} paths
+ * resolve against the user's document, not against the cache dir.
+ *
+ * To make auto-compilation safe — a broken draft must never clobber the
+ * last good preview — we back the previous PDF up before invoking the
+ * typesetter.  On success we drop the backup; on failure we restore it so
+ * the preview keeps displaying the last successfully rendered version.
+ */
+static gboolean run_typesetter(SilktexCompiler *self, const char *workfile, const char *outdir,
+                               const char *source_dir)
 {
-    g_autofree char *cmd = NULL;
     g_autofree char *stdout_buf = NULL;
     g_autofree char *stderr_buf = NULL;
     GError *error = NULL;
     int exit_status = 0;
 
-    GString *args = g_string_new(self->typesetter);
-    g_string_append(args, " -interaction=nonstopmode");
+    g_autofree char *basename = g_path_get_basename(workfile);
+    char *dot = strrchr(basename, '.');
+    if (dot) *dot = '\0';
 
-    if (self->shell_escape) {
-        g_string_append(args, " -shell-escape");
+    g_autofree char *final_pdf = g_strdup_printf("%s/%s.pdf", outdir, basename);
+    g_autofree char *backup_pdf = g_strdup_printf("%s.lastgood", final_pdf);
+
+    if (g_file_test(final_pdf, G_FILE_TEST_EXISTS)) {
+        g_autoptr(GFile) src = g_file_new_for_path(final_pdf);
+        g_autoptr(GFile) dst = g_file_new_for_path(backup_pdf);
+        g_file_copy(src, dst, G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, NULL);
     }
-    if (self->synctex) {
-        g_string_append(args, " -synctex=1");
-    }
 
-    g_string_append_printf(args, " -output-directory=\"%s\"", workdir);
-    g_string_append_printf(args, " \"%s\"", workfile);
+    GPtrArray *argv = g_ptr_array_new_with_free_func(g_free);
+    g_ptr_array_add(argv, g_strdup(self->typesetter));
+    g_ptr_array_add(argv, g_strdup("-interaction=nonstopmode"));
+    g_ptr_array_add(argv, g_strdup("-halt-on-error"));
+    g_ptr_array_add(argv, g_strdup("-file-line-error"));
+    if (self->shell_escape) g_ptr_array_add(argv, g_strdup("-shell-escape"));
+    if (self->synctex) g_ptr_array_add(argv, g_strdup("-synctex=1"));
+    g_ptr_array_add(argv, g_strdup_printf("-output-directory=%s", outdir));
+    g_ptr_array_add(argv, g_strdup_printf("-jobname=%s", basename));
+    g_ptr_array_add(argv, g_strdup(workfile));
+    g_ptr_array_add(argv, NULL);
 
-    cmd = g_string_free(args, FALSE);
+    gboolean result = g_spawn_sync(source_dir && *source_dir ? source_dir : NULL,
+                                   (gchar **)argv->pdata, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL,
+                                   &stdout_buf, &stderr_buf, &exit_status, &error);
 
-    gboolean result =
-        g_spawn_command_line_sync(cmd, &stdout_buf, &stderr_buf, &exit_status, &error);
+    g_ptr_array_unref(argv);
 
     if (!result) {
-        g_warning("Failed to run typesetter: %s", error->message);
-        g_error_free(error);
+        g_warning("Failed to run typesetter: %s", error ? error->message : "unknown");
+        g_clear_error(&error);
+        /* Child failed to spawn at all — restore whatever was there. */
+        if (g_file_test(backup_pdf, G_FILE_TEST_EXISTS)) {
+            g_autoptr(GFile) src = g_file_new_for_path(backup_pdf);
+            g_autoptr(GFile) dst = g_file_new_for_path(final_pdf);
+            g_file_move(src, dst, G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, NULL);
+        }
         return FALSE;
     }
 
     g_mutex_lock(&self->compile_mutex);
     g_free(self->compile_log);
-    self->compile_log = g_strdup(stdout_buf ? stdout_buf : stderr_buf);
+    const char *primary = (stdout_buf && *stdout_buf) ? stdout_buf : stderr_buf;
+    self->compile_log = g_strdup(primary ? primary : "");
     g_mutex_unlock(&self->compile_mutex);
 
-    return exit_status == 0;
+    gboolean success = (exit_status == 0);
+
+    if (success) {
+        /* Good run – drop the backup. */
+        g_remove(backup_pdf);
+    } else if (g_file_test(backup_pdf, G_FILE_TEST_EXISTS)) {
+        /* Failed run may have truncated the PDF.  Restore the backup so
+         * the preview keeps showing the last good render. */
+        g_autoptr(GFile) src = g_file_new_for_path(backup_pdf);
+        g_autoptr(GFile) dst = g_file_new_for_path(final_pdf);
+        g_file_move(src, dst, G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, NULL);
+    }
+
+    return success;
 }
 
 static gpointer compile_thread_func(gpointer data)
@@ -128,12 +172,17 @@ static gpointer compile_thread_func(gpointer data)
             continue;
         }
 
-        silktex_editor_update_workfile(editor);
+        /*
+         * The workfile was snapshotted from the GtkTextBuffer on the *main*
+         * thread before we were signalled.  Do NOT touch the buffer from
+         * here – GtkTextBuffer is not thread-safe.
+         */
         const char *workfile = silktex_editor_get_workfile(editor);
 
         if (workfile != NULL) {
-            g_autofree char *workdir = g_path_get_dirname(workfile);
-            gboolean success = run_typesetter(self, workfile, workdir);
+            g_autofree char *outdir = g_path_get_dirname(workfile);
+            g_autofree char *source_dir = silktex_editor_get_source_dir(editor);
+            gboolean success = run_typesetter(self, workfile, outdir, source_dir);
 
             if (success) {
                 g_idle_add(emit_compile_finished, self);
@@ -373,10 +422,11 @@ gboolean silktex_compiler_run_makeindex(SilktexCompiler *self, SilktexEditor *ed
     if (dot) *dot = '\0';
 
     g_autofree char *idx_file = g_strdup_printf("%s/%s.idx", dirname, basename);
-    g_autofree char *cmd = g_strdup_printf("makeindex \"%s\"", idx_file);
+    gchar *argv[] = {"makeindex", idx_file, NULL};
 
     int exit_status = 0;
-    gboolean result = g_spawn_command_line_sync(cmd, NULL, NULL, &exit_status, NULL);
+    gboolean result = g_spawn_sync(dirname, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL,
+                                   &exit_status, NULL);
 
     return result && exit_status == 0;
 }
@@ -395,11 +445,11 @@ gboolean silktex_compiler_run_bibtex(SilktexCompiler *self, SilktexEditor *edito
     char *dot = strrchr(basename, '.');
     if (dot) *dot = '\0';
 
-    g_autofree char *aux_file = g_strdup_printf("%s/%s", dirname, basename);
-    g_autofree char *cmd = g_strdup_printf("cd \"%s\" && bibtex \"%s\"", dirname, basename);
+    gchar *argv[] = {"bibtex", basename, NULL};
 
     int exit_status = 0;
-    gboolean result = g_spawn_command_line_sync(cmd, NULL, NULL, &exit_status, NULL);
+    gboolean result = g_spawn_sync(dirname, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL,
+                                   &exit_status, NULL);
 
     return result && exit_status == 0;
 }

@@ -27,6 +27,9 @@ struct _SilktexWindow {
     AdwTabBar *tab_bar;
     AdwOverlaySplitView *split_view;
     GtkPaned *editor_paned;
+    AdwToolbarView *editor_toolbar_view;
+    GtkBox *editor_bottom_bar;
+    AdwToolbarView *preview_toolbar_view;
     GtkBox *preview_box;
     GtkBox *structure_container;
     GtkLabel *page_label;
@@ -34,6 +37,7 @@ struct _SilktexWindow {
     GtkToggleButton *btn_preview;
     GtkToggleButton *btn_sidebar;
     GtkButton *btn_compile;
+    GtkMenuButton *btn_menu;
 
     SilktexPreview *preview;
     SilktexCompiler *compiler;
@@ -130,6 +134,9 @@ static gboolean on_compile_timer(gpointer user_data)
     if (self->auto_compile) {
         SilktexEditor *editor = silktex_window_get_active_editor(self);
         if (editor != NULL) {
+            /* Snapshot the buffer on the UI thread; the compile worker is
+             * forbidden from touching GtkTextBuffer. */
+            silktex_editor_update_workfile(editor);
             silktex_compiler_request_compile(self->compiler, editor);
         }
     }
@@ -218,6 +225,20 @@ static void on_compile_error(SilktexCompiler *compiler, gpointer user_data)
     silktex_window_show_toast(self, _("Compilation error — see compile log"));
     update_log_panel(self);
     if (self->preview_status) gtk_label_set_label(self->preview_status, _("Compile error"));
+
+    /*
+     * The compiler restores the last-good PDF on failure, so if the
+     * preview hasn't loaded anything yet (e.g. the user opened a file
+     * whose first auto-compile failed) we still try to surface that
+     * preserved PDF here.
+     */
+    SilktexEditor *editor = silktex_window_get_active_editor(self);
+    if (editor != NULL) {
+        const char *pdffile = silktex_editor_get_pdffile(editor);
+        if (pdffile != NULL && g_file_test(pdffile, G_FILE_TEST_EXISTS)) {
+            silktex_preview_load_file(self->preview, pdffile);
+        }
+    }
 }
 
 static void on_preview_page_changed(GObject *p, GParamSpec *ps, gpointer ud)
@@ -311,6 +332,21 @@ static void on_save_response(GObject *source, GAsyncResult *result, gpointer use
         return;
     }
 
+    /* Ensure the chosen file ends in a recognised LaTeX extension.
+     * GtkFileDialog has no auto-suffix API, so users who type "mydoc"
+     * would otherwise get an extensionless file that pdflatex can't
+     * handle. */
+    g_autofree char *picked_path = g_file_get_path(file);
+    if (picked_path) {
+        g_autofree char *lower = g_ascii_strdown(picked_path, -1);
+        if (!g_str_has_suffix(lower, ".tex") && !g_str_has_suffix(lower, ".ltx") &&
+            !g_str_has_suffix(lower, ".sty") && !g_str_has_suffix(lower, ".cls")) {
+            g_autofree char *with_tex = g_strconcat(picked_path, ".tex", NULL);
+            g_object_unref(file);
+            file = g_file_new_for_path(with_tex);
+        }
+    }
+
     SilktexEditor *editor = silktex_window_get_active_editor(self);
     if (editor != NULL) {
         GError *save_error = NULL;
@@ -327,6 +363,47 @@ static void on_save_response(GObject *source, GAsyncResult *result, gpointer use
     }
 
     g_object_unref(file);
+}
+
+/*
+ * Configure a GtkFileDialog for saving a .tex document.  We attach a
+ * dedicated LaTeX filter (so the dialog's file-type picker defaults to
+ * ".tex") and pre-fill the filename with a ".tex" extension — GtkFileDialog
+ * does not provide an automatic suffix API, so this is the cleanest way
+ * to ensure the user ends up with a .tex file.
+ */
+static void configure_tex_save_dialog(GtkFileDialog *dialog, SilktexEditor *editor)
+{
+    GtkFileFilter *tex_filter = gtk_file_filter_new();
+    gtk_file_filter_set_name(tex_filter, _("LaTeX (*.tex)"));
+    gtk_file_filter_add_pattern(tex_filter, "*.tex");
+    gtk_file_filter_add_pattern(tex_filter, "*.ltx");
+
+    GtkFileFilter *all_filter = gtk_file_filter_new();
+    gtk_file_filter_set_name(all_filter, _("All files"));
+    gtk_file_filter_add_pattern(all_filter, "*");
+
+    GListStore *filters = g_list_store_new(GTK_TYPE_FILE_FILTER);
+    g_list_store_append(filters, tex_filter);
+    g_list_store_append(filters, all_filter);
+    gtk_file_dialog_set_filters(dialog, G_LIST_MODEL(filters));
+    gtk_file_dialog_set_default_filter(dialog, tex_filter);
+
+    g_autofree char *suggested = NULL;
+    if (editor) {
+        g_autofree char *base = silktex_editor_get_basename(editor);
+        if (base && *base) {
+            if (g_str_has_suffix(base, ".tex") || g_str_has_suffix(base, ".ltx"))
+                suggested = g_strdup(base);
+            else
+                suggested = g_strdup_printf("%s.tex", base);
+        }
+    }
+    gtk_file_dialog_set_initial_name(dialog, suggested ? suggested : "untitled.tex");
+
+    g_object_unref(filters);
+    g_object_unref(tex_filter);
+    g_object_unref(all_filter);
 }
 
 static void action_save(GSimpleAction *action, GVariant *parameter, gpointer user_data)
@@ -354,6 +431,7 @@ static void action_save(GSimpleAction *action, GVariant *parameter, gpointer use
         GtkFileDialog *dialog = gtk_file_dialog_new();
         gtk_file_dialog_set_title(dialog, _("Save LaTeX Document"));
         gtk_file_dialog_set_modal(dialog, TRUE);
+        configure_tex_save_dialog(dialog, editor);
         gtk_file_dialog_save(dialog, GTK_WINDOW(self), NULL, on_save_response, self);
     }
 }
@@ -361,10 +439,12 @@ static void action_save(GSimpleAction *action, GVariant *parameter, gpointer use
 static void action_save_as(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    SilktexEditor *editor = silktex_window_get_active_editor(self);
 
     GtkFileDialog *dialog = gtk_file_dialog_new();
     gtk_file_dialog_set_title(dialog, _("Save LaTeX Document As"));
     gtk_file_dialog_set_modal(dialog, TRUE);
+    configure_tex_save_dialog(dialog, editor);
     gtk_file_dialog_save(dialog, GTK_WINDOW(self), NULL, on_save_response, self);
 }
 
@@ -445,6 +525,7 @@ static void action_compile(GSimpleAction *a, GVariant *p, gpointer ud)
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (e) {
         if (self->preview_status) gtk_label_set_label(self->preview_status, _("Compiling…"));
+        silktex_editor_update_workfile(e);
         silktex_compiler_force_compile(self->compiler, e);
     }
 }
@@ -657,6 +738,34 @@ static void action_preferences(GSimpleAction *a, GVariant *p, gpointer ud)
     silktex_prefs_present(prefs, GTK_WINDOW(self));
 }
 
+/*
+ * Tri-state theme selector — mirrors gnome-text-editor's behaviour.
+ * The config key [Interface] theme is one of "follow", "light", "dark"
+ * and is applied through AdwStyleManager.  Called at startup and
+ * whenever the user changes the selection from the menu.
+ */
+static void apply_theme_from_config(void)
+{
+    const char *mode = config_get_string("Interface", "theme");
+    AdwStyleManager *sm = adw_style_manager_get_default();
+    if (g_strcmp0(mode, "light") == 0)
+        adw_style_manager_set_color_scheme(sm, ADW_COLOR_SCHEME_FORCE_LIGHT);
+    else if (g_strcmp0(mode, "dark") == 0)
+        adw_style_manager_set_color_scheme(sm, ADW_COLOR_SCHEME_FORCE_DARK);
+    else
+        adw_style_manager_set_color_scheme(sm, ADW_COLOR_SCHEME_DEFAULT);
+}
+
+static void change_theme(GSimpleAction *action, GVariant *value, gpointer ud)
+{
+    const char *mode = g_variant_get_string(value, NULL);
+    if (g_strcmp0(mode, "light") != 0 && g_strcmp0(mode, "dark") != 0) mode = "follow";
+    config_set_string("Interface", "theme", mode);
+    config_save();
+    apply_theme_from_config();
+    g_simple_action_set_state(action, value);
+}
+
 static void action_fullscreen(GSimpleAction *a, GVariant *p, gpointer ud)
 {
     SilktexWindow *self = SILKTEX_WINDOW(ud);
@@ -706,20 +815,37 @@ static void action_cleanup(GSimpleAction *a, GVariant *p, gpointer ud)
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (!e) return;
-    const char *work = silktex_editor_get_workfile(e);
-    if (!work) return;
-    g_autofree char *dir = g_path_get_dirname(work);
-    g_autofree char *base = g_path_get_basename(work);
-    char *dot = strrchr(base, '.');
-    if (dot) *dot = '\0';
 
     const char *exts[] = {"aux", "log", "out", "toc", "bbl",        "blg", "idx",
                           "ilg", "ind", "lof", "lot", "synctex.gz", NULL};
     int removed = 0;
-    for (int i = 0; exts[i]; i++) {
-        g_autofree char *f = g_strdup_printf("%s/%s.%s", dir, base, exts[i]);
-        if (g_file_test(f, G_FILE_TEST_EXISTS) && g_remove(f) == 0) removed++;
+
+    /* Clean the cache-dir job files (new layout). */
+    const char *work = silktex_editor_get_workfile(e);
+    if (work) {
+        g_autofree char *cache_dir = g_path_get_dirname(work);
+        g_autofree char *cache_base = g_path_get_basename(work);
+        char *d = strrchr(cache_base, '.');
+        if (d) *d = '\0';
+        for (int i = 0; exts[i]; i++) {
+            g_autofree char *f = g_strdup_printf("%s/%s.%s", cache_dir, cache_base, exts[i]);
+            if (g_file_test(f, G_FILE_TEST_EXISTS) && g_remove(f) == 0) removed++;
+        }
     }
+
+    /* Also mop up any legacy or user-run artefacts next to the source. */
+    const char *fname = silktex_editor_get_filename(e);
+    if (fname && *fname) {
+        g_autofree char *src_dir = g_path_get_dirname(fname);
+        g_autofree char *src_base = g_path_get_basename(fname);
+        char *d = strrchr(src_base, '.');
+        if (d) *d = '\0';
+        for (int i = 0; exts[i]; i++) {
+            g_autofree char *f = g_strdup_printf("%s/%s.%s", src_dir, src_base, exts[i]);
+            if (g_file_test(f, G_FILE_TEST_EXISTS) && g_remove(f) == 0) removed++;
+        }
+    }
+
     g_autofree char *msg = g_strdup_printf(_("Removed %d build file(s)"), removed);
     silktex_window_show_toast(self, msg);
 }
@@ -885,26 +1011,120 @@ static void action_show_recent(GSimpleAction *a, GVariant *p, gpointer ud)
     adw_dialog_present(dlg, GTK_WIDGET(self));
 }
 
+/*
+ * Build a proper GtkShortcutsWindow rather than dumping shortcut text
+ * into an alert dialog.  Sections/groups match the GNOME HIG so the
+ * result looks consistent with other Adwaita apps.
+ */
+static GtkWidget *make_shortcut(const char *accel, const char *title)
+{
+    return g_object_new(GTK_TYPE_SHORTCUTS_SHORTCUT, "accelerator", accel, "title", title, NULL);
+}
+
+static GtkWidget *make_group(const char *title)
+{
+    return g_object_new(GTK_TYPE_SHORTCUTS_GROUP, "title", title, NULL);
+}
+
 static void action_shortcuts(GSimpleAction *a, GVariant *p, gpointer ud)
 {
     SilktexWindow *self = SILKTEX_WINDOW(ud);
-    AdwAlertDialog *dlg = ADW_ALERT_DIALOG(adw_alert_dialog_new(_("Keyboard Shortcuts"), NULL));
-    adw_alert_dialog_set_body(dlg, "Ctrl+N   New tab\n"
-                                   "Ctrl+O   Open\n"
-                                   "Ctrl+S   Save      Ctrl+Shift+S  Save As\n"
-                                   "Ctrl+W   Close tab\n"
-                                   "Ctrl+Z   Undo      Ctrl+Shift+Z  Redo\n"
-                                   "Ctrl+Return   Compile\n"
-                                   "Ctrl+B / I / U  Bold / Italic / Underline\n"
-                                   "Ctrl + / -      Zoom in / out\n"
-                                   "Ctrl+0         Fit width\n"
-                                   "Ctrl+F / H     Find / Find & Replace\n"
-                                   "F2             Toggle outline\n"
-                                   "F9             Toggle preview\n"
-                                   "F11            Fullscreen\n"
-                                   "Ctrl+Shift+F   Forward SyncTeX\n");
-    adw_alert_dialog_add_response(dlg, "ok", _("OK"));
-    adw_dialog_present(ADW_DIALOG(dlg), GTK_WIDGET(self));
+
+    GtkWidget *win = g_object_new(GTK_TYPE_SHORTCUTS_WINDOW, "modal", TRUE, "transient-for", self,
+                                  "destroy-with-parent", TRUE, NULL);
+
+    GtkWidget *section = g_object_new(GTK_TYPE_SHORTCUTS_SECTION, "section-name", "main",
+                                      "visible", TRUE, NULL);
+
+    GtkWidget *g_files = make_group(_("Files"));
+    gtk_shortcuts_group_add_shortcut(GTK_SHORTCUTS_GROUP(g_files),
+                                     GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>n", _("New tab"))));
+    gtk_shortcuts_group_add_shortcut(GTK_SHORTCUTS_GROUP(g_files),
+                                     GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>o", _("Open"))));
+    gtk_shortcuts_group_add_shortcut(GTK_SHORTCUTS_GROUP(g_files),
+                                     GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>s", _("Save"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_files),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary><Shift>s", _("Save As"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_files),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>w", _("Close tab"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_files),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>q", _("Quit"))));
+    gtk_shortcuts_section_add_group(GTK_SHORTCUTS_SECTION(section), GTK_SHORTCUTS_GROUP(g_files));
+
+    GtkWidget *g_edit = make_group(_("Editing"));
+    gtk_shortcuts_group_add_shortcut(GTK_SHORTCUTS_GROUP(g_edit),
+                                     GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>z", _("Undo"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_edit),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary><Shift>z", _("Redo"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_edit),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>b", _("Bold"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_edit),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>i", _("Italic"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_edit),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>u", _("Underline"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_edit),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>f", _("Find"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_edit),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>h", _("Find & Replace"))));
+    gtk_shortcuts_section_add_group(GTK_SHORTCUTS_SECTION(section), GTK_SHORTCUTS_GROUP(g_edit));
+
+    GtkWidget *g_doc = make_group(_("Document"));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_doc),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>Return", _("Compile"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_doc),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary><Shift>f", _("Forward SyncTeX"))));
+    gtk_shortcuts_section_add_group(GTK_SHORTCUTS_SECTION(section), GTK_SHORTCUTS_GROUP(g_doc));
+
+    GtkWidget *g_view = make_group(_("View"));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_view),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>plus", _("Zoom in"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_view),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>minus", _("Zoom out"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_view),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>0", _("Fit width"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_view),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("F8", _("Toggle outline"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_view),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("F9", _("Toggle preview"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_view),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("F10", _("Main menu"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_view),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("F11", _("Fullscreen"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_view),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>question", _("Keyboard shortcuts"))));
+    gtk_shortcuts_group_add_shortcut(
+        GTK_SHORTCUTS_GROUP(g_view),
+        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>comma", _("Preferences"))));
+    gtk_shortcuts_section_add_group(GTK_SHORTCUTS_SECTION(section), GTK_SHORTCUTS_GROUP(g_view));
+
+    gtk_shortcuts_window_add_section(GTK_SHORTCUTS_WINDOW(win), GTK_SHORTCUTS_SECTION(section));
+    gtk_window_present(GTK_WINDOW(win));
+}
+
+/* Open the primary ("hamburger") menu.  F10 activates this from anywhere. */
+static void action_open_menu(GSimpleAction *a, GVariant *p, gpointer ud)
+{
+    SilktexWindow *self = SILKTEX_WINDOW(ud);
+    if (self->btn_menu) gtk_menu_button_popup(self->btn_menu);
 }
 
 /* ------------------------------------------------------------ preferences */
@@ -937,7 +1157,8 @@ static void on_preview_toggled(GtkToggleButton *button, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     gboolean visible = gtk_toggle_button_get_active(button);
-    gtk_widget_set_visible(GTK_WIDGET(self->preview_box), visible);
+    if (self->preview_toolbar_view)
+        gtk_widget_set_visible(GTK_WIDGET(self->preview_toolbar_view), visible);
     gtk_button_set_icon_name(GTK_BUTTON(button),
                              visible ? "view-dual-symbolic" : "view-continuous-symbolic");
 }
@@ -1052,6 +1273,7 @@ static const GActionEntry win_actions[] = {
     {"prev-page", action_prev_page},
     {"next-page", action_next_page},
     {"preview-layout", NULL, "s", "'continuous'", change_preview_layout},
+    {"set-theme", NULL, "s", "'follow'", change_theme},
     {"show-recent", action_show_recent},
     {"find", action_find},
     {"find-replace", action_find_replace},
@@ -1068,6 +1290,7 @@ static const GActionEntry win_actions[] = {
     {"cleanup", action_cleanup},
     {"stats", action_stats},
     {"open-pdf-external", action_open_pdf_external},
+    {"open-menu", action_open_menu},
 };
 
 /* ------------------------------------------------------------ key routing */
@@ -1129,6 +1352,9 @@ static void silktex_window_class_init(SilktexWindowClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, tab_bar);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, split_view);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, editor_paned);
+    gtk_widget_class_bind_template_child(widget_class, SilktexWindow, editor_toolbar_view);
+    gtk_widget_class_bind_template_child(widget_class, SilktexWindow, editor_bottom_bar);
+    gtk_widget_class_bind_template_child(widget_class, SilktexWindow, preview_toolbar_view);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, preview_box);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, structure_container);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, page_label);
@@ -1136,6 +1362,7 @@ static void silktex_window_class_init(SilktexWindowClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_preview);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_sidebar);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_compile);
+    gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_menu);
 }
 
 static void silktex_window_init(SilktexWindow *self)
@@ -1145,6 +1372,15 @@ static void silktex_window_init(SilktexWindow *self)
 
     g_action_map_add_action_entries(G_ACTION_MAP(self), win_actions, G_N_ELEMENTS(win_actions),
                                     self);
+
+    /* Reflect the persisted theme choice in the "Theme" radio state. */
+    GAction *theme_action = g_action_map_lookup_action(G_ACTION_MAP(self), "set-theme");
+    if (theme_action) {
+        const char *saved = config_get_string("Interface", "theme");
+        if (!saved || !*saved) saved = "follow";
+        g_simple_action_set_state(G_SIMPLE_ACTION(theme_action), g_variant_new_string(saved));
+    }
+    apply_theme_from_config();
 
     /* ---- compiler ---- */
     self->compiler = silktex_compiler_new();
@@ -1168,11 +1404,14 @@ static void silktex_window_init(SilktexWindow *self)
     gtk_widget_set_vexpand(GTK_WIDGET(self->structure), TRUE);
     gtk_box_append(self->structure_container, GTK_WIDGET(self->structure));
 
-    /* ---- search bar ---- */
+    /* ---- search bar ----
+     *
+     * Attach the search overlay as a *top* bar of the editor's ToolbarView
+     * so it appears directly under the tab bar when opened and does not
+     * interfere with the bottom toolbar or the compile-log revealer. */
     self->searchbar = silktex_searchbar_new();
-    GtkWidget *paned_child = gtk_paned_get_start_child(self->editor_paned);
-    if (GTK_IS_BOX(paned_child)) {
-        gtk_box_prepend(GTK_BOX(paned_child), GTK_WIDGET(self->searchbar));
+    if (self->editor_toolbar_view) {
+        adw_toolbar_view_add_top_bar(self->editor_toolbar_view, GTK_WIDGET(self->searchbar));
     }
 
     /* ---- snippets ---- */
@@ -1192,19 +1431,16 @@ static void silktex_window_init(SilktexWindow *self)
     self->auto_compile = config_get_boolean("Compile", "auto_compile");
     restart_autosave_timer(self);
 
-    /* ---- compile log panel ---- */
-    if (GTK_IS_BOX(paned_child)) {
-        GtkWidget *log_toggle = gtk_toggle_button_new_with_label(_("Compile Log"));
-        gtk_widget_add_css_class(log_toggle, "flat");
-        gtk_widget_set_margin_top(log_toggle, 2);
-        gtk_widget_set_margin_bottom(log_toggle, 2);
-        gtk_widget_set_margin_start(log_toggle, 4);
-        gtk_widget_set_halign(log_toggle, GTK_ALIGN_START);
-        self->log_toggle = GTK_TOGGLE_BUTTON(log_toggle);
-
+    /* ---- compile log panel ----
+     *
+     * Revealer sits as a *bottom* bar of the editor ToolbarView, just above
+     * the editor_bottom_bar.  The toggle that opens / closes it is appended
+     * to the end of the bottom bar so it pairs with the code tools on the
+     * left. */
+    {
         GtkWidget *revealer = gtk_revealer_new();
         gtk_revealer_set_transition_type(GTK_REVEALER(revealer),
-                                         GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN);
+                                         GTK_REVEALER_TRANSITION_TYPE_SLIDE_UP);
         gtk_revealer_set_reveal_child(GTK_REVEALER(revealer), FALSE);
         self->log_revealer = GTK_REVEALER(revealer);
 
@@ -1213,13 +1449,25 @@ static void silktex_window_init(SilktexWindow *self)
         gtk_text_view_set_editable(GTK_TEXT_VIEW(log_tv), FALSE);
         gtk_text_view_set_monospace(GTK_TEXT_VIEW(log_tv), TRUE);
         gtk_widget_set_vexpand(log_tv, TRUE);
+
         GtkWidget *log_scroll = gtk_scrolled_window_new();
-        gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(log_scroll), 140);
+        gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(log_scroll), 160);
         gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(log_scroll), log_tv);
         gtk_revealer_set_child(GTK_REVEALER(revealer), log_scroll);
 
-        gtk_box_append(GTK_BOX(paned_child), log_toggle);
-        gtk_box_append(GTK_BOX(paned_child), revealer);
+        if (self->editor_toolbar_view) {
+            adw_toolbar_view_add_bottom_bar(self->editor_toolbar_view, revealer);
+        }
+
+        GtkWidget *log_toggle = gtk_toggle_button_new();
+        gtk_button_set_icon_name(GTK_BUTTON(log_toggle), "text-x-generic-symbolic");
+        gtk_widget_set_tooltip_text(log_toggle, _("Compile Log"));
+        gtk_widget_add_css_class(log_toggle, "flat");
+        self->log_toggle = GTK_TOGGLE_BUTTON(log_toggle);
+
+        if (self->editor_bottom_bar) {
+            gtk_box_append(self->editor_bottom_bar, log_toggle);
+        }
 
         g_object_bind_property(log_toggle, "active", revealer, "reveal-child", G_BINDING_DEFAULT);
     }
@@ -1247,11 +1495,14 @@ static void silktex_window_init(SilktexWindow *self)
         {"win.find-replace", "<Control>h"},
         {"win.forward-sync", "<Control><Shift>f"},
         {"win.toggle-preview", "F9"},
-        {"win.toggle-sidebar", "F2"},
+        {"win.toggle-sidebar", "F8"},
         {"win.fullscreen", "F11"},
+        {"win.open-menu", "F10"},
         {"win.preferences", "<Control>comma"},
+        {"win.shortcuts", "<Control>question"},
         {"win.next-page", "<Control>Page_Down"},
         {"win.prev-page", "<Control>Page_Up"},
+        {"app.quit", "<Control>q"},
     };
 
     GtkApplication *app = GTK_APPLICATION(g_application_get_default());

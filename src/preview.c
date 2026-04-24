@@ -5,8 +5,15 @@
  */
 
 #include "preview.h"
+#include <adwaita.h>
 #include <poppler.h>
 #include <math.h>
+
+/* Outer breathing room around every rendered page.  Requested by the
+ * user — keeps each page clearly separated from its neighbours and from
+ * the preview background on all sides. */
+#define PAGE_PADDING 6
+#define PAGE_GAP_BETWEEN 20
 
 struct _SilktexPreview {
     GtkWidget parent_instance;
@@ -130,7 +137,7 @@ static void silktex_preview_render_pages(SilktexPreview *self)
     if (self->document == NULL) return;
     if (self->n_pages <= 0) return;
 
-    const int page_gap = 20;
+    const int page_gap = PAGE_GAP_BETWEEN;
     int scale = gtk_widget_get_scale_factor(GTK_WIDGET(self));
     if (scale < 1) scale = 1;
 
@@ -153,8 +160,9 @@ static void silktex_preview_render_pages(SilktexPreview *self)
         self->page_height = page_h;
         int lw = surface_logical_width(surface);
         int lh = surface_logical_height(surface);
-        self->total_height = lh;
-        gtk_widget_set_size_request(self->drawing_area, MAX(lw + 24, 1), MAX(lh, 1));
+        self->total_height = lh + 2 * PAGE_PADDING;
+        gtk_widget_set_size_request(self->drawing_area, MAX(lw + 2 * PAGE_PADDING, 1),
+                                    MAX((int)self->total_height, 1));
         return;
     }
 
@@ -195,19 +203,40 @@ static void silktex_preview_render_pages(SilktexPreview *self)
     if (self->n_pages > 1) {
         self->total_height += (self->n_pages - 1) * page_gap;
     }
-    gtk_widget_set_size_request(self->drawing_area, MAX(max_width + 24, 1),
+    self->total_height += 2 * PAGE_PADDING;
+    gtk_widget_set_size_request(self->drawing_area, MAX(max_width + 2 * PAGE_PADDING, 1),
                                 MAX((int)self->total_height, 1));
+}
+
+/* Pick a preview background color that pairs well with the current
+ * Adwaita light/dark scheme.  The user reported the fixed dark grey
+ * being too dark in light mode; we now use a subtle neutral grey there
+ * and a slightly warmer charcoal in dark mode (matches Evince / Papers). */
+static void preview_bg_color(double *r, double *g, double *b)
+{
+    AdwStyleManager *sm = adw_style_manager_get_default();
+    if (adw_style_manager_get_dark(sm)) {
+        *r = 0.15;
+        *g = 0.15;
+        *b = 0.16;
+    } else {
+        *r = 0.90;
+        *g = 0.90;
+        *b = 0.91;
+    }
 }
 
 static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer user_data)
 {
     SilktexPreview *self = SILKTEX_PREVIEW(user_data);
 
-    cairo_set_source_rgb(cr, 0.3, 0.3, 0.3);
+    double bg_r, bg_g, bg_b;
+    preview_bg_color(&bg_r, &bg_g, &bg_b);
+    cairo_set_source_rgb(cr, bg_r, bg_g, bg_b);
     cairo_paint(cr);
 
     if (self->document == NULL) {
-        cairo_set_source_rgb(cr, 0.7, 0.7, 0.7);
+        cairo_set_source_rgb(cr, 0.55, 0.55, 0.55);
         cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
         cairo_set_font_size(cr, 16);
 
@@ -221,27 +250,29 @@ static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, 
 
     silktex_preview_render_pages(self);
 
+    /* Page-border colour — subtle divider that works on both themes. */
+    const double border = 0.55;
+
     if (self->layout == SILKTEX_PREVIEW_LAYOUT_SINGLE_PAGE) {
         if (self->cached_surface == NULL) return;
         int lw = surface_logical_width(self->cached_surface);
         int lh = surface_logical_height(self->cached_surface);
         double x = (width - lw) / 2.0;
-        if (x < 0) x = 0;
-        double y = 0;
+        if (x < 0) x = PAGE_PADDING;
+        double y = PAGE_PADDING;
 
         cairo_set_source_surface(cr, self->cached_surface, x, y);
         cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
         cairo_paint(cr);
 
-        cairo_set_source_rgb(cr, 0.5, 0.5, 0.5);
+        cairo_set_source_rgb(cr, border, border, border);
         cairo_set_line_width(cr, 1.0);
         cairo_rectangle(cr, x - 0.5, y - 0.5, lw + 1, lh + 1);
         cairo_stroke(cr);
         return;
     }
 
-    const int page_gap = 20;
-    double y = 0;
+    double y = PAGE_PADDING;
     for (guint i = 0; i < self->page_surfaces->len; i++) {
         cairo_surface_t *surface = g_ptr_array_index(self->page_surfaces, i);
         if (surface == NULL) continue;
@@ -249,18 +280,18 @@ static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, 
         int lh = surface_logical_height(surface);
 
         double x = (width - lw) / 2.0;
-        if (x < 0) x = 0;
+        if (x < 0) x = PAGE_PADDING;
 
         cairo_set_source_surface(cr, surface, x, y);
         cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
         cairo_paint(cr);
 
-        cairo_set_source_rgb(cr, 0.5, 0.5, 0.5);
+        cairo_set_source_rgb(cr, border, border, border);
         cairo_set_line_width(cr, 1.0);
         cairo_rectangle(cr, x - 0.5, y - 0.5, lw + 1, lh + 1);
         cairo_stroke(cr);
 
-        y += lh + page_gap;
+        y += lh + PAGE_GAP_BETWEEN;
     }
 }
 
@@ -350,12 +381,12 @@ static void on_vadj_value_changed(GtkAdjustment *adj, gpointer user_data)
     if (self->document == NULL || self->page_surfaces == NULL) return;
     if (self->page_surfaces->len == 0) return;
 
-    const int page_gap = 20;
+    const int page_gap = PAGE_GAP_BETWEEN;
     double value = gtk_adjustment_get_value(adj);
     double page_size = gtk_adjustment_get_page_size(adj);
     double center = value + page_size / 2.0;
 
-    double y = 0;
+    double y = PAGE_PADDING;
     int page = 0;
     for (guint i = 0; i < self->page_surfaces->len; i++) {
         cairo_surface_t *surface = g_ptr_array_index(self->page_surfaces, i);
@@ -405,6 +436,12 @@ static void silktex_preview_init(SilktexPreview *self)
     /* Re-render when the widget lands on a different-DPI monitor. */
     self->scale_factor_handler =
         g_signal_connect(self, "notify::scale-factor", G_CALLBACK(on_scale_factor_changed), self);
+
+    /* Redraw the background when the Adwaita theme flips light↔dark so
+     * the preview pane tracks the rest of the application. */
+    AdwStyleManager *sm = adw_style_manager_get_default();
+    g_signal_connect_object(sm, "notify::dark", G_CALLBACK(on_scale_factor_changed), self,
+                            G_CONNECT_DEFAULT);
 }
 
 SilktexPreview *silktex_preview_new(void)
@@ -417,25 +454,43 @@ gboolean silktex_preview_load_file(SilktexPreview *self, const char *path)
     g_return_val_if_fail(SILKTEX_IS_PREVIEW(self), FALSE);
     g_return_val_if_fail(path != NULL, FALSE);
 
-    silktex_preview_invalidate_cache(self);
-    g_clear_object(&self->document);
+    /*
+     * Reloading the same path (e.g. after every auto-compile) should feel
+     * like a refresh — preserve the current page and scroll position
+     * rather than snapping back to page 1.  We also keep the previous
+     * document loaded if the new file can't be opened so the preview
+     * keeps showing the last successful render.
+     */
+    gboolean same_path = (self->pdf_path != NULL && g_strcmp0(self->pdf_path, path) == 0);
+    int saved_page = self->current_page;
 
     g_autofree char *uri = g_filename_to_uri(path, NULL, NULL);
     if (uri == NULL) return FALSE;
 
     GError *error = NULL;
-    self->document = poppler_document_new_from_file(uri, NULL, &error);
+    PopplerDocument *new_doc = poppler_document_new_from_file(uri, NULL, &error);
 
-    if (self->document == NULL) {
-        g_warning("Failed to load PDF: %s", error->message);
-        g_error_free(error);
+    if (new_doc == NULL) {
+        if (error) {
+            g_warning("Failed to load PDF: %s", error->message);
+            g_error_free(error);
+        }
         return FALSE;
     }
+
+    silktex_preview_invalidate_cache(self);
+    g_clear_object(&self->document);
+    self->document = new_doc;
 
     g_free(self->pdf_path);
     self->pdf_path = g_strdup(path);
     self->n_pages = poppler_document_get_n_pages(self->document);
-    self->current_page = 0;
+
+    if (same_path && saved_page >= 0 && saved_page < self->n_pages) {
+        self->current_page = saved_page;
+    } else {
+        self->current_page = 0;
+    }
 
     g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_N_PAGES]);
     g_object_notify_by_pspec(G_OBJECT(self), properties[PROP_PAGE]);
@@ -499,8 +554,8 @@ void silktex_preview_set_page(SilktexPreview *self, int page)
         GtkAdjustment *vadj =
             gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(self->scrolled_window));
         if (vadj != NULL && self->page_surfaces != NULL) {
-            const int page_gap = 20;
-            double y = 0;
+            const int page_gap = PAGE_GAP_BETWEEN;
+            double y = PAGE_PADDING;
             for (int i = 0; i < page; i++) {
                 cairo_surface_t *surface = g_ptr_array_index(self->page_surfaces, i);
                 if (surface != NULL) {

@@ -61,6 +61,14 @@ static void on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data)
 
 static void silktex_editor_init_workfile(SilktexEditor *self)
 {
+    /*
+     * Work/output files live in a throw-away cache directory so we never
+     * litter the user's source folder.  The workfile name is derived from
+     * a random mkstemp token (so simultaneous tabs never collide) and is
+     * intentionally named WITHOUT a leading dot — TeX Live's default
+     * openout_any=p refuses to write files whose name starts with "."
+     * which caused the old ".<base>.aux" pattern to fail outright.
+     */
     if (!g_file_test(C_TMPDIR, G_FILE_TEST_IS_DIR)) {
         g_mkdir_with_parents(C_TMPDIR, 0755);
     }
@@ -68,17 +76,8 @@ static void silktex_editor_init_workfile(SilktexEditor *self)
     self->fdname = g_build_filename(C_TMPDIR, "silktex_XXXXXX", NULL);
     self->workfd = g_mkstemp(self->fdname);
 
-    if (self->filename != NULL) {
-        char *base = g_path_get_basename(self->filename);
-        char *dir = g_path_get_dirname(self->filename);
-        self->workfile = g_strdup_printf("%s%c.%s.swp", dir, G_DIR_SEPARATOR, base);
-        self->pdffile = g_strdup_printf("%s%c.%s.pdf", C_TMPDIR, G_DIR_SEPARATOR, base);
-        g_free(base);
-        g_free(dir);
-    } else {
-        self->workfile = g_strdup(self->fdname);
-        self->pdffile = g_strdup_printf("%s.pdf", self->fdname);
-    }
+    self->workfile = g_strdup_printf("%s.tex", self->fdname);
+    self->pdffile = g_strdup_printf("%s.pdf", self->fdname);
 }
 
 static void silktex_editor_cleanup_workfile(SilktexEditor *self)
@@ -606,6 +605,13 @@ const char *silktex_editor_get_workfile(SilktexEditor *self)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(self), NULL);
     return self->workfile;
+}
+
+char *silktex_editor_get_source_dir(SilktexEditor *self)
+{
+    g_return_val_if_fail(SILKTEX_IS_EDITOR(self), NULL);
+    if (self->filename != NULL) return g_path_get_dirname(self->filename);
+    return g_strdup(C_TMPDIR);
 }
 
 const char *silktex_editor_get_pdffile(SilktexEditor *self)

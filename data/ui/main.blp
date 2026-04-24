@@ -15,7 +15,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
       [start]
       Gtk.ToggleButton btn_sidebar {
         icon-name: "sidebar-show-symbolic";
-        tooltip-text: _("Toggle Document Outline (F2)");
+        tooltip-text: _("Toggle Document Outline (F8)");
         active: true;
       }
 
@@ -43,32 +43,6 @@ template $SilktexWindow : Adw.ApplicationWindow {
         action-name: "win.save";
       }
 
-      [start]
-      Gtk.Separator {}
-
-      [start]
-      Gtk.Button btn_compile {
-        icon-name: "media-playback-start-symbolic";
-        tooltip-text: _("Compile (Ctrl+Enter)");
-        action-name: "win.compile";
-
-        styles ["suggested-action"]
-      }
-
-      [start]
-      Gtk.MenuButton btn_insert {
-        icon-name: "insert-object-symbolic";
-        tooltip-text: _("Insert...");
-        menu-model: insert_menu;
-      }
-
-      [start]
-      Gtk.MenuButton btn_format {
-        icon-name: "format-text-bold-symbolic";
-        tooltip-text: _("Format");
-        menu-model: format_menu;
-      }
-
       [title]
       Adw.WindowTitle window_title {
         title: "SilkTex";
@@ -79,7 +53,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
       Gtk.MenuButton btn_menu {
         icon-name: "open-menu-symbolic";
         menu-model: primary_menu;
-        tooltip-text: _("Main Menu");
+        tooltip-text: _("Main Menu (F10)");
         primary: true;
       }
 
@@ -88,30 +62,6 @@ template $SilktexWindow : Adw.ApplicationWindow {
         icon-name: "view-dual-symbolic";
         tooltip-text: _("Toggle Preview (F9)");
         active: true;
-      }
-
-      [end]
-      Gtk.Separator {}
-
-      [end]
-      Gtk.Button btn_zoom_in {
-        icon-name: "zoom-in-symbolic";
-        tooltip-text: _("Zoom In");
-        action-name: "win.zoom-in";
-      }
-
-      [end]
-      Gtk.Button btn_zoom_out {
-        icon-name: "zoom-out-symbolic";
-        tooltip-text: _("Zoom Out");
-        action-name: "win.zoom-out";
-      }
-
-      [end]
-      Gtk.MenuButton btn_zoom_menu {
-        icon-name: "zoom-fit-best-symbolic";
-        tooltip-text: _("Fit");
-        menu-model: zoom_menu;
       }
     }
 
@@ -167,34 +117,145 @@ template $SilktexWindow : Adw.ApplicationWindow {
           vexpand: true;
           position: 780;
 
+          // ------------------------------------------------------------------
+          // Pane 2 - editor.  The tab bar sits on top and the "code tools" +
+          // collapsible compile-log live in the pane's bottom toolbar.  The
+          // log widgets (toggle button + revealer) are attached programmatically
+          // from window.c; everything else is declarative.
+          // ------------------------------------------------------------------
           [start]
-          Gtk.Box {
-            orientation: vertical;
-
+          Adw.ToolbarView editor_toolbar_view {
+            [top]
             Adw.TabBar tab_bar {
               view: tab_view;
               autohide: true;
             }
 
-            Adw.TabView tab_view {
+            content: Adw.TabView tab_view {
               vexpand: true;
               hexpand: true;
+            };
+
+            [bottom]
+            Gtk.Box editor_bottom_bar {
+              orientation: horizontal;
+              margin-start: 6;
+              margin-end: 6;
+              margin-top: 4;
+              margin-bottom: 4;
+              spacing: 4;
+
+              styles ["toolbar"]
+
+              Gtk.Button btn_compile {
+                icon-name: "media-playback-start-symbolic";
+                tooltip-text: _("Compile (Ctrl+Enter)");
+                action-name: "win.compile";
+
+                styles ["suggested-action"]
+              }
+
+              Gtk.MenuButton btn_insert {
+                icon-name: "insert-object-symbolic";
+                tooltip-text: _("Insert...");
+                menu-model: insert_menu;
+
+                styles ["flat"]
+              }
+
+              Gtk.MenuButton btn_format {
+                icon-name: "format-text-bold-symbolic";
+                tooltip-text: _("Format");
+                menu-model: format_menu;
+
+                styles ["flat"]
+              }
+
+              Gtk.Separator {
+                orientation: vertical;
+                margin-start: 4;
+                margin-end: 4;
+              }
+
+              Gtk.Button btn_find {
+                icon-name: "edit-find-symbolic";
+                tooltip-text: _("Find (Ctrl+F)");
+                action-name: "win.find";
+
+                styles ["flat"]
+              }
+
+              Gtk.Button btn_find_replace {
+                icon-name: "edit-find-replace-symbolic";
+                tooltip-text: _("Find & Replace (Ctrl+H)");
+                action-name: "win.find-replace";
+
+                styles ["flat"]
+              }
+
+              // Filler pushes the log toggle to the right edge.
+              Gtk.Box {
+                hexpand: true;
+              }
+
+              // The compile-log toggle button is injected here from window.c
+              // so the revealer's content can share a single text buffer with
+              // the surrounding code.  See editor_bottom_bar bindings.
             }
           }
 
+          // ------------------------------------------------------------------
+          // Pane 3 - preview.  View tools (zoom / page / sync / export) live
+          // in the preview pane's bottom toolbar, matching pane 2.
+          // ------------------------------------------------------------------
           [end]
-          Gtk.Box preview_box {
-            orientation: vertical;
-            hexpand: true;
-            vexpand: true;
+          Adw.ToolbarView preview_toolbar_view {
+            content: Gtk.Box preview_box {
+              orientation: vertical;
+              hexpand: true;
+              vexpand: true;
+            };
 
+            [bottom]
             Gtk.CenterBox preview_toolbar {
               margin-top: 4;
               margin-bottom: 4;
               margin-start: 6;
               margin-end: 6;
 
+              styles ["toolbar"]
+
               [start]
+              Gtk.Box {
+                orientation: horizontal;
+                spacing: 2;
+
+                Gtk.Button btn_zoom_out {
+                  icon-name: "zoom-out-symbolic";
+                  tooltip-text: _("Zoom Out");
+                  action-name: "win.zoom-out";
+
+                  styles ["flat"]
+                }
+
+                Gtk.Button btn_zoom_in {
+                  icon-name: "zoom-in-symbolic";
+                  tooltip-text: _("Zoom In");
+                  action-name: "win.zoom-in";
+
+                  styles ["flat"]
+                }
+
+                Gtk.MenuButton btn_zoom_menu {
+                  icon-name: "zoom-fit-best-symbolic";
+                  tooltip-text: _("Fit");
+                  menu-model: zoom_menu;
+
+                  styles ["flat"]
+                }
+              }
+
+              [center]
               Gtk.Box {
                 orientation: horizontal;
                 spacing: 4;
@@ -207,14 +268,6 @@ template $SilktexWindow : Adw.ApplicationWindow {
                   styles ["flat"]
                 }
 
-                Gtk.Button btn_next_page {
-                  icon-name: "go-next-symbolic";
-                  tooltip-text: _("Next Page");
-                  action-name: "win.next-page";
-
-                  styles ["flat"]
-                }
-
                 Gtk.Label page_label {
                   label: "—";
                   margin-start: 6;
@@ -222,19 +275,27 @@ template $SilktexWindow : Adw.ApplicationWindow {
 
                   styles ["numeric", "dim-label"]
                 }
-              }
 
-              [center]
-              Gtk.Label preview_status {
-                label: _("Preview");
+                Gtk.Button btn_next_page {
+                  icon-name: "go-next-symbolic";
+                  tooltip-text: _("Next Page");
+                  action-name: "win.next-page";
 
-                styles ["dim-label"]
+                  styles ["flat"]
+                }
               }
 
               [end]
               Gtk.Box {
                 orientation: horizontal;
                 spacing: 2;
+
+                Gtk.Label preview_status {
+                  label: "";
+                  margin-end: 4;
+
+                  styles ["dim-label"]
+                }
 
                 Gtk.Button btn_forward_sync {
                   icon-name: "find-location-symbolic";
@@ -251,10 +312,16 @@ template $SilktexWindow : Adw.ApplicationWindow {
 
                   styles ["flat"]
                 }
+
+                Gtk.Button btn_export {
+                  icon-name: "document-save-as-symbolic";
+                  tooltip-text: _("Export PDF…");
+                  action-name: "win.export-pdf";
+
+                  styles ["flat"]
+                }
               }
             }
-
-            Gtk.Separator {}
           }
         };
       };
@@ -536,6 +603,28 @@ menu primary_menu {
     item {
       label: _("_Fullscreen");
       action: "win.fullscreen";
+    }
+  }
+
+  section {
+    label: _("Theme");
+
+    item {
+      label: _("Follow System");
+      action: "win.set-theme";
+      target: "follow";
+    }
+
+    item {
+      label: _("Light");
+      action: "win.set-theme";
+      target: "light";
+    }
+
+    item {
+      label: _("Dark");
+      action: "win.set-theme";
+      target: "dark";
     }
   }
 

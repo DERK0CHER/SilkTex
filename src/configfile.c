@@ -18,6 +18,9 @@ static const gchar default_config[] =
     "mainwindow_w = 1200\n"
     "mainwindow_h = 800\n"
     "mainwindow_max = false\n"
+    "# Application theme: one of follow, light, dark.\n"
+    "# 'follow' mirrors the desktop's current preference (GNOME dark style).\n"
+    "theme = follow\n"
     "\n"
     "[Editor]\n"
     "font = Monospace 14\n"
@@ -89,6 +92,12 @@ void config_init(void)
     if (!g_key_file_has_group(key_file, "Snippets")) {
         g_key_file_set_string(key_file, "Snippets", "modifier1", "Shift");
         g_key_file_set_string(key_file, "Snippets", "modifier2", "Alt");
+        config_save();
+    }
+
+    /* Migrate older configs that predate the Interface/theme key. */
+    if (!g_key_file_has_key(key_file, "Interface", "theme", NULL)) {
+        g_key_file_set_string(key_file, "Interface", "theme", "follow");
         config_save();
     }
 
