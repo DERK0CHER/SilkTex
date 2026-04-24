@@ -47,6 +47,7 @@ struct _SilktexPrefs {
     AdwEntryRow *row_snippet_name;
     AdwEntryRow *row_snippet_key;
     AdwEntryRow *row_snippet_accel;
+    GtkLabel *lbl_snippet_accel_preview;
     AdwComboRow *row_snippet_mod1;
     AdwComboRow *row_snippet_mod2;
     GPtrArray *snippet_entries; /* SnippetEntry* */
@@ -641,7 +642,7 @@ static void snippets_apply_modifiers(SilktexPrefs *self)
 
 static void snippet_update_accel_subtitle(SilktexPrefs *self)
 {
-    if (!self->row_snippet_accel) return;
+    if (!self->row_snippet_accel || !self->lbl_snippet_accel_preview) return;
     const char *letter = gtk_editable_get_text(GTK_EDITABLE(self->row_snippet_accel));
     const char *m1 = config_get_string("Snippets", "modifier1");
     const char *m2 = config_get_string("Snippets", "modifier2");
@@ -654,7 +655,7 @@ static void snippet_update_accel_subtitle(SilktexPrefs *self)
     } else {
         g_string_append(s, _("No shortcut"));
     }
-    adw_action_row_set_subtitle(ADW_ACTION_ROW(self->row_snippet_accel), s->str);
+    gtk_label_set_text(self->lbl_snippet_accel_preview, s->str);
     g_string_free(s, TRUE);
 }
 
@@ -806,6 +807,12 @@ void silktex_prefs_set_snippets(SilktexPrefs *self, SilktexSnippets *snippets)
                                   _("Shortcut Letter"));
     g_signal_connect(self->row_snippet_accel, "notify::text", G_CALLBACK(on_snippet_accel_changed),
                      self);
+
+    self->lbl_snippet_accel_preview = GTK_LABEL(gtk_label_new(""));
+    gtk_widget_add_css_class(GTK_WIDGET(self->lbl_snippet_accel_preview), "dim-label");
+    gtk_widget_add_css_class(GTK_WIDGET(self->lbl_snippet_accel_preview), "monospace");
+    adw_entry_row_add_suffix(self->row_snippet_accel,
+                             GTK_WIDGET(self->lbl_snippet_accel_preview));
 
     adw_preferences_group_add(grp_list, GTK_WIDGET(self->row_snippet_pick));
     adw_preferences_group_add(grp_list, GTK_WIDGET(self->row_snippet_name));
