@@ -3,6 +3,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 install_data(
-    ['snippets.cfg', 'snippets.lang'],
+    ['snippets.json', 'snippets.lang'],
     install_dir: join_paths(pkgdatadir, 'snippets'),
 )

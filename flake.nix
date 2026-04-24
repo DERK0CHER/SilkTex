@@ -36,6 +36,7 @@
           gtk4
           libadwaita
           glib
+          json-glib
           gtksourceview5
           gtkspell3
           poppler

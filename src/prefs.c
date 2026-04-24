@@ -11,6 +11,7 @@
 #include "constants.h"
 #include "utils.h"
 #include "i18n.h"
+#include <json-glib/json-glib.h>
 #include <gtksourceview/gtksource.h>
 
 struct _SilktexPrefs {
@@ -198,55 +199,119 @@ static void snippets_parse_file(SilktexPrefs *self)
     if (!self->snippets) return;
 
     const char *fname = silktex_snippets_get_filename(self->snippets);
-    g_autofree char *text = NULL;
-    if (!g_file_get_contents(fname, &text, NULL, NULL) || !text) return;
+    g_autoptr(JsonParser) parser = json_parser_new();
+    GError *error = NULL;
+    if (!json_parser_load_from_file(parser, fname, &error)) {
+        g_warning("Failed to parse snippets JSON: %s", error ? error->message : "unknown");
+        g_clear_error(&error);
+        return;
+    }
 
-    gchar **lines = g_strsplit(text, "\n", -1);
-    SnippetEntry *cur = NULL;
+    JsonNode *root = json_parser_get_root(parser);
+    if (!JSON_NODE_HOLDS_OBJECT(root)) return;
+
+    JsonObject *root_obj = json_node_get_object(root);
+    g_autoptr(GList) members = json_object_get_members(root_obj);
+    for (GList *l = members; l; l = l->next) {
+        const char *member_name = l->data;
+        JsonObject *obj = json_object_get_object_member(root_obj, member_name);
+        if (!obj) continue;
+
+        SnippetEntry *e = g_new0(SnippetEntry, 1);
+        e->name = g_strdup(member_name);
+
+        if (json_object_has_member(obj, "prefix")) {
+            JsonNode *prefix_node = json_object_get_member(obj, "prefix");
+            if (JSON_NODE_HOLDS_VALUE(prefix_node)) {
+                e->key = g_strdup(json_node_get_string(prefix_node));
+            } else if (JSON_NODE_HOLDS_ARRAY(prefix_node)) {
+                JsonArray *arr = json_node_get_array(prefix_node);
+                e->key = g_strdup(json_array_get_length(arr) > 0
+                                      ? json_array_get_string_element(arr, 0)
+                                      : "");
+            }
+        }
+        if (!e->key) e->key = g_strdup("");
+
+        e->accel = g_strdup(json_object_has_member(obj, "accelerator")
+                                ? json_object_get_string_member(obj, "accelerator")
+                                : "");
+
+        if (json_object_has_member(obj, "description")) {
+            g_free(e->name);
+            const char *desc = json_object_get_string_member(obj, "description");
+            e->name = g_strdup((desc && *desc) ? desc : member_name);
+        }
+
+        if (json_object_has_member(obj, "body")) {
+            JsonNode *body_node = json_object_get_member(obj, "body");
+            if (JSON_NODE_HOLDS_VALUE(body_node)) {
+                e->body = g_strdup(json_node_get_string(body_node));
+            } else if (JSON_NODE_HOLDS_ARRAY(body_node)) {
+                JsonArray *arr = json_node_get_array(body_node);
+                GString *body = g_string_new(NULL);
+                guint len = json_array_get_length(arr);
+                for (guint i = 0; i < len; i++) {
+                    if (i > 0) g_string_append_c(body, '\n');
+                    g_string_append(body, json_array_get_string_element(arr, i));
+                }
+                e->body = g_string_free(body, FALSE);
+            }
+        }
+        if (!e->body) e->body = g_strdup("");
+
+        g_ptr_array_add(self->snippet_entries, e);
+    }
+}
+
+static void add_snippet_body_to_json(JsonBuilder *builder, const char *body)
+{
+    if (!body || !strchr(body, '\n')) {
+        json_builder_add_string_value(builder, body ? body : "");
+        return;
+    }
+
+    json_builder_begin_array(builder);
+    gchar **lines = g_strsplit(body, "\n", -1);
     for (int i = 0; lines[i]; i++) {
-        const char *ln = lines[i];
-        if (g_str_has_prefix(ln, "snippet ")) {
-            gchar **hdr = g_strsplit(ln + 8, ",", 3);
-            cur = g_new0(SnippetEntry, 1);
-            cur->key = g_strdup(hdr[0] ? hdr[0] : "");
-            cur->accel = g_strdup(hdr[1] ? hdr[1] : "");
-            cur->name = g_strdup(hdr[2] ? hdr[2] : (hdr[0] ? hdr[0] : ""));
-            cur->body = g_strdup("");
-            g_ptr_array_add(self->snippet_entries, cur);
-            g_strfreev(hdr);
-            continue;
-        }
-        if (cur && ln[0] == '\t') {
-            const char *part = ln + 1;
-            char *old = cur->body;
-            cur->body = (old && *old) ? g_strconcat(old, "\n", part, NULL) : g_strdup(part);
-            g_free(old);
-        }
+        json_builder_add_string_value(builder, lines[i]);
     }
     g_strfreev(lines);
+    json_builder_end_array(builder);
 }
 
 static gboolean snippets_write_file(SilktexPrefs *self, GError **error)
 {
-    GString *out = g_string_new(NULL);
+    g_autoptr(JsonBuilder) builder = json_builder_new();
+    json_builder_begin_object(builder);
+
     for (guint i = 0; self->snippet_entries && i < self->snippet_entries->len; i++) {
         SnippetEntry *e = g_ptr_array_index(self->snippet_entries, i);
         if (!e->key || !e->name) continue;
-        g_string_append_printf(out, "snippet %s,%s,%s\n", e->key ? e->key : "",
-                               e->accel ? e->accel : "", e->name ? e->name : "");
-        if (e->body && *e->body) {
-            gchar **blines = g_strsplit(e->body, "\n", -1);
-            for (int li = 0; blines[li]; li++)
-                g_string_append_printf(out, "\t%s\n", blines[li]);
-            g_strfreev(blines);
-        } else {
-            g_string_append(out, "\t\n");
+        const char *name = (e->name && *e->name) ? e->name : e->key;
+
+        json_builder_set_member_name(builder, name);
+        json_builder_begin_object(builder);
+        json_builder_set_member_name(builder, "prefix");
+        json_builder_add_string_value(builder, e->key ? e->key : "");
+        if (e->accel && *e->accel) {
+            json_builder_set_member_name(builder, "accelerator");
+            json_builder_add_string_value(builder, e->accel);
         }
+        json_builder_set_member_name(builder, "body");
+        add_snippet_body_to_json(builder, e->body);
+        json_builder_set_member_name(builder, "description");
+        json_builder_add_string_value(builder, name);
+        json_builder_end_object(builder);
     }
-    gboolean ok =
-        g_file_set_contents(silktex_snippets_get_filename(self->snippets), out->str, -1, error);
-    g_string_free(out, TRUE);
-    return ok;
+
+    json_builder_end_object(builder);
+    g_autoptr(JsonGenerator) gen = json_generator_new();
+    g_autoptr(JsonNode) root = json_builder_get_root(builder);
+    json_generator_set_root(gen, root);
+    json_generator_set_pretty(gen, TRUE);
+    json_generator_set_indent(gen, 2);
+    return json_generator_to_file(gen, silktex_snippets_get_filename(self->snippets), error);
 }
 
 /* ------------------------------------------------------------------ signals */
@@ -584,9 +649,9 @@ static void on_snippet_reset(GtkButton *btn, gpointer ud)
 
 /* ---- global snippet modifier preferences ------------------------------------
  *
- * Each snippet in snippets.cfg stores only a single letter (or keysym name)
- * in its ACCELERATOR field.  At runtime that letter is combined with the two
- * global modifier keys chosen here to form the actual shortcut.
+ * Each snippet in snippets.json stores only a single letter (or keysym name)
+ * in its "accelerator" field.  At runtime that letter is combined with the
+ * two global modifier keys chosen here to form the actual shortcut.
  */
 
 static const struct {
@@ -796,6 +861,9 @@ void silktex_prefs_set_snippets(SilktexPrefs *self, SilktexSnippets *snippets)
     /* ---- snippet selection ---- */
     AdwPreferencesGroup *grp_list = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
     adw_preferences_group_set_title(grp_list, _("Manage Snippets"));
+    adw_preferences_group_set_description(
+        grp_list, _("Stored as VS Code-style JSON in snippets.json.  SilkTex adds "
+                    "an optional \"accelerator\" field for global shortcut letters."));
 
     self->row_snippet_pick = ADW_COMBO_ROW(adw_combo_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_snippet_pick), _("Snippet"));

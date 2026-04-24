@@ -37,7 +37,7 @@ finish-args:
   # behaviour of other LaTeX editors on Flathub (TeXstudio, Setzer, Kile).
   - --filesystem=host
 
-  # Per-user config + cache (snippets.cfg, silktex.ini, compile logs).
+  # Per-user config + cache (snippets.json, silktex.ini, compile logs).
   - --filesystem=xdg-config/silktex:create
   - --filesystem=xdg-cache/silktex:create
 

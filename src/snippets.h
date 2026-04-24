@@ -3,10 +3,16 @@
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Supports the same snippet file format as the original Gummi:
+ * Supports a VS Code-style JSON snippet file:
  *
- *   snippet KEY[,ACCEL[,Name]]
- *   \tEXPANDED TEXT with $1, $2, ${3:default} placeholders
+ *   {
+ *     "Display Name": {
+ *       "prefix": "trigger",
+ *       "accelerator": "u",
+ *       "body": ["line 1", "line 2"],
+ *       "description": "Shown in preferences"
+ *     }
+ *   }
  *
  * Tab / Shift-Tab navigate between placeholders; Escape deactivates.
  */

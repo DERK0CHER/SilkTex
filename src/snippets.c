@@ -11,10 +11,10 @@
  *   4. Tab / Shift-Tab cycle through unique groups by number; $0 is the final
  *      landing position; Escape deactivates.
  *
- * Accelerator format in snippets.cfg:
- *   snippet KEYWORD,<Mod>key,Display Name
- *     \tbody line 1
- *     \tbody line 2
+ * Snippet file format:
+ *   VS Code-style JSON object in ~/.config/silktex/snippets.json.
+ *   Each entry supports "prefix", "body", "description", and SilkTex's
+ *   optional "accelerator" field for global-modifier shortcuts.
  */
 
 #include "snippets.h"
@@ -22,6 +22,7 @@
 #include "constants.h"
 #include "utils.h"
 #include <glib/gstdio.h>
+#include <json-glib/json-glib.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -65,7 +66,7 @@ G_DEFINE_FINAL_TYPE (SilktexSnippets, silktex_snippets, G_TYPE_OBJECT)
 
 /* ---------------------------------------------------------------- default content
  *
- * We ship a default snippets.cfg in $datadir/silktex/snippets/snippets.cfg.
+ * We ship a default snippets.json in $datadir/silktex/snippets/snippets.json.
  * On first run (or after reset), we copy that file verbatim to the user's
  * config directory.  During development the build system exports GUMMI_DATA
  * which points at the in-tree data/ folder.
@@ -77,15 +78,15 @@ G_DEFINE_FINAL_TYPE (SilktexSnippets, silktex_snippets, G_TYPE_OBJECT)
 
     static char *find_default_snippets_path(void)
     {
-        /* 1) development: GUMMI_DATA/snippets/snippets.cfg               */
-        char *p = g_build_filename(GUMMI_DATA, "snippets", "snippets.cfg", NULL);
+        /* 1) development: GUMMI_DATA/snippets/snippets.json              */
+        char *p = g_build_filename(GUMMI_DATA, "snippets", "snippets.json", NULL);
         if (g_file_test(p, G_FILE_TEST_IS_REGULAR)) return p;
         g_free(p);
 
         /* 2) installed prefix next to this binary (datadir/silktex/…)    */
         const char *const *dirs = g_get_system_data_dirs();
         for (int i = 0; dirs && dirs[i]; i++) {
-            char *q = g_build_filename(dirs[i], "silktex", "snippets", "snippets.cfg", NULL);
+            char *q = g_build_filename(dirs[i], "silktex", "snippets", "snippets.json", NULL);
             if (g_file_test(q, G_FILE_TEST_IS_REGULAR)) return q;
             g_free(q);
         }
@@ -199,23 +200,116 @@ static GdkModifierType modifier_from_name(const char *name)
     return 0;
 }
 
-static void load_snippets_file(SilktexSnippets *self)
+static void append_snippet(SilktexSnippets *self, const char *prefix, const char *accelerator,
+                           const char *name, const char *body)
 {
-    free_slist(self->head);
-    self->head = NULL;
-    free_accels(self->accels);
-    self->accels = NULL;
+    if (!prefix || !*prefix) return;
 
-    FILE *fh = fopen(self->filename, "r");
-    if (!fh) {
-        slog(L_WARNING, "Snippets: seeding %s from default template\n", self->filename);
-        if (!copy_default_snippets(self->filename)) {
-            slog(L_WARNING, "Snippets: no default template found; starting empty\n");
-            g_file_set_contents(self->filename, "", 0, NULL);
-        }
-        fh = fopen(self->filename, "r");
-        if (!fh) return;
+    slist *node = g_new0(slist, 1);
+    node->first =
+        g_strdup_printf("%s,%s,%s", prefix, accelerator ? accelerator : "", name ? name : prefix);
+    node->second = g_strdup(body ? body : "");
+
+    if (!self->head) {
+        self->head = node;
+        return;
     }
+
+    slist *tail = self->head;
+    while (tail->next) tail = tail->next;
+    tail->next = node;
+}
+
+static char *snippet_body_from_json_member(JsonObject *obj)
+{
+    if (!json_object_has_member(obj, "body")) return g_strdup("");
+
+    JsonNode *body_node = json_object_get_member(obj, "body");
+    if (JSON_NODE_HOLDS_VALUE(body_node)) {
+        const char *body = json_node_get_string(body_node);
+        return g_strdup(body ? body : "");
+    }
+
+    if (JSON_NODE_HOLDS_ARRAY(body_node)) {
+        JsonArray *arr = json_node_get_array(body_node);
+        GString *body = g_string_new(NULL);
+        guint len = json_array_get_length(arr);
+        for (guint i = 0; i < len; i++) {
+            if (i > 0) g_string_append_c(body, '\n');
+            const char *line = json_array_get_string_element(arr, i);
+            g_string_append(body, line ? line : "");
+        }
+        return g_string_free(body, FALSE);
+    }
+
+    return g_strdup("");
+}
+
+static char *snippet_prefix_from_json_member(JsonObject *obj)
+{
+    if (!json_object_has_member(obj, "prefix")) return g_strdup("");
+
+    JsonNode *prefix_node = json_object_get_member(obj, "prefix");
+    if (JSON_NODE_HOLDS_VALUE(prefix_node)) {
+        const char *prefix = json_node_get_string(prefix_node);
+        return g_strdup(prefix ? prefix : "");
+    }
+
+    if (JSON_NODE_HOLDS_ARRAY(prefix_node)) {
+        JsonArray *arr = json_node_get_array(prefix_node);
+        if (json_array_get_length(arr) > 0) {
+            const char *prefix = json_array_get_string_element(arr, 0);
+            return g_strdup(prefix ? prefix : "");
+        }
+    }
+
+    return g_strdup("");
+}
+
+static gboolean load_json_snippets(SilktexSnippets *self, const char *path)
+{
+    g_autoptr(JsonParser) parser = json_parser_new();
+    GError *error = NULL;
+    if (!json_parser_load_from_file(parser, path, &error)) {
+        slog(L_WARNING, "Snippets: failed to parse %s: %s\n", path,
+             error ? error->message : "unknown error");
+        g_clear_error(&error);
+        return FALSE;
+    }
+
+    JsonNode *root = json_parser_get_root(parser);
+    if (!JSON_NODE_HOLDS_OBJECT(root)) return FALSE;
+
+    JsonObject *root_obj = json_node_get_object(root);
+    g_autoptr(GList) members = json_object_get_members(root_obj);
+
+    for (GList *l = members; l; l = l->next) {
+        const char *name = l->data;
+        JsonObject *entry = json_object_get_object_member(root_obj, name);
+        if (!entry) continue;
+
+        g_autofree char *prefix = snippet_prefix_from_json_member(entry);
+        g_autofree char *body = snippet_body_from_json_member(entry);
+        const char *description =
+            json_object_has_member(entry, "description")
+                ? json_object_get_string_member(entry, "description")
+                : name;
+        const char *accelerator =
+            json_object_has_member(entry, "accelerator")
+                ? json_object_get_string_member(entry, "accelerator")
+                : "";
+
+        append_snippet(self, prefix, accelerator, description && *description ? description : name,
+                       body);
+    }
+
+    return TRUE;
+}
+
+static gboolean load_legacy_cfg_into_memory(SilktexSnippets *self, const char *path)
+{
+    FILE *fh = fopen(path, "r");
+    if (!fh) return FALSE;
 
     char buf[BUFSIZ];
     slist *prev = NULL;
@@ -226,7 +320,6 @@ static void load_snippets_file(SilktexSnippets *self)
         if (!buf[0] || buf[0] == '#') continue;
 
         if (buf[0] != '\t') {
-            /* header: "snippet KEYWORD,ACCEL,Name" */
             char *sp = strchr(buf, ' ');
             if (!sp) continue;
             const char *header = sp + 1;
@@ -247,6 +340,104 @@ static void load_snippets_file(SilktexSnippets *self)
         }
     }
     fclose(fh);
+    return TRUE;
+}
+
+static void add_json_body(JsonBuilder *builder, const char *body)
+{
+    if (!body || !strchr(body, '\n')) {
+        json_builder_add_string_value(builder, body ? body : "");
+        return;
+    }
+
+    json_builder_begin_array(builder);
+    gchar **lines = g_strsplit(body, "\n", -1);
+    for (int i = 0; lines[i]; i++) {
+        json_builder_add_string_value(builder, lines[i]);
+    }
+    g_strfreev(lines);
+    json_builder_end_array(builder);
+}
+
+static gboolean save_memory_as_json(SilktexSnippets *self, const char *path, GError **error)
+{
+    g_autoptr(JsonBuilder) builder = json_builder_new();
+    json_builder_begin_object(builder);
+
+    for (slist *c = self->head; c; c = c->next) {
+        gchar **parts = g_strsplit(c->first ? c->first : "", ",", 3);
+        const char *prefix = parts[0] ? parts[0] : "";
+        const char *accelerator = parts[1] ? parts[1] : "";
+        const char *name = (parts[2] && *parts[2]) ? parts[2] : prefix;
+
+        json_builder_set_member_name(builder, name);
+        json_builder_begin_object(builder);
+        json_builder_set_member_name(builder, "prefix");
+        json_builder_add_string_value(builder, prefix);
+        if (accelerator && *accelerator) {
+            json_builder_set_member_name(builder, "accelerator");
+            json_builder_add_string_value(builder, accelerator);
+        }
+        json_builder_set_member_name(builder, "body");
+        add_json_body(builder, c->second);
+        json_builder_set_member_name(builder, "description");
+        json_builder_add_string_value(builder, name);
+        json_builder_end_object(builder);
+
+        g_strfreev(parts);
+    }
+
+    json_builder_end_object(builder);
+
+    g_autoptr(JsonGenerator) gen = json_generator_new();
+    g_autoptr(JsonNode) root = json_builder_get_root(builder);
+    json_generator_set_root(gen, root);
+    json_generator_set_pretty(gen, TRUE);
+    json_generator_set_indent(gen, 2);
+    return json_generator_to_file(gen, path, error);
+}
+
+static gboolean migrate_legacy_cfg(SilktexSnippets *self, const char *legacy_path)
+{
+    if (!g_file_test(legacy_path, G_FILE_TEST_IS_REGULAR)) return FALSE;
+    if (!load_legacy_cfg_into_memory(self, legacy_path)) return FALSE;
+
+    GError *error = NULL;
+    gboolean ok = save_memory_as_json(self, self->filename, &error);
+    if (!ok) {
+        slog(L_WARNING, "Snippets: failed to migrate %s to JSON: %s\n", legacy_path,
+             error ? error->message : "unknown error");
+        g_clear_error(&error);
+    }
+    return ok;
+}
+
+static void load_snippets_file(SilktexSnippets *self)
+{
+    free_slist(self->head);
+    self->head = NULL;
+    free_accels(self->accels);
+    self->accels = NULL;
+
+    if (!g_file_test(self->filename, G_FILE_TEST_IS_REGULAR)) {
+        g_autofree char *confdir = g_path_get_dirname(self->filename);
+        g_autofree char *legacy = g_build_filename(confdir, "snippets.cfg", NULL);
+        if (migrate_legacy_cfg(self, legacy)) {
+            free_slist(self->head);
+            self->head = NULL;
+        } else {
+            slog(L_WARNING, "Snippets: seeding %s from default template\n", self->filename);
+        }
+    }
+
+    if (!g_file_test(self->filename, G_FILE_TEST_IS_REGULAR)) {
+        if (!copy_default_snippets(self->filename)) {
+            slog(L_WARNING, "Snippets: no default template found; starting empty\n");
+            g_file_set_contents(self->filename, "{\n}\n", -1, NULL);
+        }
+    }
+
+    load_json_snippets(self, self->filename);
 
     rebuild_accels(self);
 }
@@ -619,7 +810,7 @@ SilktexSnippets *silktex_snippets_new(void)
     SilktexSnippets *self = g_object_new(SILKTEX_TYPE_SNIPPETS, NULL);
     char *confdir = C_GUMMI_CONFDIR;
     g_mkdir_with_parents(confdir, DIR_PERMS);
-    self->filename = g_build_filename(confdir, "snippets.cfg", NULL);
+    self->filename = g_build_filename(confdir, "snippets.json", NULL);
     g_free(confdir);
 
     /* Default global modifier pair (user-overridable via prefs).

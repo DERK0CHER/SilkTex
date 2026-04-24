@@ -1366,7 +1366,16 @@ static void on_theme_swatch_active_changed(GtkToggleButton *button, GParamSpec *
     (void)pspec;
     (void)user_data;
     GtkWidget *child = gtk_button_get_child(GTK_BUTTON(button));
-    if (GTK_IS_DRAWING_AREA(child)) gtk_widget_queue_draw(child);
+    if (GTK_IS_DRAWING_AREA(child) && gtk_widget_get_width(child) > 0 &&
+        gtk_widget_get_height(child) > 0)
+        gtk_widget_queue_draw(child);
+}
+
+static void on_primary_popover_show(GtkWidget *popover, gpointer user_data)
+{
+    (void)popover;
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    update_theme_buttons(self, config_get_string("Interface", "theme"));
 }
 
 static GtkWidget *make_theme_toggle(const char *mode, const char *tooltip, SilktexWindow *self)
@@ -1459,7 +1468,7 @@ static void install_primary_popover(SilktexWindow *self)
 
     gtk_menu_button_set_menu_model(self->btn_menu, NULL);
     gtk_menu_button_set_popover(self->btn_menu, popover);
-    update_theme_buttons(self, config_get_string("Interface", "theme"));
+    g_signal_connect(popover, "show", G_CALLBACK(on_primary_popover_show), self);
 }
 
 /* Open the primary ("hamburger") menu.  F10 activates this from anywhere. */

@@ -65,6 +65,7 @@ project_dependencies = [
     dependency('gtk4'),
     dependency('libadwaita-1'),
     dependency('glib-2.0'),
+    dependency('json-glib-1.0'),
     dependency('gtksourceview-5'),
     dependency('poppler-glib'),
     gtkspell_dep,
