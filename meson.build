@@ -56,6 +56,10 @@ gtkspell_dep = dependency('gtkspell3-3.0', required: false)
 # GNOME Flatpak SDK, which does not ship libsynctex.
 synctex_dep  = dependency('synctex', required: false)
 math_dep     = cc.find_library('m', required: false)
+intl_dep     = dependency('intl', required: false)
+if not intl_dep.found()
+    intl_dep = cc.find_library('intl', required: false)
+endif
 
 project_dependencies = [
     dependency('gtk4'),
@@ -66,6 +70,7 @@ project_dependencies = [
     gtkspell_dep,
     synctex_dep,
     math_dep,
+    intl_dep,
 ]
 
 if gtkspell_dep.found()
