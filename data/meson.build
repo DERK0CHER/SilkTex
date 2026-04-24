@@ -11,3 +11,12 @@ install_data(
     'templates/vorlage.tex',
     install_dir: join_paths(pkgdatadir, 'templates'),
 )
+
+install_data(
+    files(
+        'styles/silktex-gruvbox-dark.xml',
+        'styles/silktex-gruvbox-light.xml',
+        'styles/silktex-lights-out.xml',
+    ),
+    install_dir: join_paths(pkgdatadir, 'styles'),
+)

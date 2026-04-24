@@ -9,6 +9,7 @@
 #include "prefs.h"
 #include "configfile.h"
 #include "constants.h"
+#include "style-schemes.h"
 #include "utils.h"
 #include "i18n.h"
 #include <json-glib/json-glib.h>
@@ -84,17 +85,16 @@ G_DEFINE_FINAL_TYPE (SilktexPrefs, silktex_prefs, ADW_TYPE_PREFERENCES_DIALOG)
  * Also fill self->scheme_ids with the corresponding IDs. */
 static GtkStringList *build_scheme_model(SilktexPrefs *self)
 {
+    silktex_init_style_scheme_paths();
+
     GtkSourceStyleSchemeManager *mgr = gtk_source_style_scheme_manager_get_default();
     const char *const *ids = gtk_source_style_scheme_manager_get_scheme_ids(mgr);
 
-    /* add user scheme dir */
-    g_autofree char *confdir = C_GUMMI_CONFDIR;
-    g_autofree char *custom = g_build_filename(confdir, "styles", NULL);
-    if (g_file_test(custom, G_FILE_TEST_IS_DIR))
-        gtk_source_style_scheme_manager_append_search_path(mgr, custom);
-
     GtkStringList *names = gtk_string_list_new(NULL);
     self->scheme_ids = gtk_string_list_new(NULL);
+
+    gtk_string_list_append(names, _("Match application theme"));
+    gtk_string_list_append(self->scheme_ids, "auto");
 
     for (int i = 0; ids && ids[i]; i++) {
         GtkSourceStyleScheme *s = gtk_source_style_scheme_manager_get_scheme(mgr, ids[i]);

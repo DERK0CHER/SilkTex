@@ -14,6 +14,7 @@
 #include "git.h"
 #include "configfile.h"
 #include "constants.h"
+#include "style-schemes.h"
 #include "utils.h"
 #include "i18n.h"
 #include <glib/gstdio.h>
@@ -66,6 +67,7 @@ struct _SilktexWindow {
     GtkToggleButton *theme_follow;
     GtkToggleButton *theme_light;
     GtkToggleButton *theme_dark;
+    GtkToggleButton *theme_lightsout;
 
     /* Git integration */
     SilktexGitStatus *git_status;
@@ -151,21 +153,9 @@ static void update_log_panel(SilktexWindow *self)
     gtk_text_buffer_set_text(self->log_buf, log ? log : "", -1);
 }
 
-static const char *effective_editor_scheme(void)
-{
-    const char *mode = config_get_string("Interface", "theme");
-    if (g_strcmp0(mode, "dark") == 0) return "Adwaita-dark";
-    if (g_strcmp0(mode, "light") == 0) return "Adwaita";
-
-    AdwStyleManager *sm = adw_style_manager_get_default();
-    return adw_style_manager_get_dark(sm) ? "Adwaita-dark" : "Adwaita";
-}
-
 static void apply_theme_to_editor(SilktexEditor *editor)
 {
-    if (editor != NULL) {
-        silktex_editor_set_style_scheme(editor, effective_editor_scheme());
-    }
+    if (editor != NULL) silktex_editor_set_style_scheme(editor, silktex_resolved_style_scheme_id());
 }
 
 static void apply_theme_to_all_editors(SilktexWindow *self)
@@ -815,10 +805,9 @@ static void action_preferences(GSimpleAction *a, GVariant *p, gpointer ud)
 }
 
 /*
- * Tri-state theme selector — mirrors gnome-text-editor's behaviour.
- * The config key [Interface] theme is one of "follow", "light", "dark"
- * and is applied through AdwStyleManager.  Called at startup and
- * whenever the user changes the selection from the menu.
+ * Theme selector: follow / light / dark / lightsout.
+ * Editor colours are resolved separately (Gruvbox, Lights out, or a fixed
+ * GtkSourceView scheme from Preferences when not "auto").
  */
 static void apply_theme_from_config(void)
 {
@@ -826,7 +815,7 @@ static void apply_theme_from_config(void)
     AdwStyleManager *sm = adw_style_manager_get_default();
     if (g_strcmp0(mode, "light") == 0)
         adw_style_manager_set_color_scheme(sm, ADW_COLOR_SCHEME_FORCE_LIGHT);
-    else if (g_strcmp0(mode, "dark") == 0)
+    else if (g_strcmp0(mode, "dark") == 0 || g_strcmp0(mode, "lightsout") == 0)
         adw_style_manager_set_color_scheme(sm, ADW_COLOR_SCHEME_FORCE_DARK);
     else
         adw_style_manager_set_color_scheme(sm, ADW_COLOR_SCHEME_DEFAULT);
@@ -841,17 +830,21 @@ static void update_theme_buttons(SilktexWindow *self, const char *mode)
         gtk_toggle_button_set_active(self->theme_light, g_strcmp0(mode, "light") == 0);
     if (self->theme_dark)
         gtk_toggle_button_set_active(self->theme_dark, g_strcmp0(mode, "dark") == 0);
+    if (self->theme_lightsout)
+        gtk_toggle_button_set_active(self->theme_lightsout, g_strcmp0(mode, "lightsout") == 0);
 }
 
 static void change_theme(GSimpleAction *action, GVariant *value, gpointer ud)
 {
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     const char *mode = g_variant_get_string(value, NULL);
-    if (g_strcmp0(mode, "light") != 0 && g_strcmp0(mode, "dark") != 0) mode = "follow";
+    if (g_strcmp0(mode, "light") != 0 && g_strcmp0(mode, "dark") != 0 &&
+        g_strcmp0(mode, "lightsout") != 0 && g_strcmp0(mode, "follow") != 0)
+        mode = "follow";
     config_set_string("Interface", "theme", mode);
     config_save();
     apply_theme_from_config();
-    g_simple_action_set_state(action, value);
+    g_simple_action_set_state(action, g_variant_new_string(mode));
     update_theme_buttons(self, mode);
     apply_theme_to_all_editors(self);
 }
@@ -1492,8 +1485,11 @@ static GtkWidget *build_git_dialog_content(SilktexWindow *self)
 
 static void show_git_dialog(SilktexWindow *self)
 {
+    /* Do not adw_dialog_present an already-shown dialog: it can re-enter
+     * AdwDialogHost / AdwFloatingSheet and trigger "Broken accounting of active
+     * state" from GTK.  ::closed clears self->git_dialog, so a non-NULL
+     * reference means this dialog is still the presented one. */
     if (self->git_dialog != NULL) {
-        adw_dialog_present(self->git_dialog, GTK_WIDGET(self));
         update_git_dialog(self);
         return;
     }
@@ -1519,12 +1515,13 @@ static void action_git_status(GSimpleAction *a, GVariant *p, gpointer ud)
     refresh_git_state(self);
 }
 
-static gboolean idle_focus_git_commit_entry(gpointer user_data)
+/* Focus the commit field after the sheet is on screen; never grab in the
+ * same tick as adw_dialog_present (also contributes to bad active state). */
+static void on_git_commit_entry_mapped(GtkWidget *entry, gpointer user_data)
 {
-    SilktexWindow *self = SILKTEX_WINDOW(user_data);
-    if (self->git_commit_message != NULL)
-        gtk_widget_grab_focus(GTK_WIDGET(self->git_commit_message));
-    return G_SOURCE_REMOVE;
+    (void)user_data;
+    g_signal_handlers_disconnect_by_func(entry, G_CALLBACK(on_git_commit_entry_mapped), NULL);
+    gtk_widget_grab_focus(entry);
 }
 
 static void action_git_commit(GSimpleAction *a, GVariant *p, gpointer ud)
@@ -1533,7 +1530,12 @@ static void action_git_commit(GSimpleAction *a, GVariant *p, gpointer ud)
     (void)p;
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     show_git_dialog(self);
-    g_idle_add(idle_focus_git_commit_entry, self);
+    if (self->git_commit_message == NULL) return;
+    GtkWidget *entry = GTK_WIDGET(self->git_commit_message);
+    if (gtk_widget_get_mapped(entry))
+        gtk_widget_grab_focus(entry);
+    else
+        g_signal_connect(entry, "map", G_CALLBACK(on_git_commit_entry_mapped), NULL);
 }
 
 static void action_git_pull(GSimpleAction *a, GVariant *p, gpointer ud)
@@ -1882,6 +1884,35 @@ static void install_silktex_chrome_css(void)
         "  min-height: 1px;"
         "  background: @borders;"
         "  box-shadow: none;"
+        "}"
+        /* Outline column: one hairline + soft depth so the split is not a flat
+         * seam; .view keeps it on the same colour family as the editor. */
+        ".silktex-sidebar-pane {"
+        "  box-shadow: 1px 0 0 0 @borders, 1px 0 4px alpha(black, 0.2);"
+        "}"
+        /* Bottom toolbars: no top hairline, no in-bar separators. */
+        "box.toolbar.silktex-bottom-toolbar, box.silktex-bottom-toolbar {"
+        "  border: none;"
+        "  box-shadow: none;"
+        "  outline: none;"
+        "}"
+        "box.silktex-bottom-toolbar > separator, box.toolbar.silktex-bottom-toolbar > separator, "
+        "box.silktex-bottom-toolbar separator, box.toolbar.silktex-bottom-toolbar separator {"
+        "  min-width: 0;"
+        "  min-height: 0;"
+        "  background: transparent;"
+        "  color: transparent;"
+        "  margin: 0;"
+        "  padding: 0;"
+        "  border: none;"
+        "}"
+        "revealer.silktex-compile-log {"
+        "  box-shadow: none;"
+        "  border: none;"
+        "}"
+        "revealer.silktex-compile-log > * {"
+        "  box-shadow: none;"
+        "  border: none;"
         "}");
     gtk_style_context_add_provider_for_display(gdk_display_get_default(),
                                                GTK_STYLE_PROVIDER(provider),
@@ -1927,11 +1958,23 @@ static void draw_theme_swatch(GtkDrawingArea *area, cairo_t *cr, int width, int 
         cairo_close_path(cr);
         cairo_set_source_rgb(cr, 0.08, 0.08, 0.09);
         cairo_fill(cr);
+    } else if (g_strcmp0(mode, "lightsout") == 0) {
+        cairo_set_source_rgb(cr, 0.02, 0.02, 0.02);
+        cairo_paint(cr);
+        /* Dim corner — reads as a black canvas with a hint of light. */
+        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.06);
+        cairo_move_to(cr, x + size, y);
+        cairo_line_to(cr, x + size, y + size);
+        cairo_line_to(cr, x, y + size);
+        cairo_close_path(cr);
+        cairo_fill(cr);
     } else if (g_strcmp0(mode, "dark") == 0) {
-        cairo_set_source_rgb(cr, 0.08, 0.08, 0.09);
+        /* Gruvbox-ish dark, distinct from “Lights out” */
+        cairo_set_source_rgb(cr, 0.16, 0.15, 0.14);
         cairo_paint(cr);
     } else {
-        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+        /* Light / follow light half */
+        cairo_set_source_rgb(cr, 0.99, 0.96, 0.9);
         cairo_paint(cr);
     }
 
@@ -2026,18 +2069,22 @@ static void install_primary_popover(SilktexWindow *self)
     gtk_widget_set_halign(theme, GTK_ALIGN_CENTER);
 
     GtkWidget *follow = make_theme_toggle("follow", _("Follow System Theme"), self);
-    GtkWidget *light = make_theme_toggle("light", _("Light Theme"), self);
-    GtkWidget *dark = make_theme_toggle("dark", _("Dark Theme"), self);
+    GtkWidget *light = make_theme_toggle("light", _("Gruvbox (light)"), self);
+    GtkWidget *dark = make_theme_toggle("dark", _("Gruvbox (dark)"), self);
+    GtkWidget *lout = make_theme_toggle("lightsout", _("Lights out"), self);
     gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(light), GTK_TOGGLE_BUTTON(follow));
     gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(dark), GTK_TOGGLE_BUTTON(follow));
+    gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(lout), GTK_TOGGLE_BUTTON(follow));
 
     self->theme_follow = GTK_TOGGLE_BUTTON(follow);
     self->theme_light = GTK_TOGGLE_BUTTON(light);
     self->theme_dark = GTK_TOGGLE_BUTTON(dark);
+    self->theme_lightsout = GTK_TOGGLE_BUTTON(lout);
 
     gtk_box_append(GTK_BOX(theme), follow);
     gtk_box_append(GTK_BOX(theme), light);
     gtk_box_append(GTK_BOX(theme), dark);
+    gtk_box_append(GTK_BOX(theme), lout);
     gtk_box_append(GTK_BOX(box), theme);
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
@@ -2582,6 +2629,7 @@ static void silktex_window_init(SilktexWindow *self)
      * left. */
     {
         GtkWidget *revealer = gtk_revealer_new();
+        gtk_widget_add_css_class(revealer, "silktex-compile-log");
         gtk_revealer_set_transition_type(GTK_REVEALER(revealer),
                                          GTK_REVEALER_TRANSITION_TYPE_SLIDE_UP);
         gtk_revealer_set_reveal_child(GTK_REVEALER(revealer), FALSE);

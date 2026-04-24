@@ -5,6 +5,7 @@
  */
 
 #include "editor.h"
+#include "style-schemes.h"
 #include "configfile.h"
 #include "constants.h"
 #include "i18n.h"
@@ -344,12 +345,19 @@ gboolean silktex_editor_can_redo(SilktexEditor *self)
 void silktex_editor_set_style_scheme(SilktexEditor *self, const char *scheme_id)
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
+    if (scheme_id == NULL || !*scheme_id) return;
+
+    silktex_init_style_scheme_paths();
 
     GtkSourceStyleScheme *scheme =
         gtk_source_style_scheme_manager_get_scheme(self->style_manager, scheme_id);
-    if (scheme != NULL) {
-        gtk_source_buffer_set_style_scheme(self->buffer, scheme);
-    }
+    if (scheme == NULL) scheme =
+        gtk_source_style_scheme_manager_get_scheme(self->style_manager, silktex_resolved_style_scheme_id());
+    if (scheme == NULL)
+        scheme = gtk_source_style_scheme_manager_get_scheme(self->style_manager, "Adwaita-dark");
+    if (scheme == NULL)
+        scheme = gtk_source_style_scheme_manager_get_scheme(self->style_manager, "Adwaita");
+    if (scheme != NULL) gtk_source_buffer_set_style_scheme(self->buffer, scheme);
 }
 
 void silktex_editor_set_font(SilktexEditor *self, const char *font_desc)
@@ -594,8 +602,7 @@ void silktex_editor_apply_settings(SilktexEditor *self)
     }
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(self->view), wrap);
 
-    const char *scheme = config_get_string("Editor", "style_scheme");
-    if (scheme && *scheme) silktex_editor_set_style_scheme(self, scheme);
+    silktex_editor_set_style_scheme(self, silktex_resolved_style_scheme_id());
 
     const char *font = config_get_string("Editor", "font");
     if (font && *font) silktex_editor_set_font(self, font);

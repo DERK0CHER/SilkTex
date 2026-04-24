@@ -256,6 +256,16 @@ static void preview_bg_color(SilktexPreview *self, double *r, double *g, double 
     }
 }
 
+/* Subtle “paper” depth under the PDF page, visible against the view background. */
+static void draw_page_paper_shadow(cairo_t *cr, double x, double y, int lw, int lh)
+{
+    for (int i = 3; i >= 1; i--) {
+        cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.08 * (double)(4 - i));
+        cairo_rectangle(cr, x + (double)i, y + (double)i, (double)lw, (double)lh);
+        cairo_fill(cr);
+    }
+}
+
 static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer user_data)
 {
     SilktexPreview *self = SILKTEX_PREVIEW(user_data);
@@ -291,6 +301,7 @@ static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, 
         if (x < 0) x = PAGE_PADDING;
         double y = PAGE_PADDING;
 
+        draw_page_paper_shadow(cr, x, y, lw, lh);
         cairo_set_source_surface(cr, self->cached_surface, x, y);
         cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
         cairo_paint(cr);
@@ -312,6 +323,7 @@ static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, 
         double x = (width - lw) / 2.0;
         if (x < 0) x = PAGE_PADDING;
 
+        draw_page_paper_shadow(cr, x, y, lw, lh);
         cairo_set_source_surface(cr, surface, x, y);
         cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
         cairo_paint(cr);

@@ -81,15 +81,20 @@ template $SilktexWindow : Adw.ApplicationWindow {
         min-sidebar-width: 180;
         max-sidebar-width: 400;
 
+        styles ["silktex-main-split"]
+
         sidebar: Gtk.Box sidebar_box {
           orientation: vertical;
+          // Same “view” base as the editor/scroll, so the outline column does
+          // not look like a different card colour than the main pane.
+          styles ["view", "silktex-sidebar-pane"]
 
           Gtk.Box {
             orientation: horizontal;
-            margin-start: 12;
-            margin-end: 12;
-            margin-top: 8;
-            margin-bottom: 4;
+            margin-start: 10;
+            margin-end: 10;
+            margin-top: 0;
+            margin-bottom: 2;
             spacing: 6;
 
             Gtk.Label sidebar_title {
@@ -149,7 +154,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
               margin-bottom: 4;
               spacing: 4;
 
-              styles ["toolbar"]
+              styles ["toolbar", "silktex-bottom-toolbar"]
 
               Gtk.Button btn_compile {
                 icon-name: "media-playback-start-symbolic";
@@ -175,12 +180,6 @@ template $SilktexWindow : Adw.ApplicationWindow {
                 styles ["flat"]
               }
 
-              Gtk.Separator {
-                orientation: vertical;
-                margin-start: 4;
-                margin-end: 4;
-              }
-
               Gtk.MenuButton btn_insert {
                 icon-name: "insert-object-symbolic";
                 tooltip-text: _("Insert...");
@@ -195,12 +194,6 @@ template $SilktexWindow : Adw.ApplicationWindow {
                 menu-model: format_menu;
 
                 styles ["flat"]
-              }
-
-              Gtk.Separator {
-                orientation: vertical;
-                margin-start: 4;
-                margin-end: 4;
               }
 
               Gtk.Button btn_find {
@@ -257,7 +250,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
               margin-start: 6;
               margin-end: 6;
 
-              styles ["toolbar"]
+              styles ["toolbar", "silktex-bottom-toolbar"]
 
               [start]
               Gtk.Box {

@@ -30,6 +30,8 @@ silktex_sources = files(
     'main.c',
     'configfile.c',
     'configfile.h',
+    'style-schemes.c',
+    'style-schemes.h',
     'constants.h',
     'utils.c',
     'utils.h',
