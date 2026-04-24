@@ -11,6 +11,8 @@ silktex_sources = files(
     'editor.h',
     'compiler.c',
     'compiler.h',
+    'git.c',
+    'git.h',
     'preview.c',
     'preview.h',
     'prefs.c',
