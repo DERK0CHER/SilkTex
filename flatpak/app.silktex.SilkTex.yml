@@ -57,8 +57,8 @@ modules:
   - name: silktex
     buildsystem: meson
     config-opts:
+      # flatpak-builder already passes --prefix=/app; -Dprefix duplicates it on Meson.
       - --buildtype=release
-      - -Dprefix=/app
     sources:
       # Flathub requires reproducible sources: always pin tag + commit SHA.
       - type: git
