@@ -76,6 +76,14 @@
   </screenshots>
 
   <releases>
+    <release version="1.0.2" date="2026-04-26">
+      <description>
+        <p>Maintenance release.</p>
+        <ul>
+          <li>Flatpak targets GNOME 50; manifest and docs aligned with the runtime.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.9.1" date="2026-04-24">
       <description>
         <p>First Flathub-ready release.</p>

@@ -60,11 +60,11 @@ modules:
       # flatpak-builder already passes --prefix=/app; -Dprefix duplicates it on Meson.
       - --buildtype=release
     sources:
-      # Flathub requires reproducible sources: always pin tag + commit SHA.
+      # Pin the release tag. After tagging this commit as v1.0.2 on GitHub,
+      # set `commit:` to `git rev-parse v1.0.2^{commit}` (must match the tag).
       - type: git
         url: https://github.com/DERK0CHER/SilkTex.git
-        tag: v0.9.1
-        commit: ecc2019deedb42724b1061b7ff27a5c2e8dbb4f0
+        tag: v1.0.2
         x-checker-data:
           type: git
           tag-pattern: '^v([\d.]+)$'
