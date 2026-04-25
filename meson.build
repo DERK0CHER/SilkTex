@@ -49,30 +49,56 @@ pkgdatadir  = join_paths(datadir, meson.project_name())
 # modernised; safe to remove once those files no longer reference it.
 gummidir    = pkgdatadir
 
-# Homebrew leaves pkg-config metadata under $(brew --prefix)/lib/pkgconfig (and
-# sometimes only under $(brew --prefix poppler)/lib/pkgconfig). IDEs and minimal
-# shells often run Meson without PKG_CONFIG_PATH, so poppler-glib.pc is
-# invisible. If the probe misses on Darwin, retry all deps with those paths.
-brew_pc_extra = []
+# Primary target is Linux (Flatpak / distro packages). macOS is supported for
+# local dev only. When pkg-config does not see GTK/Poppler (minimal shells,
+# custom prefixes), extend the search path before failing.
+
+fs = import('fs')
+extra_pc_paths = []
 _poppler_probe = dependency('poppler-glib', required: false)
+
 if not _poppler_probe.found() and host_machine.system() == 'darwin'
+    # Homebrew: metadata under $(brew --prefix)/lib/pkgconfig and often under
+    # $(brew --prefix poppler)/lib/pkgconfig only.
     _brew = find_program('brew', required: false)
     if _brew.found()
         _r = run_command(_brew, '--prefix', capture: true, check: false)
         if _r.returncode() == 0
             _root = _r.stdout().strip()
-            brew_pc_extra += join_paths(_root, 'lib', 'pkgconfig')
+            extra_pc_paths += join_paths(_root, 'lib', 'pkgconfig')
         endif
         _rp = run_command(_brew, '--prefix', 'poppler', capture: true, check: false)
         if _rp.returncode() == 0
-            brew_pc_extra += join_paths(_rp.stdout().strip(), 'lib', 'pkgconfig')
+            extra_pc_paths += join_paths(_rp.stdout().strip(), 'lib', 'pkgconfig')
         endif
     endif
+elif not _poppler_probe.found() and host_machine.system() == 'linux'
+    # Self-built stacks under /usr/local, multiarch libdirs, or --prefix=…
+    # installs are common; Meson often runs without PKG_CONFIG_PATH set.
+    _linux_pc_candidates = [
+        join_paths(get_option('prefix'), 'lib', 'pkgconfig'),
+        join_paths(
+            get_option('prefix'),
+            'lib',
+            host_machine.cpu_family() + '-linux-gnu',
+            'pkgconfig',
+        ),
+        '/usr/local/lib/pkgconfig',
+        '/usr/local/lib/x86_64-linux-gnu/pkgconfig',
+        '/usr/local/lib/aarch64-linux-gnu/pkgconfig',
+        '/usr/lib/x86_64-linux-gnu/pkgconfig',
+        '/usr/lib/aarch64-linux-gnu/pkgconfig',
+    ]
+    foreach _pc : _linux_pc_candidates
+        if fs.is_dir(_pc)
+            extra_pc_paths += _pc
+        endif
+    endforeach
 endif
 
 math_dep = cc.find_library('m', required: false)
-if brew_pc_extra.length() > 0
-    intl_dep = dependency('intl', required: false, pkg_config_path: brew_pc_extra)
+if extra_pc_paths.length() > 0
+    intl_dep = dependency('intl', required: false, pkg_config_path: extra_pc_paths)
 else
     intl_dep = dependency('intl', required: false)
 endif
@@ -80,14 +106,14 @@ if not intl_dep.found()
     intl_dep = cc.find_library('intl', required: false)
 endif
 
-if brew_pc_extra.length() > 0
+if extra_pc_paths.length() > 0
     project_dependencies = [
-        dependency('gtk4', pkg_config_path: brew_pc_extra),
-        dependency('libadwaita-1', pkg_config_path: brew_pc_extra),
-        dependency('glib-2.0', pkg_config_path: brew_pc_extra),
-        dependency('json-glib-1.0', pkg_config_path: brew_pc_extra),
-        dependency('gtksourceview-5', pkg_config_path: brew_pc_extra),
-        dependency('poppler-glib', pkg_config_path: brew_pc_extra),
+        dependency('gtk4', pkg_config_path: extra_pc_paths),
+        dependency('libadwaita-1', pkg_config_path: extra_pc_paths),
+        dependency('glib-2.0', pkg_config_path: extra_pc_paths),
+        dependency('json-glib-1.0', pkg_config_path: extra_pc_paths),
+        dependency('gtksourceview-5', pkg_config_path: extra_pc_paths),
+        dependency('poppler-glib', pkg_config_path: extra_pc_paths),
         math_dep,
         intl_dep,
     ]
