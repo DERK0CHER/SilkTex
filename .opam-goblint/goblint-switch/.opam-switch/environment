@@ -1,0 +1,2 @@
+OPAM_SWITCH_PREFIX	=	/Users/beba/software/SilkTex/.opam-goblint/goblint-switch	:	target	Prefix\ of\ the\ current\ opam\ switch
+PATH	=+=	/Users/beba/software/SilkTex/.opam-goblint/goblint-switch/bin	:	target	Binary\ dir\ for\ opam\ switch\ goblint-switch

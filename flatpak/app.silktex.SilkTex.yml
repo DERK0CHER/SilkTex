@@ -2,20 +2,18 @@
 # Copyright (C) 2026 Bela Georg Barthelmes
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Flathub-ready manifest. The GNOME 49 Platform already provides GTK 4
-# (>= 4.20), libadwaita (>= 1.8), gtksourceview 5 and poppler-glib, so
-# the only module we build is SilkTex itself.
+# Flatpak manifest for Flathub.
+# GNOME 49 already ships GTK4, libadwaita, gtksourceview5 and poppler-glib,
+# so we only build SilkTex here.
 #
-# NOTE on LaTeX compilation inside the sandbox: SilkTex shells out to
-# pdflatex / bibtex / makeindex / synctex at runtime. Since TeX Live is
-# several GB, we use the host's install via `flatpak-spawn --host` rather
-# than bundling it. That requires `--talk-name=org.freedesktop.Flatpak`,
-# which Flathub reviewers will flag as a sandbox hole. Alternatives if a
-# reviewer objects:
-#   1. Build against the `org.freedesktop.Sdk.Extension.texlive` SDK
-#      extension and use the in-sandbox binaries. Adds a few hundred MB.
-#   2. Ship without compile support and point users at `flatpak override
-#      --user --talk-name=org.freedesktop.Flatpak app.silktex.SilkTex`.
+# LaTeX compile tools (pdflatex, bibtex, makeindex, synctex) are executed
+# from the host via `flatpak-spawn --host`. Bundling TeX Live would add
+# several GB to the Flatpak.
+#
+# This is why we request `--talk-name=org.freedesktop.Flatpak`.
+# Flathub reviewers may ask to tighten this. If needed:
+#   1. Use `org.freedesktop.Sdk.Extension.texlive` and compile in-sandbox.
+#   2. Disable compile support in Flatpak and document an override command.
 app-id: app.silktex.SilkTex
 runtime: org.gnome.Platform
 runtime-version: '49'
@@ -23,29 +21,27 @@ sdk: org.gnome.Sdk
 command: silktex
 
 finish-args:
-  # Basics for a GUI app.
+  # Basic desktop app permissions.
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
   - --device=dri
 
-  # Online LaTeX packages, biblatex online lookups, documentation links.
+  # Network access for package installs and web links.
   - --share=network
 
-  # Users keep .tex projects anywhere on their disk; the editor is
-  # inherently a file-system tool.  `host` is kept here to match the
-  # behaviour of other LaTeX editors on Flathub (TeXstudio, Setzer, Kile).
+  # LaTeX projects often live outside sandbox dirs, so we keep host FS access.
+  # This matches how other LaTeX editors are packaged on Flathub.
   - --filesystem=host
 
-  # Per-user config + cache (snippets.json, silktex.ini, compile logs).
+  # App config and cache directories.
   - --filesystem=xdg-config/silktex:create
   - --filesystem=xdg-cache/silktex:create
 
-  # Let the user launch the compiled PDF in an external viewer via the
-  # OpenURI portal (no extra filesystem access needed).
+  # Open compiled PDFs in external viewers via the portal.
   - --talk-name=org.freedesktop.portal.OpenURI
 
-  # Run host-installed TeX Live. See the note at the top of this file.
+  # Needed for `flatpak-spawn --host` to call host TeX tools.
   - --talk-name=org.freedesktop.Flatpak
 
 cleanup:
@@ -64,9 +60,7 @@ modules:
       - --buildtype=release
       - -Dprefix=/app
     sources:
-      # Flathub requires reproducible sources. Replace `commit:` with the
-      # exact SHA of the tag you are publishing (CI keeps this in sync,
-      # see the `Update Flathub manifest` workflow in the SilkTex repo).
+      # Flathub requires reproducible sources: always pin tag + commit SHA.
       - type: git
         url: https://github.com/DERK0CHER/SilkTex.git
         tag: v0.9.1
