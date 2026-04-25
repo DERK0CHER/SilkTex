@@ -2,6 +2,7 @@ opam-version: "2.0"
 opam-root-version: "2.2"
 repositories: "default"
 installed-switches: "goblint-switch"
+switch: "goblint-switch"
 download-jobs: 3
 eval-variables: [
   [

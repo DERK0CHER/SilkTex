@@ -4,6 +4,7 @@ opam-root: "/Users/beba/software/SilkTex/.opam-goblint"
 invariant: [
   "ocaml-base-compiler" {= "4.14.2"}
 ]
+depext-bypass: ["autoconf" "gcc" "pkgconf"]
 paths {
   
 }

@@ -1,5 +1,0 @@
-# context              2.5.1 | macos/arm64 |  | https://opam.ocaml.org#9e0a49a82187f4efe4f6beb9e9796cee116f8dcf
-# path                 ~/software/SilkTex/.opam-goblint/goblint-switch/.opam-switch/build/ocaml-base-compiler.4.14.2
-# command              /usr/bin/make -j7
-# env-file             ~/software/SilkTex/.opam-goblint/log/ocaml-base-compiler-6454-16be94.env
-# output-file          ~/software/SilkTex/.opam-goblint/log/ocaml-base-compiler-6454-16be94.out
