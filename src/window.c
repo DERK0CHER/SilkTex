@@ -315,6 +315,8 @@ static GtkWidget *create_editor_page(SilktexWindow *self, SilktexEditor *editor)
 {
     GtkWidget *scrolled = gtk_scrolled_window_new();
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), silktex_editor_get_view(editor));
+    /* Place vertical scrollbar to the left of the text (LTR: GTK_CORNER_TOP_RIGHT). */
+    gtk_scrolled_window_set_placement(GTK_SCROLLED_WINDOW(scrolled), GTK_CORNER_TOP_RIGHT);
     gtk_widget_set_vexpand(scrolled, TRUE);
     gtk_widget_set_hexpand(scrolled, TRUE);
 
@@ -1810,8 +1812,22 @@ static void on_primary_popover_action(GtkButton *button, gpointer user_data)
     }
 }
 
-static GtkWidget *make_primary_popover_button(const char *label, const char *icon_name,
-                                              const char *action, SilktexWindow *self)
+/* vcs-*, emblem-ok-* and similar are not installed with every icon theme. */
+static void silktex_image_set_icon_list(GtkImage *image, const char *const *candidates)
+{
+    if (candidates == NULL || candidates[0] == NULL) return;
+    GtkIconTheme *t = gtk_icon_theme_get_for_display(gdk_display_get_default());
+    for (int i = 0; candidates[i]; i++) {
+        if (gtk_icon_theme_has_icon(t, candidates[i])) {
+            gtk_image_set_from_icon_name(image, candidates[i]);
+            return;
+        }
+    }
+    gtk_image_set_from_icon_name(image, candidates[0]);
+}
+
+static GtkWidget *make_primary_popover_with_icons(const char *label, const char *const *icon_candidates,
+                                                    const char *action, SilktexWindow *self)
 {
     GtkWidget *button = gtk_button_new();
     gtk_widget_add_css_class(button, "flat");
@@ -1822,7 +1838,8 @@ static GtkWidget *make_primary_popover_button(const char *label, const char *ico
     gtk_widget_set_margin_start(box, 6);
     gtk_widget_set_margin_end(box, 6);
 
-    GtkWidget *icon = gtk_image_new_from_icon_name(icon_name);
+    GtkWidget *icon = gtk_image_new();
+    silktex_image_set_icon_list(GTK_IMAGE(icon), icon_candidates);
     gtk_box_append(GTK_BOX(box), icon);
 
     GtkWidget *lbl = gtk_label_new_with_mnemonic(label);
@@ -1833,6 +1850,13 @@ static GtkWidget *make_primary_popover_button(const char *label, const char *ico
     gtk_button_set_child(GTK_BUTTON(button), box);
     g_signal_connect(button, "clicked", G_CALLBACK(on_primary_popover_action), self);
     return button;
+}
+
+static GtkWidget *make_primary_popover_button(const char *label, const char *icon_name,
+                                              const char *action, SilktexWindow *self)
+{
+    const char *one[] = {icon_name, NULL};
+    return make_primary_popover_with_icons(label, one, action, self);
 }
 
 static void install_theme_swatch_css(void)
@@ -2105,10 +2129,30 @@ static void install_primary_popover(SilktexWindow *self)
                    make_primary_popover_button(_("_Export to PDF…"), "document-save-as-symbolic",
                                                "win.export-pdf", self));
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-    gtk_box_append(GTK_BOX(box), make_primary_popover_button(
-                         _("_Git Status…"), "vcs-git-symbolic", "win.git-status", self));
-    gtk_box_append(GTK_BOX(box), make_primary_popover_button(
-                         _("Git _Commit…"), "emblem-ok-symbolic", "win.git-commit", self));
+    {
+        /* Primary names are from Adwaita; fallbacks for minimal / macOS themes. */
+        static const char *const git_status_icons[] = {
+            "vcs-git-symbolic",
+            "view-list-detail-symbolic",
+            "view-list-symbolic",
+            "folder-saved-search-symbolic",
+            "dialog-information-symbolic",
+            "folder-symbolic",
+            NULL,
+        };
+        static const char *const git_commit_icons[] = {
+            "emblem-ok-symbolic",
+            "object-select-symbolic",
+            "mail-send-symbolic",
+            "document-save-symbolic",
+            "insert-object-symbolic",
+            NULL,
+        };
+        gtk_box_append(GTK_BOX(box), make_primary_popover_with_icons(
+                         _("_Git Status…"), git_status_icons, "win.git-status", self));
+        gtk_box_append(GTK_BOX(box), make_primary_popover_with_icons(
+                         _("Git _Commit…"), git_commit_icons, "win.git-commit", self));
+    }
     gtk_box_append(GTK_BOX(box), make_primary_popover_button(
                          _("Git _Pull"), "network-receive-symbolic", "win.git-pull", self));
     gtk_box_append(GTK_BOX(box), make_primary_popover_button(
