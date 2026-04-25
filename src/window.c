@@ -101,6 +101,13 @@ void silktex_window_apply_theme_to_all_editors(SilktexWindow *self)
     }
 }
 
+void silktex_window_apply_preview_theme(SilktexWindow *self)
+{
+    if (!self || !self->preview) return;
+    const char *mode = config_get_string("Interface", "theme");
+    silktex_preview_set_inverted(self->preview, g_strcmp0(mode, "dark") == 0);
+}
+
 void silktex_window_focus_active_editor(SilktexWindow *self)
 {
     SilktexEditor *editor = silktex_window_get_active_editor(self);
@@ -220,6 +227,7 @@ static void on_compile_finished(SilktexCompiler *compiler, gpointer user_data)
     }
     silktex_window_update_log_panel(self);
     if (self->preview_status) gtk_label_set_label(self->preview_status, _("Compiled"));
+    if (self->log_toggle) gtk_widget_remove_css_class(GTK_WIDGET(self->log_toggle), "error");
 }
 
 static void on_compile_error(SilktexCompiler *compiler, gpointer user_data)
@@ -228,6 +236,7 @@ static void on_compile_error(SilktexCompiler *compiler, gpointer user_data)
     silktex_window_show_toast(self, _("Compilation error — see compile log"));
     silktex_window_update_log_panel(self);
     if (self->preview_status) gtk_label_set_label(self->preview_status, _("Compile error"));
+    if (self->log_toggle) gtk_widget_add_css_class(GTK_WIDGET(self->log_toggle), "error");
 
     /*
      * The compiler restores the last-good PDF on failure, so if the
@@ -249,17 +258,25 @@ static void on_preview_page_changed(GObject *p, GParamSpec *ps, gpointer ud)
     silktex_window_update_page_label(SILKTEX_WINDOW(ud));
 }
 
+static gboolean on_editor_scroll_zoom(GtkEventControllerScroll *ctrl, double dx, double dy,
+                                      gpointer user_data);
+
 /* -------------------------------------------------------------------------- */
 /* Tab page widget — scrollable editor view, ref stored as object data */
 
 GtkWidget *silktex_window_create_editor_page(SilktexWindow *self, SilktexEditor *editor)
 {
     GtkWidget *scrolled = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled), GTK_POLICY_NEVER,
+                                   GTK_POLICY_AUTOMATIC);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), silktex_editor_get_view(editor));
     /* Place vertical scrollbar to the left of the text (LTR: GTK_CORNER_TOP_RIGHT). */
     gtk_scrolled_window_set_placement(GTK_SCROLLED_WINDOW(scrolled), GTK_CORNER_TOP_RIGHT);
     gtk_widget_set_vexpand(scrolled, TRUE);
     gtk_widget_set_hexpand(scrolled, TRUE);
+    GtkEventController *scroll = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL);
+    g_signal_connect(scroll, "scroll", G_CALLBACK(on_editor_scroll_zoom), self);
+    gtk_widget_add_controller(scrolled, scroll);
 
     g_object_set_data_full(G_OBJECT(scrolled), "silktex-editor", g_object_ref(editor),
                            g_object_unref);
@@ -270,6 +287,20 @@ GtkWidget *silktex_window_create_editor_page(SilktexWindow *self, SilktexEditor 
     silktex_window_apply_theme_to_editor(editor);
 
     return scrolled;
+}
+
+static gboolean on_editor_scroll_zoom(GtkEventControllerScroll *ctrl, double dx, double dy,
+                                      gpointer user_data)
+{
+    (void)dx;
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    GdkModifierType state = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(ctrl));
+    if ((state & GDK_CONTROL_MASK) == 0) return GDK_EVENT_PROPAGATE;
+    if (dy < 0)
+        gtk_widget_activate_action(GTK_WIDGET(self), "win.zoom-in", NULL);
+    else if (dy > 0)
+        gtk_widget_activate_action(GTK_WIDGET(self), "win.zoom-out", NULL);
+    return GDK_EVENT_STOP;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -963,6 +994,7 @@ void silktex_window_apply_editor_paned_half_split(SilktexWindow *self)
     gtk_paned_set_position(self->editor_paned, half);
     self->preview_pane_silence = FALSE;
     self->preview_pane_pos = gtk_paned_get_position(self->editor_paned);
+    self->preview_pane_ratio = (double)self->preview_pane_pos / (double)w;
     self->preview_pane_restorable = TRUE;
     self->preview_split_seeded = TRUE;
 }
@@ -981,11 +1013,15 @@ static void apply_editor_pane_restore(SilktexWindow *self)
         return;
     }
 
-    int pos = clamp_editor_pane_start(w, self->preview_pane_pos);
+    int target = self->preview_pane_pos;
+    if (self->preview_pane_ratio > 0.0 && self->preview_pane_ratio < 1.0)
+        target = (int)(self->preview_pane_ratio * (double)w);
+    int pos = clamp_editor_pane_start(w, target);
     self->preview_pane_silence = TRUE;
     gtk_paned_set_position(self->editor_paned, pos);
     self->preview_pane_silence = FALSE;
     self->preview_pane_pos = gtk_paned_get_position(self->editor_paned);
+    self->preview_pane_ratio = (double)self->preview_pane_pos / (double)w;
     self->preview_split_seeded = TRUE;
 }
 
@@ -1005,6 +1041,7 @@ static void on_preview_toggled(GtkToggleButton *button, gpointer user_data)
         int w = gtk_widget_get_width(GTK_WIDGET(self->editor_paned));
         if (w > 0) {
             self->preview_pane_pos = gtk_paned_get_position(self->editor_paned);
+            self->preview_pane_ratio = (double)self->preview_pane_pos / (double)w;
             self->preview_pane_restorable = TRUE;
         }
     }
@@ -1036,9 +1073,17 @@ static void on_window_width_changed(GObject *object, GParamSpec *pspec, gpointer
 
     self->preview_narrow = narrow;
 
-    if (narrow && gtk_toggle_button_get_active(self->btn_preview)) {
-        self->preview_auto_collapsed = TRUE;
-        gtk_toggle_button_set_active(self->btn_preview, FALSE);
+    if (narrow && gtk_toggle_button_get_active(self->btn_preview) && self->editor_paned) {
+        int w = gtk_widget_get_width(GTK_WIDGET(self->editor_paned));
+        if (w > 0) {
+            int collapsed_pos = clamp_editor_pane_start(w, w - 340);
+            self->preview_pane_silence = TRUE;
+            gtk_paned_set_position(self->editor_paned, collapsed_pos);
+            self->preview_pane_silence = FALSE;
+            self->preview_pane_pos = collapsed_pos;
+            self->preview_pane_ratio = (double)collapsed_pos / (double)w;
+            self->preview_pane_restorable = TRUE;
+        }
     } else if (!narrow && self->preview_auto_collapsed) {
         self->preview_auto_collapsed = FALSE;
         gtk_toggle_button_set_active(self->btn_preview, TRUE);
@@ -1065,6 +1110,7 @@ static void on_editor_paned_position_changed(GObject *object, GParamSpec *pspec,
     }
     if (!self->preview_split_seeded) return;
     self->preview_pane_pos = gtk_paned_get_position(self->editor_paned);
+    if (w > 0) self->preview_pane_ratio = (double)self->preview_pane_pos / (double)w;
     self->preview_pane_restorable = TRUE;
 }
 
@@ -1292,6 +1338,9 @@ static void silktex_window_class_init(SilktexWindowClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_sidebar);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_compile);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_menu);
+    gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_export_doc);
+    gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_git_menu);
+    gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_export);
 }
 
 /*
@@ -1345,6 +1394,15 @@ void silktex_window_install_chrome_css(void)
         "revealer.silktex-compile-log > * {"
         "  box-shadow: none;"
         "  border: none;"
+        "}"
+        "togglebutton.error {"
+        "  color: @error_color;"
+        "}"
+        ".silktex-preview-scroller scrollbar slider {"
+        "  background-color: alpha(0.5, 0.45);"
+        "}"
+        ".silktex-preview-scroller scrollbar {"
+        "  background-color: alpha(0.5, 0.15);"
         "}");
     gtk_style_context_add_provider_for_display(gdk_display_get_default(),
                                                GTK_STYLE_PROVIDER(provider),
@@ -1402,6 +1460,34 @@ static void silktex_window_init(SilktexWindow *self)
     silktex_window_install_primary_menu(self);
     silktex_window_connect_theme_follow(self);
 
+    {
+        GtkIconTheme *it = gtk_icon_theme_get_for_display(gdk_display_get_default());
+        const char *const export_icons[] = {"arrow-into-box-symbolic", "document-save-symbolic",
+                                            "document-export-symbolic", "folder-download-symbolic",
+                                            NULL};
+        const char *const git_icons[] = {"branch-arrow-symbolic", "vcs-git-symbolic",
+                                         "version-control-symbolic", "folder-symbolic", NULL};
+
+        const char *export_icon = export_icons[1];
+        for (int i = 0; export_icons[i]; i++) {
+            if (gtk_icon_theme_has_icon(it, export_icons[i])) {
+                export_icon = export_icons[i];
+                break;
+            }
+        }
+        const char *git_icon = git_icons[3];
+        for (int i = 0; git_icons[i]; i++) {
+            if (gtk_icon_theme_has_icon(it, git_icons[i])) {
+                git_icon = git_icons[i];
+                break;
+            }
+        }
+
+        if (self->btn_export_doc) gtk_button_set_icon_name(self->btn_export_doc, export_icon);
+        if (self->btn_export) gtk_button_set_icon_name(self->btn_export, export_icon);
+        if (self->btn_git_menu) gtk_menu_button_set_icon_name(self->btn_git_menu, git_icon);
+    }
+
     /* ---- compiler ---- */
     self->compiler = silktex_compiler_new();
     silktex_compiler_apply_config(self->compiler);
@@ -1415,6 +1501,7 @@ static void silktex_window_init(SilktexWindow *self)
     gtk_widget_set_hexpand(GTK_WIDGET(self->preview), TRUE);
     gtk_widget_set_vexpand(GTK_WIDGET(self->preview), TRUE);
     gtk_box_append(self->preview_box, GTK_WIDGET(self->preview));
+    silktex_window_apply_preview_theme(self);
 
     if (self->editor_toolbar_view) {
         gtk_widget_set_size_request(GTK_WIDGET(self->editor_toolbar_view), SILKTEX_EDITOR_MIN_WIDTH, -1);
@@ -1491,9 +1578,8 @@ static void silktex_window_init(SilktexWindow *self)
             adw_toolbar_view_add_bottom_bar(self->editor_toolbar_view, revealer);
         }
 
-        GtkWidget *log_toggle = gtk_toggle_button_new();
-        gtk_button_set_icon_name(GTK_BUTTON(log_toggle), "text-x-generic-symbolic");
-        gtk_widget_set_tooltip_text(log_toggle, _("Compile Log"));
+        GtkWidget *log_toggle = gtk_toggle_button_new_with_label(_("Log"));
+        gtk_widget_set_tooltip_text(log_toggle, _("Log"));
         gtk_widget_add_css_class(log_toggle, "flat");
         self->log_toggle = GTK_TOGGLE_BUTTON(log_toggle);
 

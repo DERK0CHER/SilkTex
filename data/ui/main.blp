@@ -15,7 +15,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
       [start]
       Gtk.ToggleButton btn_sidebar {
         icon-name: "sidebar-show-symbolic";
-        tooltip-text: _("Toggle Document Outline (F8)");
+        tooltip-text: _("Toggle document outline");
         active: false;
       }
 
@@ -25,22 +25,15 @@ template $SilktexWindow : Adw.ApplicationWindow {
       [start]
       Gtk.Button btn_new {
         icon-name: "document-new-symbolic";
-        tooltip-text: _("New (Ctrl+N)");
+        tooltip-text: _("New");
         action-name: "win.new";
       }
 
       [start]
       Gtk.Button btn_open {
         icon-name: "document-open-symbolic";
-        tooltip-text: _("Open (Ctrl+O)");
+        tooltip-text: _("Open");
         action-name: "win.open";
-      }
-
-      [start]
-      Gtk.Button btn_save {
-        icon-name: "document-save-symbolic";
-        tooltip-text: _("Save (Ctrl+S)");
-        action-name: "win.save";
       }
 
       [title]
@@ -53,14 +46,14 @@ template $SilktexWindow : Adw.ApplicationWindow {
       Gtk.MenuButton btn_menu {
         icon-name: "open-menu-symbolic";
         menu-model: primary_menu;
-        tooltip-text: _("Main Menu (F10)");
+        tooltip-text: _("Main menu");
         primary: true;
       }
 
       [end]
       Gtk.ToggleButton btn_preview {
         icon-name: "view-dual-symbolic";
-        tooltip-text: _("Toggle Preview (F9)");
+        tooltip-text: _("Toggle preview");
         active: true;
       }
     }
@@ -158,15 +151,19 @@ template $SilktexWindow : Adw.ApplicationWindow {
 
               Gtk.Button btn_compile {
                 icon-name: "media-playback-start-symbolic";
-                tooltip-text: _("Compile (Ctrl+Enter)");
+                tooltip-text: _("Compile");
                 action-name: "win.compile";
 
                 styles ["flat"]
               }
 
+              Gtk.Separator {
+                orientation: vertical;
+              }
+
               Gtk.Button {
                 icon-name: "edit-undo-symbolic";
-                tooltip-text: _("Undo (Ctrl+Z)");
+                tooltip-text: _("Undo");
                 action-name: "win.undo";
 
                 styles ["flat"]
@@ -174,15 +171,19 @@ template $SilktexWindow : Adw.ApplicationWindow {
 
               Gtk.Button {
                 icon-name: "edit-redo-symbolic";
-                tooltip-text: _("Redo (Ctrl+Shift+Z)");
+                tooltip-text: _("Redo");
                 action-name: "win.redo";
 
                 styles ["flat"]
               }
 
+              Gtk.Separator {
+                orientation: vertical;
+              }
+
               Gtk.MenuButton btn_insert {
                 icon-name: "insert-object-symbolic";
-                tooltip-text: _("Insert...");
+                tooltip-text: _("Insert");
                 menu-model: insert_menu;
 
                 styles ["flat"]
@@ -196,9 +197,13 @@ template $SilktexWindow : Adw.ApplicationWindow {
                 styles ["flat"]
               }
 
+              Gtk.Separator {
+                orientation: vertical;
+              }
+
               Gtk.Button btn_find {
                 icon-name: "edit-find-symbolic";
-                tooltip-text: _("Find (Ctrl+F)");
+                tooltip-text: _("Find");
                 action-name: "win.find";
 
                 styles ["flat"]
@@ -206,7 +211,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
 
               Gtk.Button btn_find_replace {
                 icon-name: "edit-find-replace-symbolic";
-                tooltip-text: _("Find & Replace (Ctrl+H)");
+                tooltip-text: _("Find and replace");
                 action-name: "win.find-replace";
 
                 styles ["flat"]
@@ -215,6 +220,46 @@ template $SilktexWindow : Adw.ApplicationWindow {
               // Filler pushes the log toggle to the right edge.
               Gtk.Box {
                 hexpand: true;
+              }
+
+              Gtk.Separator {
+                orientation: vertical;
+              }
+
+              Gtk.Button {
+                icon-name: "document-save-symbolic";
+                tooltip-text: _("Save");
+                action-name: "win.save";
+
+                styles ["flat"]
+              }
+
+              Gtk.Button {
+                icon-name: "document-save-as-symbolic";
+                tooltip-text: _("Save as");
+                action-name: "win.save-as";
+
+                styles ["flat"]
+              }
+
+              Gtk.Button btn_export_doc {
+                icon-name: "document-save-symbolic";
+                tooltip-text: _("Export PDF");
+                action-name: "win.export-pdf";
+
+                styles ["flat"]
+              }
+
+              Gtk.MenuButton btn_git_menu {
+                icon-name: "folder-symbolic";
+                tooltip-text: _("Git");
+                menu-model: git_menu;
+
+                styles ["flat"]
+              }
+
+              Gtk.Separator {
+                orientation: vertical;
               }
 
               Gtk.MenuButton {
@@ -257,6 +302,14 @@ template $SilktexWindow : Adw.ApplicationWindow {
                 orientation: horizontal;
                 spacing: 2;
 
+                Gtk.MenuButton btn_zoom_menu {
+                  icon-name: "document-properties-symbolic";
+                  tooltip-text: _("View tools");
+                  menu-model: zoom_menu;
+
+                  styles ["flat"]
+                }
+
                 Gtk.Button btn_zoom_out {
                   icon-name: "zoom-out-symbolic";
                   tooltip-text: _("Zoom Out");
@@ -269,14 +322,6 @@ template $SilktexWindow : Adw.ApplicationWindow {
                   icon-name: "zoom-in-symbolic";
                   tooltip-text: _("Zoom In");
                   action-name: "win.zoom-in";
-
-                  styles ["flat"]
-                }
-
-                Gtk.MenuButton btn_zoom_menu {
-                  icon-name: "document-properties-symbolic";
-                  tooltip-text: _("Fit");
-                  menu-model: zoom_menu;
 
                   styles ["flat"]
                 }
@@ -326,7 +371,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
 
                 Gtk.Button btn_forward_sync {
                   icon-name: "find-location-symbolic";
-                  tooltip-text: _("Sync to Cursor (Ctrl+Shift+F)");
+                  tooltip-text: _("Sync to cursor");
                   action-name: "win.forward-sync";
 
                   styles ["flat"]
@@ -341,8 +386,8 @@ template $SilktexWindow : Adw.ApplicationWindow {
                 }
 
                 Gtk.Button btn_export {
-                  icon-name: "document-save-as-symbolic";
-                  tooltip-text: _("Export PDF…");
+                  icon-name: "document-save-symbolic";
+                  tooltip-text: _("Export PDF");
                   action-name: "win.export-pdf";
 
                   styles ["flat"]
@@ -481,16 +526,6 @@ menu format_menu {
 menu zoom_menu {
   section {
     item {
-      label: _("Zoom In");
-      action: "win.zoom-in";
-    }
-
-    item {
-      label: _("Zoom Out");
-      action: "win.zoom-out";
-    }
-
-    item {
       label: _("Reset Zoom");
       action: "win.zoom-reset";
     }
@@ -578,45 +613,6 @@ menu primary_menu {
       action: "win.show-recent";
     }
 
-    item {
-      label: _("_Save");
-      action: "win.save";
-    }
-
-    item {
-      label: _("Save _As…");
-      action: "win.save-as";
-    }
-
-    item {
-      label: _("_Export to PDF…");
-      action: "win.export-pdf";
-    }
-
-  }
-
-  section {
-    item {
-      label: _("_Git Status…");
-      action: "win.git-status";
-      icon: "view-list-detail-symbolic";
-    }
-
-    item {
-      label: _("Git _Commit…");
-      action: "win.git-commit";
-      icon: "object-select-symbolic";
-    }
-
-    item {
-      label: _("Git _Pull");
-      action: "win.git-pull";
-    }
-
-    item {
-      label: _("Git P_ush");
-      action: "win.git-push";
-    }
   }
 
   section {
@@ -633,20 +629,37 @@ menu primary_menu {
     }
 
     item {
-      label: _("Keyboard _Shortcuts");
+      label: _("_Shortcuts");
       action: "win.shortcuts";
     }
 
     item {
-      label: _("_About SilkTex");
+      label: _("_Info");
       action: "app.about";
     }
   }
+}
 
+menu git_menu {
   section {
     item {
-      label: _("_Quit");
-      action: "app.quit";
+      label: _("Status");
+      action: "win.git-status";
+    }
+
+    item {
+      label: _("Commit");
+      action: "win.git-commit";
+    }
+
+    item {
+      label: _("Pull");
+      action: "win.git-pull";
+    }
+
+    item {
+      label: _("Push");
+      action: "win.git-push";
     }
   }
 }

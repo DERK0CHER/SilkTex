@@ -22,7 +22,7 @@ static const gchar default_config[] =
     "mainwindow_w = 1200\n"
     "mainwindow_h = 800\n"
     "mainwindow_max = false\n"
-    "# Application theme: follow, light, dark, or lightsout (AMOLED-style dark UI).\n"
+    "# Application theme: follow, light, or dark.\n"
     "# 'follow' mirrors the desktop's current preference (GNOME dark style).\n"
     "theme = follow\n"
     "\n"
@@ -30,6 +30,8 @@ static const gchar default_config[] =
     "# auto = Color scheme follows the theme above (Gruvbox / Lights out).\n"
     "# Or set a GtkSourceView scheme id from Preferences → Color scheme.\n"
     "style_scheme = auto\n"
+    "style_scheme_light = silktex-gruvbox-light\n"
+    "style_scheme_dark = silktex-gruvbox-dark\n"
     "font = Monospace 14\n"
     "line_numbers = true\n"
     "highlighting = true\n"
@@ -51,7 +53,7 @@ static const gchar default_config[] =
     "synctex = false\n"
     "\n"
     "[File]\n"
-    "autosaving = false\n"
+    "autosaving = true\n"
     "autosave_timer = 10\n"
     "autoexport = false\n"
     "\n"
@@ -107,6 +109,15 @@ void config_init(void)
         config_save();
     }
 
+    /* Drop legacy "lightsout" mode in favor of regular dark mode. */
+    if (g_key_file_has_key(key_file, "Interface", "theme", NULL)) {
+        g_autofree char *theme = g_key_file_get_string(key_file, "Interface", "theme", NULL);
+        if (g_strcmp0(theme, "lightsout") == 0) {
+            g_key_file_set_string(key_file, "Interface", "theme", "dark");
+            config_save();
+        }
+    }
+
     /* Editor colour scheme: prefer "auto" (follows Interface/theme). */
     if (g_key_file_has_key(key_file, "Editor", "style_scheme", NULL)) {
         g_autofree char *ss = g_key_file_get_string(key_file, "Editor", "style_scheme", NULL);
@@ -114,6 +125,15 @@ void config_init(void)
             g_key_file_set_string(key_file, "Editor", "style_scheme", "auto");
             config_save();
         }
+    }
+
+    if (!g_key_file_has_key(key_file, "Editor", "style_scheme_light", NULL)) {
+        g_key_file_set_string(key_file, "Editor", "style_scheme_light", "silktex-gruvbox-light");
+        config_save();
+    }
+    if (!g_key_file_has_key(key_file, "Editor", "style_scheme_dark", NULL)) {
+        g_key_file_set_string(key_file, "Editor", "style_scheme_dark", "silktex-gruvbox-dark");
+        config_save();
     }
 
     slog(L_INFO, "Configuration file: %s\n", conf_filepath);

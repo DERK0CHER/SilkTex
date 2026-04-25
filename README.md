@@ -142,7 +142,7 @@ meson.build            top-level meson project
   clang-format -i src/*.c src/*.h
   nix shell nixpkgs#biome --command biome format --write .
   ```
-- `meson.build` targets `meson >= 0.59`, `c_std = gnu11`,
+- `meson.build` targets `meson >= 0.62`, `c_std = gnu11`,
   `warning_level = 2`. GObject-idiomatic warnings (short-form
   `GActionEntry` arrays, fixed-signature GTK callbacks) are silenced
   project-wide via `-Wno-missing-field-initializers` and

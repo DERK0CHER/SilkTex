@@ -9,7 +9,7 @@
  *
  * Theme model:
  *   - Adwaita color scheme (light / dark) comes from AdwStyleManager and is
- *     driven by config "Interface"/"theme" (follow | light | dark | lightsout).
+ *     driven by config "Interface"/"theme" (follow | light | dark).
  *   - Editor GtkSourceView scheme is separate — silktex_window_apply_theme_to_*
  *     in window.c resolves Gruvbox / lights-out / user preference.
  *
@@ -31,7 +31,7 @@ void silktex_window_apply_theme_from_config(void)
     AdwStyleManager *sm = adw_style_manager_get_default();
     if (g_strcmp0(mode, "light") == 0)
         adw_style_manager_set_color_scheme(sm, ADW_COLOR_SCHEME_FORCE_LIGHT);
-    else if (g_strcmp0(mode, "dark") == 0 || g_strcmp0(mode, "lightsout") == 0)
+    else if (g_strcmp0(mode, "dark") == 0)
         adw_style_manager_set_color_scheme(sm, ADW_COLOR_SCHEME_FORCE_DARK);
     else
         adw_style_manager_set_color_scheme(sm, ADW_COLOR_SCHEME_DEFAULT);
@@ -46,8 +46,6 @@ static void update_theme_buttons(SilktexWindow *self, const char *mode)
         gtk_toggle_button_set_active(self->theme_light, g_strcmp0(mode, "light") == 0);
     if (self->theme_dark)
         gtk_toggle_button_set_active(self->theme_dark, g_strcmp0(mode, "dark") == 0);
-    if (self->theme_lightsout)
-        gtk_toggle_button_set_active(self->theme_lightsout, g_strcmp0(mode, "lightsout") == 0);
 }
 
 /* Stateful action — default state "'follow'" is set from config in window init. */
@@ -57,7 +55,7 @@ static void change_theme(GSimpleAction *action, GVariant *value, gpointer ud)
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     const char *mode = g_variant_get_string(value, NULL);
     if (g_strcmp0(mode, "light") != 0 && g_strcmp0(mode, "dark") != 0 &&
-        g_strcmp0(mode, "lightsout") != 0 && g_strcmp0(mode, "follow") != 0)
+        g_strcmp0(mode, "follow") != 0)
         mode = "follow";
     config_set_string("Interface", "theme", mode);
     config_save();
@@ -65,6 +63,7 @@ static void change_theme(GSimpleAction *action, GVariant *value, gpointer ud)
     g_simple_action_set_state(action, g_variant_new_string(mode));
     update_theme_buttons(self, mode);
     silktex_window_apply_theme_to_all_editors(self);
+    silktex_window_apply_preview_theme(self);
 }
 
 static void on_system_dark_changed(GObject *object, GParamSpec *pspec, gpointer user_data)
@@ -74,6 +73,7 @@ static void on_system_dark_changed(GObject *object, GParamSpec *pspec, gpointer 
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     if (g_strcmp0(config_get_string("Interface", "theme"), "follow") == 0) {
         silktex_window_apply_theme_to_all_editors(self);
+        silktex_window_apply_preview_theme(self);
     }
 }
 
@@ -465,20 +465,11 @@ static void draw_theme_swatch(GtkDrawingArea *area, cairo_t *cr, int width, int 
         cairo_close_path(cr);
         cairo_set_source_rgb(cr, 0.08, 0.08, 0.09);
         cairo_fill(cr);
-    } else if (g_strcmp0(mode, "lightsout") == 0) {
-        cairo_set_source_rgb(cr, 0.02, 0.02, 0.02);
-        cairo_paint(cr);
-        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.06);
-        cairo_move_to(cr, x + size, y);
-        cairo_line_to(cr, x + size, y + size);
-        cairo_line_to(cr, x, y + size);
-        cairo_close_path(cr);
-        cairo_fill(cr);
     } else if (g_strcmp0(mode, "dark") == 0) {
         cairo_set_source_rgb(cr, 0.16, 0.15, 0.14);
         cairo_paint(cr);
     } else {
-        cairo_set_source_rgb(cr, 0.99, 0.96, 0.9);
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
         cairo_paint(cr);
     }
 
@@ -577,22 +568,18 @@ void silktex_window_install_primary_menu(SilktexWindow *self)
     gtk_widget_set_halign(theme, GTK_ALIGN_CENTER);
 
     GtkWidget *follow = make_theme_toggle("follow", _("Follow System Theme"), self);
-    GtkWidget *light = make_theme_toggle("light", _("Gruvbox (light)"), self);
-    GtkWidget *dark = make_theme_toggle("dark", _("Gruvbox (dark)"), self);
-    GtkWidget *lout = make_theme_toggle("lightsout", _("Lights out"), self);
+    GtkWidget *light = make_theme_toggle("light", _("Light"), self);
+    GtkWidget *dark = make_theme_toggle("dark", _("Dark"), self);
     gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(light), GTK_TOGGLE_BUTTON(follow));
     gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(dark), GTK_TOGGLE_BUTTON(follow));
-    gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(lout), GTK_TOGGLE_BUTTON(follow));
 
     self->theme_follow = GTK_TOGGLE_BUTTON(follow);
     self->theme_light = GTK_TOGGLE_BUTTON(light);
     self->theme_dark = GTK_TOGGLE_BUTTON(dark);
-    self->theme_lightsout = GTK_TOGGLE_BUTTON(lout);
 
     gtk_box_append(GTK_BOX(theme), follow);
     gtk_box_append(GTK_BOX(theme), light);
     gtk_box_append(GTK_BOX(theme), dark);
-    gtk_box_append(GTK_BOX(theme), lout);
     gtk_box_append(GTK_BOX(box), theme);
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
@@ -605,44 +592,6 @@ void silktex_window_install_primary_menu(SilktexWindow *self)
                    make_primary_popover_button(_("Open _Recent…"), "document-open-recent-symbolic",
                                                "win.show-recent", self));
     gtk_box_append(GTK_BOX(box),
-                   make_primary_popover_button(_("_Save"), "document-save-symbolic", "win.save", self));
-    gtk_box_append(GTK_BOX(box), make_primary_popover_button(_("Save _As…"),
-                                                             "document-save-as-symbolic",
-                                                             "win.save-as", self));
-    gtk_box_append(GTK_BOX(box),
-                   make_primary_popover_button(_("_Export to PDF…"), "document-save-as-symbolic",
-                                               "win.export-pdf", self));
-    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-    {
-        /* Icon fallbacks — see silktex_image_set_icon_list */
-        static const char *const git_status_icons[] = {
-            "vcs-git-symbolic",
-            "view-list-detail-symbolic",
-            "view-list-symbolic",
-            "folder-saved-search-symbolic",
-            "dialog-information-symbolic",
-            "folder-symbolic",
-            NULL,
-        };
-        static const char *const git_commit_icons[] = {
-            "emblem-ok-symbolic",
-            "object-select-symbolic",
-            "mail-send-symbolic",
-            "document-save-symbolic",
-            "insert-object-symbolic",
-            NULL,
-        };
-        gtk_box_append(GTK_BOX(box), make_primary_popover_with_icons(
-                         _("_Git Status…"), git_status_icons, "win.git-status", self));
-        gtk_box_append(GTK_BOX(box), make_primary_popover_with_icons(
-                         _("Git _Commit…"), git_commit_icons, "win.git-commit", self));
-    }
-    gtk_box_append(GTK_BOX(box), make_primary_popover_button(
-                         _("Git _Pull"), "network-receive-symbolic", "win.git-pull", self));
-    gtk_box_append(GTK_BOX(box), make_primary_popover_button(
-                         _("Git P_ush"), "network-transmit-symbolic", "win.git-push", self));
-    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-    gtk_box_append(GTK_BOX(box),
                    make_primary_popover_button(_("_Fullscreen"), "view-fullscreen-symbolic",
                                                "win.fullscreen", self));
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
@@ -650,14 +599,11 @@ void silktex_window_install_primary_menu(SilktexWindow *self)
                    make_primary_popover_button(_("_Preferences"), "emblem-system-symbolic",
                                                "win.preferences", self));
     gtk_box_append(GTK_BOX(box),
-                   make_primary_popover_button(_("Keyboard _Shortcuts"), "preferences-desktop-keyboard-symbolic",
+                   make_primary_popover_button(_("_Shortcuts"), "preferences-desktop-keyboard-symbolic",
                                                "win.shortcuts", self));
     gtk_box_append(GTK_BOX(box),
-                   make_primary_popover_button(_("_About SilkTex"), "help-about-symbolic",
+                   make_primary_popover_button(_("_Info"), "help-about-symbolic",
                                                "app.about", self));
-    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-    gtk_box_append(GTK_BOX(box),
-                   make_primary_popover_button(_("_Quit"), "application-exit-symbolic", "app.quit", self));
 
     gtk_menu_button_set_menu_model(self->btn_menu, NULL);
     gtk_menu_button_set_popover(self->btn_menu, popover);

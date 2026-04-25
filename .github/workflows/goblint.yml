@@ -1,0 +1,47 @@
+# Goblint static analysis (Linux only). macOS SDK headers are not parsed reliably
+# by Goblint's CIL/Frontc frontend; this job uses Ubuntu + Meson compile_commands.
+name: Goblint
+
+on:
+  push:
+    paths:
+      - "src/**"
+      - "scripts/goblint*"
+      - "meson.build"
+      - "src/meson.build"
+      - ".github/workflows/goblint.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "scripts/goblint*"
+      - "meson.build"
+      - "src/meson.build"
+      - ".github/workflows/goblint.yml"
+
+jobs:
+  goblint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "4.14.2"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            meson ninja-build pkg-config gettext \
+            libgtk-4-dev libadwaita-1-dev libglib2.0-dev libjson-glib-dev \
+            libgtksourceview-5-dev libpoppler-glib-dev \
+            blueprint-compiler
+
+      - name: Install Goblint
+        run: opam install -y goblint --assume-depexts --confirm-level=unsafe-yes
+
+      - name: Meson + Goblint
+        run: |
+          eval "$(opam env)"
+          meson setup build
+          python3 scripts/goblint_all.py build/compile_commands.json .goblint/preprocessed

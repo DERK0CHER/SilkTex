@@ -45,5 +45,7 @@ SilktexPreviewLayout silktex_preview_get_layout(SilktexPreview *self);
 void silktex_preview_set_layout(SilktexPreview *self, SilktexPreviewLayout layout);
 
 void silktex_preview_scroll_to_position(SilktexPreview *self, double x, double y);
+void silktex_preview_set_inverted(SilktexPreview *self, gboolean inverted);
+gboolean silktex_preview_get_inverted(SilktexPreview *self);
 
 G_END_DECLS

@@ -1,5 +1,6 @@
 # Build outputs
 build/
+.goblint/
 build-gtk4/
 build-flatpak/
 build-flatpak-repo/
@@ -11,6 +12,10 @@ flatpak/.local.*.yml
 *.swp
 *.swo
 *~
+.opam*
+andrej*
+.goblint*
+/tmp/*
 
 # Runtime state
 .cache/

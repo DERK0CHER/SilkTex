@@ -38,7 +38,6 @@
           glib
           json-glib
           gtksourceview5
-          gtkspell3
           poppler
           intltool
           texliveEnv
