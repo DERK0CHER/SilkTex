@@ -18,8 +18,8 @@
 /* Outer breathing room around every rendered page.  Requested by the
  * user — keeps each page clearly separated from its neighbours and from
  * the preview background on all sides. */
-#define PAGE_PADDING 6
 #define PAGE_GAP_BETWEEN 20
+#define PAGE_PADDING PAGE_GAP_BETWEEN
 
 struct _SilktexPreview {
     GtkWidget parent_instance;
@@ -46,6 +46,7 @@ struct _SilktexPreview {
 
     SilktexPreviewLayout layout;
     gboolean scrolling_programmatically;
+    gboolean inverted;
     gulong scale_factor_handler;
 };
 
@@ -272,6 +273,23 @@ static void draw_page_paper_shadow(cairo_t *cr, double x, double y, int lw, int 
     }
 }
 
+static void draw_surface_with_optional_invert(cairo_t *cr, cairo_surface_t *surface, double x, double y,
+                                              int lw, int lh, gboolean inverted)
+{
+    cairo_set_source_surface(cr, surface, x, y);
+    cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
+    cairo_paint(cr);
+    if (!inverted) return;
+
+    cairo_save(cr);
+    cairo_rectangle(cr, x, y, lw, lh);
+    cairo_clip(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_DIFFERENCE);
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+    cairo_paint(cr);
+    cairo_restore(cr);
+}
+
 static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer user_data)
 {
     SilktexPreview *self = SILKTEX_PREVIEW(user_data);
@@ -305,12 +323,10 @@ static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, 
         int lh = surface_logical_height(self->cached_surface);
         double x = (width - lw) / 2.0;
         if (x < 0) x = PAGE_PADDING;
-        double y = PAGE_PADDING;
+        double y = MAX((double)PAGE_PADDING, (height - lh) / 2.0);
 
         draw_page_paper_shadow(cr, x, y, lw, lh);
-        cairo_set_source_surface(cr, self->cached_surface, x, y);
-        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
-        cairo_paint(cr);
+        draw_surface_with_optional_invert(cr, self->cached_surface, x, y, lw, lh, self->inverted);
 
         cairo_set_source_rgb(cr, border, border, border);
         cairo_set_line_width(cr, 1.0);
@@ -330,9 +346,7 @@ static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, 
         if (x < 0) x = PAGE_PADDING;
 
         draw_page_paper_shadow(cr, x, y, lw, lh);
-        cairo_set_source_surface(cr, surface, x, y);
-        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
-        cairo_paint(cr);
+        draw_surface_with_optional_invert(cr, surface, x, y, lw, lh, self->inverted);
 
         cairo_set_source_rgb(cr, border, border, border);
         cairo_set_line_width(cr, 1.0);
@@ -465,6 +479,21 @@ static void on_preview_pressed(GtkGestureClick *gesture, int n_press, double x, 
     gtk_widget_grab_focus(self->scrolled_window);
 }
 
+static gboolean on_preview_scroll_zoom(GtkEventControllerScroll *controller, double dx, double dy,
+                                       gpointer user_data)
+{
+    (void)dx;
+    SilktexPreview *self = SILKTEX_PREVIEW(user_data);
+    GdkModifierType state =
+        gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(controller));
+    if ((state & GDK_CONTROL_MASK) == 0) return GDK_EVENT_PROPAGATE;
+    if (dy < 0)
+        silktex_preview_zoom_in(self);
+    else if (dy > 0)
+        silktex_preview_zoom_out(self);
+    return GDK_EVENT_STOP;
+}
+
 static void silktex_preview_init(SilktexPreview *self)
 {
     self->zoom = 1.0;
@@ -477,6 +506,7 @@ static void silktex_preview_init(SilktexPreview *self)
 
     self->scrolled_window = gtk_scrolled_window_new();
     gtk_widget_set_parent(self->scrolled_window, GTK_WIDGET(self));
+    gtk_widget_add_css_class(self->scrolled_window, "silktex-preview-scroller");
     gtk_widget_set_vexpand(self->scrolled_window, TRUE);
     gtk_widget_set_hexpand(self->scrolled_window, TRUE);
     gtk_widget_set_focusable(self->scrolled_window, TRUE);
@@ -500,6 +530,10 @@ static void silktex_preview_init(SilktexPreview *self)
     GtkGesture *click = gtk_gesture_click_new();
     gtk_widget_add_controller(self->drawing_area, GTK_EVENT_CONTROLLER(click));
     g_signal_connect(click, "pressed", G_CALLBACK(on_preview_pressed), self);
+    GtkEventController *scroll =
+        gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL);
+    g_signal_connect(scroll, "scroll", G_CALLBACK(on_preview_scroll_zoom), self);
+    gtk_widget_add_controller(self->scrolled_window, scroll);
 
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(self->scrolled_window), self->drawing_area);
 
@@ -757,6 +791,20 @@ void silktex_preview_set_layout(SilktexPreview *self, SilktexPreviewLayout layou
         self->scrolling_programmatically = FALSE;
     }
     gtk_widget_queue_draw(self->drawing_area);
+}
+
+void silktex_preview_set_inverted(SilktexPreview *self, gboolean inverted)
+{
+    g_return_if_fail(SILKTEX_IS_PREVIEW(self));
+    if (self->inverted == inverted) return;
+    self->inverted = inverted;
+    gtk_widget_queue_draw(self->drawing_area);
+}
+
+gboolean silktex_preview_get_inverted(SilktexPreview *self)
+{
+    g_return_val_if_fail(SILKTEX_IS_PREVIEW(self), FALSE);
+    return self->inverted;
 }
 
 void silktex_preview_scroll_to_position(SilktexPreview *self, double x, double y)

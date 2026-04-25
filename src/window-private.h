@@ -64,6 +64,9 @@ struct _SilktexWindow {
     GtkToggleButton *btn_sidebar;
     GtkButton *btn_compile;
     GtkMenuButton *btn_menu;
+    GtkButton *btn_export_doc;
+    GtkMenuButton *btn_git_menu;
+    GtkButton *btn_export;
 
     /* ---- Core subsystems (not from template) ---- */
 
@@ -85,7 +88,6 @@ struct _SilktexWindow {
     GtkToggleButton *theme_follow;
     GtkToggleButton *theme_light;
     GtkToggleButton *theme_dark;
-    GtkToggleButton *theme_lightsout;
 
     SilktexGitStatus *git_status;
     char *git_status_message;
@@ -112,6 +114,7 @@ struct _SilktexWindow {
      *   or a restored value (otherwise user drag is overwritten).
      */
     gint preview_pane_pos;
+    gdouble preview_pane_ratio;
     gboolean preview_pane_restorable;
     gboolean preview_pane_silence;
     gboolean preview_split_seeded;
@@ -132,6 +135,7 @@ void silktex_window_update_log_panel(SilktexWindow *self);
 
 void silktex_window_apply_theme_to_editor(SilktexEditor *editor);
 void silktex_window_apply_theme_to_all_editors(SilktexWindow *self);
+void silktex_window_apply_preview_theme(SilktexWindow *self);
 
 void silktex_window_focus_active_editor(SilktexWindow *self);
 

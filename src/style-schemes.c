@@ -50,17 +50,25 @@ void silktex_init_style_scheme_paths(void)
 /* Map window theme mode → default editor scheme id. */
 static const char *default_scheme_for_ui_mode(void)
 {
+    GtkSourceStyleSchemeManager *mgr = gtk_source_style_scheme_manager_get_default();
     const char *t = config_get_string("Interface", "theme");
-    if (g_strcmp0(t, "lightsout") == 0) return "silktex-lights-out";
-    if (g_strcmp0(t, "dark") == 0) return "silktex-gruvbox-dark";
-    if (g_strcmp0(t, "light") == 0) return "silktex-gruvbox-light";
+    const char *light = config_get_string("Editor", "style_scheme_light");
+    const char *dark = config_get_string("Editor", "style_scheme_dark");
+    if (!light || !*light) light = "silktex-gruvbox-light";
+    if (!dark || !*dark) dark = "silktex-gruvbox-dark";
+    if (gtk_source_style_scheme_manager_get_scheme(mgr, light) == NULL)
+        light = "silktex-gruvbox-light";
+    if (gtk_source_style_scheme_manager_get_scheme(mgr, dark) == NULL)
+        dark = "silktex-gruvbox-dark";
+    if (g_strcmp0(t, "dark") == 0) return dark;
+    if (g_strcmp0(t, "light") == 0) return light;
     if (g_strcmp0(t, "follow") == 0) {
-        if (adw_style_manager_get_dark(adw_style_manager_get_default())) return "silktex-gruvbox-dark";
-        return "silktex-gruvbox-light";
+        if (adw_style_manager_get_dark(adw_style_manager_get_default())) return dark;
+        return light;
     }
     /* Unknown mode — treat like follow. */
-    if (adw_style_manager_get_dark(adw_style_manager_get_default())) return "silktex-gruvbox-dark";
-    return "silktex-gruvbox-light";
+    if (adw_style_manager_get_dark(adw_style_manager_get_default())) return dark;
+    return light;
 }
 
 /* First installed scheme in try_ids, or NULL. */
@@ -77,11 +85,6 @@ const char *silktex_resolved_style_scheme_id(void)
     silktex_init_style_scheme_paths();
 
     GtkSourceStyleSchemeManager *mgr = gtk_source_style_scheme_manager_get_default();
-
-    const char *user = config_get_string("Editor", "style_scheme");
-    if (user && *user && g_strcmp0(user, "auto") != 0) {
-        if (gtk_source_style_scheme_manager_get_scheme(mgr, user) != NULL) return user;
-    }
 
     const char *d = default_scheme_for_ui_mode();
     if (gtk_source_style_scheme_manager_get_scheme(mgr, d) != NULL) return d;
