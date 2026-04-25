@@ -13,6 +13,7 @@ flatpak/.local.*.yml
 *~
 .opam*
 andrej*
+.goblint*
 
 # Runtime state
 .cache/
