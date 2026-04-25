@@ -1,7 +1,0 @@
-OPAM_SWITCH_PREFIX	=	/Users/beba/software/SilkTex/.opam-goblint/goblint-switch	:	target	Prefix\ of\ the\ current\ opam\ switch
-CAML_LD_LIBRARY_PATH	=	/Users/beba/software/SilkTex/.opam-goblint/goblint-switch/lib/stublibs	:	target	Updated\ by\ package\ ocaml-base-compiler
-OCAMLTOP_INCLUDE_PATH	+=	/Users/beba/software/SilkTex/.opam-goblint/goblint-switch/lib/toplevel	:	target	Updated\ by\ package\ ocaml
-CAML_LD_LIBRARY_PATH	=	/Users/beba/software/SilkTex/.opam-goblint/goblint-switch/lib/ocaml/stublibs:/Users/beba/software/SilkTex/.opam-goblint/goblint-switch/lib/ocaml	:	target	Updated\ by\ package\ ocaml
-CAML_LD_LIBRARY_PATH	+=	/Users/beba/software/SilkTex/.opam-goblint/goblint-switch/lib/stublibs	:	target	Updated\ by\ package\ ocaml
-OCAML_TOPLEVEL_PATH	=	/Users/beba/software/SilkTex/.opam-goblint/goblint-switch/lib/toplevel	Updated\ by\ package\ ocaml
-PATH	=+=	/Users/beba/software/SilkTex/.opam-goblint/goblint-switch/bin	:	target	Binary\ dir\ for\ opam\ switch\ goblint-switch
