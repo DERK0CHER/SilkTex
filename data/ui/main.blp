@@ -9,14 +9,14 @@ template $SilktexWindow : Adw.ApplicationWindow {
   default-height: 900;
   title: "SilkTex";
 
-  content: Adw.ToolbarView {
+  content: Adw.ToolbarView root_toolbar_view {
     [top]
     Adw.HeaderBar headerbar {
       [start]
       Gtk.ToggleButton btn_sidebar {
         icon-name: "sidebar-show-symbolic";
         tooltip-text: _("Toggle Document Outline (F8)");
-        active: true;
+        active: false;
       }
 
       [start]
@@ -65,6 +65,15 @@ template $SilktexWindow : Adw.ApplicationWindow {
       }
     }
 
+    // Document tabs: full width under the title bar so the editor and PDF
+    // columns start on the same row (avoids the preview sitting higher
+    // than the source like when the tab bar lived only in the left pane).
+    [top]
+    Adw.TabBar tab_bar {
+      view: tab_view;
+      autohide: true;
+    }
+
     content: Adw.ToastOverlay toast_overlay {
       child: Adw.OverlaySplitView split_view {
         show-sidebar: bind btn_sidebar.active bidirectional;
@@ -72,15 +81,20 @@ template $SilktexWindow : Adw.ApplicationWindow {
         min-sidebar-width: 180;
         max-sidebar-width: 400;
 
+        styles ["silktex-main-split"]
+
         sidebar: Gtk.Box sidebar_box {
           orientation: vertical;
+          // Same “view” base as the editor/scroll, so the outline column does
+          // not look like a different card colour than the main pane.
+          styles ["view", "silktex-sidebar-pane"]
 
           Gtk.Box {
             orientation: horizontal;
-            margin-start: 12;
-            margin-end: 12;
-            margin-top: 8;
-            margin-bottom: 4;
+            margin-start: 10;
+            margin-end: 10;
+            margin-top: 0;
+            margin-bottom: 2;
             spacing: 6;
 
             Gtk.Label sidebar_title {
@@ -112,28 +126,20 @@ template $SilktexWindow : Adw.ApplicationWindow {
           orientation: horizontal;
           shrink-start-child: false;
           shrink-end-child: false;
-          resize-start-child: false;
+          resize-start-child: true;
           resize-end-child: true;
           wide-handle: false;
           vexpand: true;
-          position: 780;
+
+          styles ["silktex-editor-paned"]
 
           // ------------------------------------------------------------------
-          // Pane 2 - editor.  The tab bar sits on top and the "code tools" +
-          // collapsible compile-log live in the pane's bottom toolbar.  The
-          // log widgets (toggle button + revealer) are attached programmatically
-          // from window.c; everything else is declarative.
+          // Pane 2 - editor.  Tabs are in the window toolbar (root_toolbar).
+          // The bottom toolbar holds the code tools + compile log (widgets
+          // injected from window.c).
           // ------------------------------------------------------------------
           [start]
           Adw.ToolbarView editor_toolbar_view {
-            width-request: 640;
-
-            [top]
-            Adw.TabBar tab_bar {
-              view: tab_view;
-              autohide: true;
-            }
-
             content: Adw.TabView tab_view {
               vexpand: true;
               hexpand: true;
@@ -148,7 +154,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
               margin-bottom: 4;
               spacing: 4;
 
-              styles ["toolbar"]
+              styles ["toolbar", "silktex-bottom-toolbar"]
 
               Gtk.Button btn_compile {
                 icon-name: "media-playback-start-symbolic";
@@ -174,12 +180,6 @@ template $SilktexWindow : Adw.ApplicationWindow {
                 styles ["flat"]
               }
 
-              Gtk.Separator {
-                orientation: vertical;
-                margin-start: 4;
-                margin-end: 4;
-              }
-
               Gtk.MenuButton btn_insert {
                 icon-name: "insert-object-symbolic";
                 tooltip-text: _("Insert...");
@@ -194,12 +194,6 @@ template $SilktexWindow : Adw.ApplicationWindow {
                 menu-model: format_menu;
 
                 styles ["flat"]
-              }
-
-              Gtk.Separator {
-                orientation: vertical;
-                margin-start: 4;
-                margin-end: 4;
               }
 
               Gtk.Button btn_find {
@@ -256,7 +250,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
               margin-start: 6;
               margin-end: 6;
 
-              styles ["toolbar"]
+              styles ["toolbar", "silktex-bottom-toolbar"]
 
               [start]
               Gtk.Box {
@@ -599,6 +593,30 @@ menu primary_menu {
       action: "win.export-pdf";
     }
 
+  }
+
+  section {
+    item {
+      label: _("_Git Status…");
+      action: "win.git-status";
+      icon: "view-list-detail-symbolic";
+    }
+
+    item {
+      label: _("Git _Commit…");
+      action: "win.git-commit";
+      icon: "object-select-symbolic";
+    }
+
+    item {
+      label: _("Git _Pull");
+      action: "win.git-pull";
+    }
+
+    item {
+      label: _("Git P_ush");
+      action: "win.git-push";
+    }
   }
 
   section {

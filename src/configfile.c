@@ -18,11 +18,14 @@ static const gchar default_config[] =
     "mainwindow_w = 1200\n"
     "mainwindow_h = 800\n"
     "mainwindow_max = false\n"
-    "# Application theme: one of follow, light, dark.\n"
+    "# Application theme: follow, light, dark, or lightsout (AMOLED-style dark UI).\n"
     "# 'follow' mirrors the desktop's current preference (GNOME dark style).\n"
     "theme = follow\n"
     "\n"
     "[Editor]\n"
+    "# auto = Color scheme follows the theme above (Gruvbox / Lights out).\n"
+    "# Or set a GtkSourceView scheme id from Preferences → Color scheme.\n"
+    "style_scheme = auto\n"
     "font = Monospace 14\n"
     "line_numbers = true\n"
     "highlighting = true\n"
@@ -31,7 +34,6 @@ static const gchar default_config[] =
     "tabwidth = 4\n"
     "spaces_instof_tabs = false\n"
     "autoindentation = true\n"
-    "style_scheme = Adwaita\n"
     "\n"
     "[Preview]\n"
     "zoom = 1.0\n"
@@ -99,6 +101,15 @@ void config_init(void)
     if (!g_key_file_has_key(key_file, "Interface", "theme", NULL)) {
         g_key_file_set_string(key_file, "Interface", "theme", "follow");
         config_save();
+    }
+
+    /* Editor colour scheme: prefer "auto" (follows Interface/theme). */
+    if (g_key_file_has_key(key_file, "Editor", "style_scheme", NULL)) {
+        g_autofree char *ss = g_key_file_get_string(key_file, "Editor", "style_scheme", NULL);
+        if (ss && (g_strcmp0(ss, "Adwaita") == 0 || g_strcmp0(ss, "Adwaita-dark") == 0)) {
+            g_key_file_set_string(key_file, "Editor", "style_scheme", "auto");
+            config_save();
+        }
     }
 
     slog(L_INFO, "Configuration file: %s\n", conf_filepath);

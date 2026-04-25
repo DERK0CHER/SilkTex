@@ -11,18 +11,28 @@
 #include "synctex.h"
 #include "structure.h"
 #include "latex.h"
+#include "git.h"
 #include "configfile.h"
 #include "constants.h"
+#include "style-schemes.h"
 #include "utils.h"
 #include "i18n.h"
 #include <glib/gstdio.h>
 #include <gio/gio.h>
 
-#define EDITOR_MIN_WIDTH 640
+/* Minimum size request for the editor pane (allows ~50% split on typical window widths). */
+#define EDITOR_MIN_WIDTH 280
+/* Reserve space for the PDF preview when enforcing paned position. */
+#define PREVIEW_PANE_MIN_WIDTH 200
+/* Toplevel: never smaller than editor + preview minima + grip/chrome, or the paned
+ * layout is starved and controls can appear to sit outside the window. */
+#define WINDOW_MIN_WIDTH (EDITOR_MIN_WIDTH + PREVIEW_PANE_MIN_WIDTH + 72)
+#define WINDOW_MIN_HEIGHT 400
 
 struct _SilktexWindow {
     AdwApplicationWindow parent_instance;
 
+    AdwToolbarView *root_toolbar_view;
     AdwWindowTitle *window_title;
     AdwToastOverlay *toast_overlay;
     AdwTabView *tab_view;
@@ -57,6 +67,16 @@ struct _SilktexWindow {
     GtkToggleButton *theme_follow;
     GtkToggleButton *theme_light;
     GtkToggleButton *theme_dark;
+    GtkToggleButton *theme_lightsout;
+
+    /* Git integration */
+    SilktexGitStatus *git_status;
+    char *git_status_message;
+    AdwDialog *git_dialog;
+    GtkLabel *git_branch_label;
+    GtkLabel *git_repo_label;
+    GtkListBox *git_list;
+    GtkEditable *git_commit_message;
 
     guint compile_timer_id;
     guint autosave_timer_id;
@@ -65,12 +85,22 @@ struct _SilktexWindow {
     gboolean preview_narrow;
     gboolean preview_auto_collapsed;
 
+    /* Last horizontal split between editor and PDF preview; remembered across hide/show. */
+    gint preview_pane_pos;
+    gboolean preview_pane_restorable;
+    gboolean preview_pane_silence; /* during programmatic set_position to avoid re-entrancy */
+    gboolean preview_split_seeded; /* FALSE until first apply (50% or restore) — ignore Gtk defaults */
+
     AdwToast *current_toast;
 };
 
 G_DEFINE_FINAL_TYPE (SilktexWindow, silktex_window, ADW_TYPE_APPLICATION_WINDOW)
 
     static void on_prefs_apply(gpointer user_data);
+static void refresh_git_state(SilktexWindow *self);
+static void update_git_dialog(SilktexWindow *self);
+static void update_git_actions(SilktexWindow *self);
+static void apply_editor_paned_half_split(SilktexWindow *self);
 
 /* ------------------------------------------------------------ helpers === */
 
@@ -123,21 +153,9 @@ static void update_log_panel(SilktexWindow *self)
     gtk_text_buffer_set_text(self->log_buf, log ? log : "", -1);
 }
 
-static const char *effective_editor_scheme(void)
-{
-    const char *mode = config_get_string("Interface", "theme");
-    if (g_strcmp0(mode, "dark") == 0) return "Adwaita-dark";
-    if (g_strcmp0(mode, "light") == 0) return "Adwaita";
-
-    AdwStyleManager *sm = adw_style_manager_get_default();
-    return adw_style_manager_get_dark(sm) ? "Adwaita-dark" : "Adwaita";
-}
-
 static void apply_theme_to_editor(SilktexEditor *editor)
 {
-    if (editor != NULL) {
-        silktex_editor_set_style_scheme(editor, effective_editor_scheme());
-    }
+    if (editor != NULL) silktex_editor_set_style_scheme(editor, silktex_resolved_style_scheme_id());
 }
 
 static void apply_theme_to_all_editors(SilktexWindow *self)
@@ -215,6 +233,7 @@ static gboolean on_autosave_timer(gpointer user_data)
             }
         }
     }
+    refresh_git_state(self);
     return G_SOURCE_CONTINUE;
 }
 
@@ -296,6 +315,8 @@ static GtkWidget *create_editor_page(SilktexWindow *self, SilktexEditor *editor)
 {
     GtkWidget *scrolled = gtk_scrolled_window_new();
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), silktex_editor_get_view(editor));
+    /* Place vertical scrollbar to the left of the text (LTR: GTK_CORNER_TOP_RIGHT). */
+    gtk_scrolled_window_set_placement(GTK_SCROLLED_WINDOW(scrolled), GTK_CORNER_TOP_RIGHT);
     gtk_widget_set_vexpand(scrolled, TRUE);
     gtk_widget_set_hexpand(scrolled, TRUE);
 
@@ -403,6 +424,7 @@ static void on_save_response(GObject *source, GAsyncResult *result, gpointer use
             update_tab_title(self, page, editor);
             update_window_title(self);
             add_to_recent(file);
+            refresh_git_state(self);
             silktex_window_show_toast(self, _("File saved"));
         }
     }
@@ -470,6 +492,7 @@ static void action_save(GSimpleAction *action, GVariant *parameter, gpointer use
             update_tab_title(self, page, editor);
             update_window_title(self);
             add_to_recent(file);
+            refresh_git_state(self);
         }
         g_object_unref(file);
     } else {
@@ -784,10 +807,9 @@ static void action_preferences(GSimpleAction *a, GVariant *p, gpointer ud)
 }
 
 /*
- * Tri-state theme selector — mirrors gnome-text-editor's behaviour.
- * The config key [Interface] theme is one of "follow", "light", "dark"
- * and is applied through AdwStyleManager.  Called at startup and
- * whenever the user changes the selection from the menu.
+ * Theme selector: follow / light / dark / lightsout.
+ * Editor colours are resolved separately (Gruvbox, Lights out, or a fixed
+ * GtkSourceView scheme from Preferences when not "auto").
  */
 static void apply_theme_from_config(void)
 {
@@ -795,7 +817,7 @@ static void apply_theme_from_config(void)
     AdwStyleManager *sm = adw_style_manager_get_default();
     if (g_strcmp0(mode, "light") == 0)
         adw_style_manager_set_color_scheme(sm, ADW_COLOR_SCHEME_FORCE_LIGHT);
-    else if (g_strcmp0(mode, "dark") == 0)
+    else if (g_strcmp0(mode, "dark") == 0 || g_strcmp0(mode, "lightsout") == 0)
         adw_style_manager_set_color_scheme(sm, ADW_COLOR_SCHEME_FORCE_DARK);
     else
         adw_style_manager_set_color_scheme(sm, ADW_COLOR_SCHEME_DEFAULT);
@@ -810,17 +832,21 @@ static void update_theme_buttons(SilktexWindow *self, const char *mode)
         gtk_toggle_button_set_active(self->theme_light, g_strcmp0(mode, "light") == 0);
     if (self->theme_dark)
         gtk_toggle_button_set_active(self->theme_dark, g_strcmp0(mode, "dark") == 0);
+    if (self->theme_lightsout)
+        gtk_toggle_button_set_active(self->theme_lightsout, g_strcmp0(mode, "lightsout") == 0);
 }
 
 static void change_theme(GSimpleAction *action, GVariant *value, gpointer ud)
 {
     SilktexWindow *self = SILKTEX_WINDOW(ud);
     const char *mode = g_variant_get_string(value, NULL);
-    if (g_strcmp0(mode, "light") != 0 && g_strcmp0(mode, "dark") != 0) mode = "follow";
+    if (g_strcmp0(mode, "light") != 0 && g_strcmp0(mode, "dark") != 0 &&
+        g_strcmp0(mode, "lightsout") != 0 && g_strcmp0(mode, "follow") != 0)
+        mode = "follow";
     config_set_string("Interface", "theme", mode);
     config_save();
     apply_theme_from_config();
-    g_simple_action_set_state(action, value);
+    g_simple_action_set_state(action, g_variant_new_string(mode));
     update_theme_buttons(self, mode);
     apply_theme_to_all_editors(self);
 }
@@ -979,6 +1005,555 @@ static void action_open_pdf_external(GSimpleAction *a, GVariant *p, gpointer ud)
     if (uri) g_app_info_launch_default_for_uri(uri, NULL, NULL);
 }
 
+/* ------------------------------------------------------------ git */
+
+typedef enum {
+    GIT_OP_STAGE,
+    GIT_OP_UNSTAGE,
+    GIT_OP_COMMIT,
+    GIT_OP_PULL,
+    GIT_OP_PUSH,
+} GitOperation;
+
+typedef struct {
+    GWeakRef win_ref;
+    GitOperation op;
+    char *repo_root;
+    char *path;
+    char *message;
+} GitOperationData;
+
+typedef struct {
+    SilktexWindow *self;
+    char *path;
+    gboolean stage;
+} GitFileActionData;
+
+typedef struct {
+    GWeakRef win_ref;
+    char *path;
+} GitStatusTaskData;
+
+static void git_status_task_data_free(gpointer data)
+{
+    GitStatusTaskData *d = data;
+    if (d == NULL) return;
+    g_weak_ref_clear(&d->win_ref);
+    g_free(d->path);
+    g_free(d);
+}
+
+static void git_operation_data_free(gpointer data)
+{
+    GitOperationData *op = data;
+    if (op == NULL) return;
+
+    g_weak_ref_clear(&op->win_ref);
+    g_free(op->repo_root);
+    g_free(op->path);
+    g_free(op->message);
+    g_free(op);
+}
+
+static void git_file_action_data_free(gpointer data)
+{
+    GitFileActionData *file_action = data;
+    if (file_action == NULL) return;
+
+    g_clear_object(&file_action->self);
+    g_free(file_action->path);
+    g_free(file_action);
+}
+
+static void git_file_action_data_destroy(gpointer data, GClosure *closure)
+{
+    (void)closure;
+    git_file_action_data_free(data);
+}
+
+static void set_action_enabled(SilktexWindow *self, const char *name, gboolean enabled)
+{
+    GAction *action = g_action_map_lookup_action(G_ACTION_MAP(self), name);
+    if (G_IS_SIMPLE_ACTION(action)) {
+        g_simple_action_set_enabled(G_SIMPLE_ACTION(action), enabled);
+    }
+}
+
+static void update_git_actions(SilktexWindow *self)
+{
+    gboolean has_git = silktex_git_is_available();
+
+    set_action_enabled(self, "git-status", has_git);
+    set_action_enabled(self, "git-commit", has_git);
+    set_action_enabled(self, "git-pull", has_git);
+    set_action_enabled(self, "git-push", has_git);
+}
+
+static const char *status_label_for_file(const SilktexGitFile *file)
+{
+    if (file->index_status == '?' && file->worktree_status == '?') return _("Untracked");
+    if (file->index_status != ' ' && file->worktree_status != ' ') return _("Staged and modified");
+    if (file->index_status != ' ') return _("Staged");
+    if (file->worktree_status != ' ') return _("Modified");
+    return _("Clean");
+}
+
+static gboolean file_has_staged_change(const SilktexGitFile *file)
+{
+    return file->index_status != ' ' && file->index_status != '?';
+}
+
+static gboolean file_has_unstaged_change(const SilktexGitFile *file)
+{
+    return file->worktree_status != ' ' || file->index_status == '?';
+}
+
+static void clear_git_list(SilktexWindow *self)
+{
+    if (self->git_list == NULL) return;
+
+    GtkWidget *child = gtk_widget_get_first_child(GTK_WIDGET(self->git_list));
+    while (child != NULL) {
+        GtkWidget *next = gtk_widget_get_next_sibling(child);
+        gtk_list_box_remove(self->git_list, child);
+        child = next;
+    }
+}
+
+static void git_operation_thread(GTask *task, gpointer source_object, gpointer task_data,
+                                 GCancellable *cancellable)
+{
+    (void)source_object;
+    (void)cancellable;
+
+    GitOperationData *op = task_data;
+    GError *error = NULL;
+    char *output = NULL;
+    gboolean ok = FALSE;
+
+    switch (op->op) {
+    case GIT_OP_STAGE:
+        ok = silktex_git_stage_file(op->repo_root, op->path, &error);
+        break;
+    case GIT_OP_UNSTAGE:
+        ok = silktex_git_unstage_file(op->repo_root, op->path, &error);
+        break;
+    case GIT_OP_COMMIT:
+        ok = silktex_git_commit(op->repo_root, op->message, &output, &error);
+        break;
+    case GIT_OP_PULL:
+        ok = silktex_git_pull(op->repo_root, &output, &error);
+        break;
+    case GIT_OP_PUSH:
+        ok = silktex_git_push(op->repo_root, &output, &error);
+        break;
+    }
+
+    if (!ok) {
+        g_task_return_error(task, error);
+        return;
+    }
+
+    g_task_return_pointer(task, output ? output : g_strdup(""), g_free);
+}
+
+static const char *success_message_for_operation(GitOperation op)
+{
+    switch (op) {
+    case GIT_OP_STAGE:
+        return _("File staged");
+    case GIT_OP_UNSTAGE:
+        return _("File unstaged");
+    case GIT_OP_COMMIT:
+        return _("Commit created");
+    case GIT_OP_PULL:
+        return _("Pull completed");
+    case GIT_OP_PUSH:
+        return _("Push completed");
+    }
+    return _("Git operation completed");
+}
+
+static void on_git_operation_finished(GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    (void)source;
+    (void)user_data;
+    GTask *task = G_TASK(result);
+    GitOperationData *op = g_task_get_task_data(task);
+    if (op == NULL) return;
+
+    SilktexWindow *self = g_weak_ref_get(&op->win_ref);
+    if (self == NULL) return;
+
+    GError *error = NULL;
+    g_autofree char *output = g_task_propagate_pointer(task, &error);
+
+    if (error != NULL) {
+        silktex_window_show_toast(self, error->message);
+        g_clear_error(&error);
+    } else {
+        const char *message = success_message_for_operation(op->op);
+        silktex_window_show_toast(self, message);
+        if (op->op == GIT_OP_COMMIT && self->git_commit_message != NULL) {
+            gtk_editable_set_text(self->git_commit_message, "");
+        }
+    }
+
+    refresh_git_state(self);
+    update_git_dialog(self);
+    g_object_unref(self);
+}
+
+static void run_git_operation(SilktexWindow *self, GitOperation op, const char *path,
+                              const char *message)
+{
+    if (self->git_status == NULL || self->git_status->repo_root == NULL) {
+        silktex_window_show_toast(self, _("No Git repository for the active document"));
+        return;
+    }
+
+    GitOperationData *data = g_new0(GitOperationData, 1);
+    g_weak_ref_init(&data->win_ref, G_OBJECT(self));
+    data->op = op;
+    data->repo_root = g_strdup(self->git_status->repo_root);
+    data->path = g_strdup(path);
+    data->message = g_strdup(message);
+
+    GTask *task = g_task_new(NULL, NULL, on_git_operation_finished, NULL);
+    g_task_set_task_data(task, data, git_operation_data_free);
+    g_task_run_in_thread(task, git_operation_thread);
+    g_object_unref(task);
+}
+
+static void on_git_stage_clicked(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    GitFileActionData *data = user_data;
+    run_git_operation(data->self, data->stage ? GIT_OP_STAGE : GIT_OP_UNSTAGE, data->path, NULL);
+}
+
+static void add_git_status_row(SilktexWindow *self, const SilktexGitFile *file)
+{
+    GtkWidget *row = adw_action_row_new();
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), file->path);
+    adw_action_row_set_subtitle(ADW_ACTION_ROW(row), status_label_for_file(file));
+
+    if (file_has_unstaged_change(file)) {
+        GtkWidget *button = gtk_button_new_with_label(_("Stage"));
+        gtk_widget_add_css_class(button, "flat");
+
+        GitFileActionData *data = g_new0(GitFileActionData, 1);
+        data->self = g_object_ref(self);
+        data->path = g_strdup(file->path);
+        data->stage = TRUE;
+        g_signal_connect_data(button, "clicked", G_CALLBACK(on_git_stage_clicked), data,
+                              git_file_action_data_destroy, 0);
+        adw_action_row_add_suffix(ADW_ACTION_ROW(row), button);
+    }
+
+    if (file_has_staged_change(file)) {
+        GtkWidget *button = gtk_button_new_with_label(_("Unstage"));
+        gtk_widget_add_css_class(button, "flat");
+
+        GitFileActionData *data = g_new0(GitFileActionData, 1);
+        data->self = g_object_ref(self);
+        data->path = g_strdup(file->path);
+        data->stage = FALSE;
+        g_signal_connect_data(button, "clicked", G_CALLBACK(on_git_stage_clicked), data,
+                              git_file_action_data_destroy, 0);
+        adw_action_row_add_suffix(ADW_ACTION_ROW(row), button);
+    }
+
+    gtk_list_box_append(self->git_list, row);
+}
+
+static void update_git_dialog(SilktexWindow *self)
+{
+    if (self->git_dialog == NULL) return;
+
+    clear_git_list(self);
+
+    if (self->git_status == NULL) {
+        gtk_label_set_label(self->git_branch_label, _("No Git repository"));
+        gtk_label_set_label(self->git_repo_label,
+                            self->git_status_message ? self->git_status_message
+                                                     : _("Save a file inside a Git repository."));
+
+        GtkWidget *row = adw_action_row_new();
+        adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), _("No changes to show"));
+        adw_action_row_set_subtitle(ADW_ACTION_ROW(row), _("Open or save a document in a Git repository."));
+        gtk_list_box_append(self->git_list, row);
+        return;
+    }
+
+    g_autofree char *branch = g_strdup_printf(_("Branch: %s"), self->git_status->branch);
+    gtk_label_set_label(self->git_branch_label, branch);
+    gtk_label_set_label(self->git_repo_label, self->git_status->repo_root);
+
+    if (self->git_status->files->len == 0) {
+        GtkWidget *row = adw_action_row_new();
+        adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), _("Working Tree Clean"));
+        adw_action_row_set_subtitle(ADW_ACTION_ROW(row), _("There are no staged or unstaged changes."));
+        gtk_list_box_append(self->git_list, row);
+        return;
+    }
+
+    for (guint i = 0; i < self->git_status->files->len; i++) {
+        SilktexGitFile *file = g_ptr_array_index(self->git_status->files, i);
+        add_git_status_row(self, file);
+    }
+}
+
+static void git_status_thread(GTask *task, gpointer source_object, gpointer task_data,
+                              GCancellable *cancellable)
+{
+    (void)source_object;
+    (void)task_data;
+    (void)cancellable;
+
+    GitStatusTaskData *d = g_task_get_task_data(task);
+    if (d == NULL || d->path == NULL) {
+        g_task_return_new_error(task, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT,
+                                "Git status: missing path");
+        return;
+    }
+
+    GError *error = NULL;
+    SilktexGitStatus *status = silktex_git_status_load(d->path, &error);
+    if (status == NULL) {
+        g_task_return_error(task, error);
+        return;
+    }
+
+    g_task_return_pointer(task, status, (GDestroyNotify)silktex_git_status_free);
+}
+
+static void on_git_status_loaded(GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    (void)source;
+    (void)user_data;
+    GTask *task = G_TASK(result);
+    GitStatusTaskData *td = g_task_get_task_data(task);
+    const char *requested_path = (td && td->path) ? td->path : NULL;
+
+    GError *error = NULL;
+    SilktexGitStatus *status = g_task_propagate_pointer(task, &error);
+
+    SilktexWindow *self = NULL;
+    if (td != NULL) self = g_weak_ref_get(&td->win_ref);
+
+    if (self == NULL) {
+        if (status != NULL) silktex_git_status_free(status);
+        g_clear_error(&error);
+        return;
+    }
+
+    SilktexEditor *editor = silktex_window_get_active_editor(self);
+    const char *current_path = editor ? silktex_editor_get_filename(editor) : NULL;
+    if (g_strcmp0(requested_path, current_path) != 0) {
+        if (status != NULL) silktex_git_status_free(status);
+        g_clear_error(&error);
+        g_object_unref(self);
+        return;
+    }
+
+    g_clear_pointer(&self->git_status, silktex_git_status_free);
+    g_clear_pointer(&self->git_status_message, g_free);
+
+    if (error != NULL) {
+        self->git_status_message = g_strdup(error->message);
+        g_clear_error(&error);
+    } else {
+        self->git_status = status;
+    }
+
+    update_git_actions(self);
+    update_git_dialog(self);
+    g_object_unref(self);
+}
+
+static void refresh_git_state(SilktexWindow *self)
+{
+    SilktexEditor *editor = silktex_window_get_active_editor(self);
+    const char *filename = editor ? silktex_editor_get_filename(editor) : NULL;
+
+    if (!silktex_git_is_available() || filename == NULL || *filename == '\0') {
+        g_clear_pointer(&self->git_status, silktex_git_status_free);
+        g_clear_pointer(&self->git_status_message, g_free);
+        self->git_status_message =
+            g_strdup(!silktex_git_is_available() ? _("git is not installed")
+                                                 : _("Save the active document before using Git"));
+        update_git_actions(self);
+        update_git_dialog(self);
+        return;
+    }
+
+    GitStatusTaskData *d = g_new0(GitStatusTaskData, 1);
+    g_weak_ref_init(&d->win_ref, G_OBJECT(self));
+    d->path = g_strdup(filename);
+
+    GTask *task = g_task_new(NULL, NULL, on_git_status_loaded, NULL);
+    g_task_set_task_data(task, d, git_status_task_data_free);
+    g_task_run_in_thread(task, git_status_thread);
+    g_object_unref(task);
+}
+
+static void on_git_dialog_closed(AdwDialog *dialog, gpointer user_data)
+{
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    if (self->git_dialog == dialog) {
+        self->git_dialog = NULL;
+        self->git_branch_label = NULL;
+        self->git_repo_label = NULL;
+        self->git_list = NULL;
+        self->git_commit_message = NULL;
+    }
+}
+
+static void on_git_dialog_refresh_clicked(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    refresh_git_state(SILKTEX_WINDOW(user_data));
+}
+
+static void on_git_dialog_commit_clicked(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    const char *message =
+        self->git_commit_message ? gtk_editable_get_text(self->git_commit_message) : "";
+    g_autofree char *trimmed = g_strdup(message ? message : "");
+    if (*g_strstrip(trimmed) == '\0') {
+        silktex_window_show_toast(self, _("Enter a commit message"));
+        return;
+    }
+
+    run_git_operation(self, GIT_OP_COMMIT, NULL, trimmed);
+}
+
+static GtkWidget *build_git_dialog_content(SilktexWindow *self)
+{
+    GtkWidget *toolbarview = adw_toolbar_view_new();
+    GtkWidget *header = adw_header_bar_new();
+    adw_toolbar_view_add_top_bar(ADW_TOOLBAR_VIEW(toolbarview), header);
+
+    GtkWidget *refresh = gtk_button_new_from_icon_name("view-refresh-symbolic");
+    gtk_widget_set_tooltip_text(refresh, _("Refresh Git Status"));
+    gtk_widget_add_css_class(refresh, "flat");
+    g_signal_connect(refresh, "clicked", G_CALLBACK(on_git_dialog_refresh_clicked), self);
+    adw_header_bar_pack_end(ADW_HEADER_BAR(header), refresh);
+
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_set_margin_top(box, 12);
+    gtk_widget_set_margin_bottom(box, 12);
+    gtk_widget_set_margin_start(box, 12);
+    gtk_widget_set_margin_end(box, 12);
+
+    self->git_branch_label = GTK_LABEL(gtk_label_new(_("No Git repository")));
+    gtk_label_set_xalign(self->git_branch_label, 0.0);
+    gtk_widget_add_css_class(GTK_WIDGET(self->git_branch_label), "heading");
+    gtk_box_append(GTK_BOX(box), GTK_WIDGET(self->git_branch_label));
+
+    self->git_repo_label = GTK_LABEL(gtk_label_new(""));
+    gtk_label_set_xalign(self->git_repo_label, 0.0);
+    gtk_label_set_ellipsize(self->git_repo_label, PANGO_ELLIPSIZE_MIDDLE);
+    gtk_widget_add_css_class(GTK_WIDGET(self->git_repo_label), "dim-label");
+    gtk_box_append(GTK_BOX(box), GTK_WIDGET(self->git_repo_label));
+
+    GtkWidget *scroll = gtk_scrolled_window_new();
+    gtk_widget_set_vexpand(scroll, TRUE);
+    gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(scroll), 260);
+    self->git_list = GTK_LIST_BOX(gtk_list_box_new());
+    gtk_list_box_set_selection_mode(self->git_list, GTK_SELECTION_NONE);
+    gtk_widget_add_css_class(GTK_WIDGET(self->git_list), "boxed-list");
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), GTK_WIDGET(self->git_list));
+    gtk_box_append(GTK_BOX(box), scroll);
+
+    GtkWidget *commit_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    self->git_commit_message = GTK_EDITABLE(gtk_entry_new());
+    gtk_entry_set_placeholder_text(GTK_ENTRY(self->git_commit_message), _("Commit message"));
+    gtk_widget_set_hexpand(GTK_WIDGET(self->git_commit_message), TRUE);
+    gtk_box_append(GTK_BOX(commit_box), GTK_WIDGET(self->git_commit_message));
+
+    GtkWidget *commit = gtk_button_new_with_label(_("Commit"));
+    gtk_widget_add_css_class(commit, "suggested-action");
+    g_signal_connect(commit, "clicked", G_CALLBACK(on_git_dialog_commit_clicked), self);
+    gtk_box_append(GTK_BOX(commit_box), commit);
+    gtk_box_append(GTK_BOX(box), commit_box);
+
+    adw_toolbar_view_set_content(ADW_TOOLBAR_VIEW(toolbarview), box);
+    return toolbarview;
+}
+
+static void show_git_dialog(SilktexWindow *self)
+{
+    /* Do not adw_dialog_present an already-shown dialog: it can re-enter
+     * AdwDialogHost / AdwFloatingSheet and trigger "Broken accounting of active
+     * state" from GTK.  ::closed clears self->git_dialog, so a non-NULL
+     * reference means this dialog is still the presented one. */
+    if (self->git_dialog != NULL) {
+        update_git_dialog(self);
+        return;
+    }
+
+    AdwDialog *dialog = adw_dialog_new();
+    adw_dialog_set_title(dialog, _("Git Status"));
+    adw_dialog_set_content_width(dialog, 680);
+    adw_dialog_set_content_height(dialog, 520);
+    adw_dialog_set_child(dialog, build_git_dialog_content(self));
+    g_signal_connect(dialog, "closed", G_CALLBACK(on_git_dialog_closed), self);
+
+    self->git_dialog = dialog;
+    update_git_dialog(self);
+    adw_dialog_present(dialog, GTK_WIDGET(self));
+}
+
+static void action_git_status(GSimpleAction *a, GVariant *p, gpointer ud)
+{
+    (void)a;
+    (void)p;
+    SilktexWindow *self = SILKTEX_WINDOW(ud);
+    show_git_dialog(self);
+    refresh_git_state(self);
+}
+
+/* Focus the commit field after the sheet is on screen; never grab in the
+ * same tick as adw_dialog_present (also contributes to bad active state). */
+static void on_git_commit_entry_mapped(GtkWidget *entry, gpointer user_data)
+{
+    (void)user_data;
+    g_signal_handlers_disconnect_by_func(entry, G_CALLBACK(on_git_commit_entry_mapped), NULL);
+    gtk_widget_grab_focus(entry);
+}
+
+static void action_git_commit(GSimpleAction *a, GVariant *p, gpointer ud)
+{
+    (void)a;
+    (void)p;
+    SilktexWindow *self = SILKTEX_WINDOW(ud);
+    show_git_dialog(self);
+    if (self->git_commit_message == NULL) return;
+    GtkWidget *entry = GTK_WIDGET(self->git_commit_message);
+    if (gtk_widget_get_mapped(entry))
+        gtk_widget_grab_focus(entry);
+    else
+        g_signal_connect(entry, "map", G_CALLBACK(on_git_commit_entry_mapped), NULL);
+}
+
+static void action_git_pull(GSimpleAction *a, GVariant *p, gpointer ud)
+{
+    (void)a;
+    (void)p;
+    run_git_operation(SILKTEX_WINDOW(ud), GIT_OP_PULL, NULL, NULL);
+}
+
+static void action_git_push(GSimpleAction *a, GVariant *p, gpointer ud)
+{
+    (void)a;
+    (void)p;
+    run_git_operation(SILKTEX_WINDOW(ud), GIT_OP_PUSH, NULL, NULL);
+}
+
 /* ------------------------------------------------------------ recent files */
 
 typedef struct {
@@ -1108,8 +1683,14 @@ static GtkWidget *make_group(const char *title)
 
 static void action_shortcuts(GSimpleAction *a, GVariant *p, gpointer ud)
 {
+    (void)a;
+    (void)p;
     SilktexWindow *self = SILKTEX_WINDOW(ud);
 
+    /* GtkShortcutsWindow and related APIs are deprecated as of 4.18 (removed in GTK 5) with
+     * no in-tree replacement; GtkBuilder from .ui is equally deprecated. Silence until
+     * we can ship a custom shortcuts dialog or migrate to a future API. */
+    G_GNUC_BEGIN_IGNORE_DEPRECATIONS
     GtkWidget *win = g_object_new(GTK_TYPE_SHORTCUTS_WINDOW, "modal", TRUE, "transient-for", self,
                                   "destroy-with-parent", TRUE, NULL);
 
@@ -1195,6 +1776,7 @@ static void action_shortcuts(GSimpleAction *a, GVariant *p, gpointer ud)
 
     gtk_shortcuts_window_add_section(GTK_SHORTCUTS_WINDOW(win), GTK_SHORTCUTS_SECTION(section));
     gtk_window_present(GTK_WINDOW(win));
+    G_GNUC_END_IGNORE_DEPRECATIONS
 }
 
 typedef struct {
@@ -1230,8 +1812,22 @@ static void on_primary_popover_action(GtkButton *button, gpointer user_data)
     }
 }
 
-static GtkWidget *make_primary_popover_button(const char *label, const char *icon_name,
-                                              const char *action, SilktexWindow *self)
+/* vcs-*, emblem-ok-* and similar are not installed with every icon theme. */
+static void silktex_image_set_icon_list(GtkImage *image, const char *const *candidates)
+{
+    if (candidates == NULL || candidates[0] == NULL) return;
+    GtkIconTheme *t = gtk_icon_theme_get_for_display(gdk_display_get_default());
+    for (int i = 0; candidates[i]; i++) {
+        if (gtk_icon_theme_has_icon(t, candidates[i])) {
+            gtk_image_set_from_icon_name(image, candidates[i]);
+            return;
+        }
+    }
+    gtk_image_set_from_icon_name(image, candidates[0]);
+}
+
+static GtkWidget *make_primary_popover_with_icons(const char *label, const char *const *icon_candidates,
+                                                    const char *action, SilktexWindow *self)
 {
     GtkWidget *button = gtk_button_new();
     gtk_widget_add_css_class(button, "flat");
@@ -1242,7 +1838,8 @@ static GtkWidget *make_primary_popover_button(const char *label, const char *ico
     gtk_widget_set_margin_start(box, 6);
     gtk_widget_set_margin_end(box, 6);
 
-    GtkWidget *icon = gtk_image_new_from_icon_name(icon_name);
+    GtkWidget *icon = gtk_image_new();
+    silktex_image_set_icon_list(GTK_IMAGE(icon), icon_candidates);
     gtk_box_append(GTK_BOX(box), icon);
 
     GtkWidget *lbl = gtk_label_new_with_mnemonic(label);
@@ -1253,6 +1850,13 @@ static GtkWidget *make_primary_popover_button(const char *label, const char *ico
     gtk_button_set_child(GTK_BUTTON(button), box);
     g_signal_connect(button, "clicked", G_CALLBACK(on_primary_popover_action), self);
     return button;
+}
+
+static GtkWidget *make_primary_popover_button(const char *label, const char *icon_name,
+                                              const char *action, SilktexWindow *self)
+{
+    const char *one[] = {icon_name, NULL};
+    return make_primary_popover_with_icons(label, one, action, self);
 }
 
 static void install_theme_swatch_css(void)
@@ -1275,6 +1879,64 @@ static void install_theme_swatch_css(void)
         "  border-color: transparent;"
         "  box-shadow: none;"
         "  outline-color: transparent;"
+        "}");
+    gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+                                               GTK_STYLE_PROVIDER(provider),
+                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(provider);
+}
+
+/* Single-pixel paned grip: no blur to the side (that shifted the vertical line
+ * vs. the footer) and no double stroke (background + outline). */
+static void install_silktex_chrome_css(void)
+{
+    static gboolean installed = FALSE;
+    if (installed) return;
+    installed = TRUE;
+
+    GtkCssProvider *provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_string(
+        provider,
+        "paned.silktex-editor-paned.horizontal > separator {"
+        "  min-width: 1px;"
+        "  min-height: 1px;"
+        "  background: @borders;"
+        "  box-shadow: none;"
+        "}"
+        "paned.silktex-editor-paned.vertical > separator {"
+        "  min-width: 1px;"
+        "  min-height: 1px;"
+        "  background: @borders;"
+        "  box-shadow: none;"
+        "}"
+        /* Outline column: one hairline + soft depth so the split is not a flat
+         * seam; .view keeps it on the same colour family as the editor. */
+        ".silktex-sidebar-pane {"
+        "  box-shadow: 1px 0 0 0 @borders, 1px 0 4px alpha(black, 0.2);"
+        "}"
+        /* Bottom toolbars: no top hairline, no in-bar separators. */
+        "box.toolbar.silktex-bottom-toolbar, box.silktex-bottom-toolbar {"
+        "  border: none;"
+        "  box-shadow: none;"
+        "  outline: none;"
+        "}"
+        "box.silktex-bottom-toolbar > separator, box.toolbar.silktex-bottom-toolbar > separator, "
+        "box.silktex-bottom-toolbar separator, box.toolbar.silktex-bottom-toolbar separator {"
+        "  min-width: 0;"
+        "  min-height: 0;"
+        "  background: transparent;"
+        "  color: transparent;"
+        "  margin: 0;"
+        "  padding: 0;"
+        "  border: none;"
+        "}"
+        "revealer.silktex-compile-log {"
+        "  box-shadow: none;"
+        "  border: none;"
+        "}"
+        "revealer.silktex-compile-log > * {"
+        "  box-shadow: none;"
+        "  border: none;"
         "}");
     gtk_style_context_add_provider_for_display(gdk_display_get_default(),
                                                GTK_STYLE_PROVIDER(provider),
@@ -1320,11 +1982,23 @@ static void draw_theme_swatch(GtkDrawingArea *area, cairo_t *cr, int width, int 
         cairo_close_path(cr);
         cairo_set_source_rgb(cr, 0.08, 0.08, 0.09);
         cairo_fill(cr);
+    } else if (g_strcmp0(mode, "lightsout") == 0) {
+        cairo_set_source_rgb(cr, 0.02, 0.02, 0.02);
+        cairo_paint(cr);
+        /* Dim corner — reads as a black canvas with a hint of light. */
+        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.06);
+        cairo_move_to(cr, x + size, y);
+        cairo_line_to(cr, x + size, y + size);
+        cairo_line_to(cr, x, y + size);
+        cairo_close_path(cr);
+        cairo_fill(cr);
     } else if (g_strcmp0(mode, "dark") == 0) {
-        cairo_set_source_rgb(cr, 0.08, 0.08, 0.09);
+        /* Gruvbox-ish dark, distinct from “Lights out” */
+        cairo_set_source_rgb(cr, 0.16, 0.15, 0.14);
         cairo_paint(cr);
     } else {
-        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+        /* Light / follow light half */
+        cairo_set_source_rgb(cr, 0.99, 0.96, 0.9);
         cairo_paint(cr);
     }
 
@@ -1406,6 +2080,8 @@ static void install_primary_popover(SilktexWindow *self)
     install_theme_swatch_css();
 
     GtkWidget *popover = gtk_popover_new();
+    /* Click outside the menu to dismiss (same behavior as a standard menu). */
+    gtk_popover_set_autohide(GTK_POPOVER(popover), TRUE);
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     gtk_widget_set_margin_top(box, 8);
     gtk_widget_set_margin_bottom(box, 8);
@@ -1417,18 +2093,22 @@ static void install_primary_popover(SilktexWindow *self)
     gtk_widget_set_halign(theme, GTK_ALIGN_CENTER);
 
     GtkWidget *follow = make_theme_toggle("follow", _("Follow System Theme"), self);
-    GtkWidget *light = make_theme_toggle("light", _("Light Theme"), self);
-    GtkWidget *dark = make_theme_toggle("dark", _("Dark Theme"), self);
+    GtkWidget *light = make_theme_toggle("light", _("Gruvbox (light)"), self);
+    GtkWidget *dark = make_theme_toggle("dark", _("Gruvbox (dark)"), self);
+    GtkWidget *lout = make_theme_toggle("lightsout", _("Lights out"), self);
     gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(light), GTK_TOGGLE_BUTTON(follow));
     gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(dark), GTK_TOGGLE_BUTTON(follow));
+    gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(lout), GTK_TOGGLE_BUTTON(follow));
 
     self->theme_follow = GTK_TOGGLE_BUTTON(follow);
     self->theme_light = GTK_TOGGLE_BUTTON(light);
     self->theme_dark = GTK_TOGGLE_BUTTON(dark);
+    self->theme_lightsout = GTK_TOGGLE_BUTTON(lout);
 
     gtk_box_append(GTK_BOX(theme), follow);
     gtk_box_append(GTK_BOX(theme), light);
     gtk_box_append(GTK_BOX(theme), dark);
+    gtk_box_append(GTK_BOX(theme), lout);
     gtk_box_append(GTK_BOX(box), theme);
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
@@ -1448,6 +2128,35 @@ static void install_primary_popover(SilktexWindow *self)
     gtk_box_append(GTK_BOX(box),
                    make_primary_popover_button(_("_Export to PDF…"), "document-save-as-symbolic",
                                                "win.export-pdf", self));
+    gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+    {
+        /* Primary names are from Adwaita; fallbacks for minimal / macOS themes. */
+        static const char *const git_status_icons[] = {
+            "vcs-git-symbolic",
+            "view-list-detail-symbolic",
+            "view-list-symbolic",
+            "folder-saved-search-symbolic",
+            "dialog-information-symbolic",
+            "folder-symbolic",
+            NULL,
+        };
+        static const char *const git_commit_icons[] = {
+            "emblem-ok-symbolic",
+            "object-select-symbolic",
+            "mail-send-symbolic",
+            "document-save-symbolic",
+            "insert-object-symbolic",
+            NULL,
+        };
+        gtk_box_append(GTK_BOX(box), make_primary_popover_with_icons(
+                         _("_Git Status…"), git_status_icons, "win.git-status", self));
+        gtk_box_append(GTK_BOX(box), make_primary_popover_with_icons(
+                         _("Git _Commit…"), git_commit_icons, "win.git-commit", self));
+    }
+    gtk_box_append(GTK_BOX(box), make_primary_popover_button(
+                         _("Git _Pull"), "network-receive-symbolic", "win.git-pull", self));
+    gtk_box_append(GTK_BOX(box), make_primary_popover_button(
+                         _("Git P_ush"), "network-transmit-symbolic", "win.git-push", self));
     gtk_box_append(GTK_BOX(box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
     gtk_box_append(GTK_BOX(box),
                    make_primary_popover_button(_("_Fullscreen"), "view-fullscreen-symbolic",
@@ -1507,14 +2216,93 @@ static void on_prefs_apply(gpointer user_data)
 
 /* ------------------------------------------------------------ preview toggle */
 
+/* Clamp the GtkPaned start-child width (left / editor) to allowed range. */
+static int clamp_editor_pane_start(int w, int pos)
+{
+    if (w < 1) return pos;
+    int max_start = w - PREVIEW_PANE_MIN_WIDTH;
+    if (max_start < EDITOR_MIN_WIDTH) max_start = EDITOR_MIN_WIDTH;
+    if (pos < EDITOR_MIN_WIDTH) return EDITOR_MIN_WIDTH;
+    if (pos > max_start) return max_start;
+    return pos;
+}
+
+static void apply_editor_paned_half_split(SilktexWindow *self)
+{
+    if (self->editor_paned == NULL) return;
+
+    int w = gtk_widget_get_width(GTK_WIDGET(self->editor_paned));
+    if (w < 1) return;
+
+    int half = w / 2;
+    int max_start = w - PREVIEW_PANE_MIN_WIDTH;
+    if (max_start < EDITOR_MIN_WIDTH) max_start = EDITOR_MIN_WIDTH;
+    if (half > max_start) half = max_start;
+    if (half < EDITOR_MIN_WIDTH) half = EDITOR_MIN_WIDTH;
+    if (half > max_start) half = (EDITOR_MIN_WIDTH + max_start) / 2;
+
+    self->preview_pane_silence = TRUE;
+    gtk_paned_set_position(self->editor_paned, half);
+    self->preview_pane_silence = FALSE;
+    self->preview_pane_pos = gtk_paned_get_position(self->editor_paned);
+    self->preview_pane_restorable = TRUE;
+    self->preview_split_seeded = TRUE;
+}
+
+/* Re-apply 50% or the last stored split; call only when the preview pane is visible. */
+static void apply_editor_pane_restore(SilktexWindow *self)
+{
+    if (self->editor_paned == NULL || self->preview_toolbar_view == NULL) return;
+    if (!gtk_widget_get_visible(GTK_WIDGET(self->preview_toolbar_view))) return;
+
+    int w = gtk_widget_get_width(GTK_WIDGET(self->editor_paned));
+    if (w < 1) return;
+
+    if (!self->preview_pane_restorable) {
+        apply_editor_paned_half_split(self);
+        return;
+    }
+
+    int pos = clamp_editor_pane_start(w, self->preview_pane_pos);
+    self->preview_pane_silence = TRUE;
+    gtk_paned_set_position(self->editor_paned, pos);
+    self->preview_pane_silence = FALSE;
+    self->preview_pane_pos = gtk_paned_get_position(self->editor_paned);
+    self->preview_split_seeded = TRUE;
+}
+
+static gboolean idle_restore_editor_pane(gpointer user_data)
+{
+    apply_editor_pane_restore(SILKTEX_WINDOW(user_data));
+    return G_SOURCE_REMOVE;
+}
+
 static void on_preview_toggled(GtkToggleButton *button, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     gboolean visible = gtk_toggle_button_get_active(button);
+
+    if (!visible && self->editor_paned && self->preview_toolbar_view &&
+        gtk_widget_get_visible(GTK_WIDGET(self->preview_toolbar_view))) {
+        int w = gtk_widget_get_width(GTK_WIDGET(self->editor_paned));
+        if (w > 0) {
+            self->preview_pane_pos = gtk_paned_get_position(self->editor_paned);
+            self->preview_pane_restorable = TRUE;
+        }
+    }
+
     if (self->preview_toolbar_view)
         gtk_widget_set_visible(GTK_WIDGET(self->preview_toolbar_view), visible);
     gtk_button_set_icon_name(GTK_BUTTON(button),
                              visible ? "view-dual-symbolic" : "view-continuous-symbolic");
+
+    if (visible) {
+        int w = self->editor_paned ? gtk_widget_get_width(GTK_WIDGET(self->editor_paned)) : 0;
+        if (w > 0)
+            apply_editor_pane_restore(self);
+        else
+            g_idle_add(idle_restore_editor_pane, self);
+    }
 }
 
 static void on_window_width_changed(GObject *object, GParamSpec *pspec, gpointer user_data)
@@ -1535,6 +2323,7 @@ static void on_window_width_changed(GObject *object, GParamSpec *pspec, gpointer
     } else if (!narrow && self->preview_auto_collapsed) {
         self->preview_auto_collapsed = FALSE;
         gtk_toggle_button_set_active(self->btn_preview, TRUE);
+        g_idle_add(idle_restore_editor_pane, self);
     }
 }
 
@@ -1544,12 +2333,20 @@ static void on_editor_paned_position_changed(GObject *object, GParamSpec *pspec,
     (void)pspec;
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
 
+    if (self->preview_pane_silence) return;
     if (!gtk_widget_get_visible(GTK_WIDGET(self->preview_toolbar_view))) return;
 
+    int w = gtk_widget_get_width(GTK_WIDGET(self->editor_paned));
     int position = gtk_paned_get_position(self->editor_paned);
-    if (position < EDITOR_MIN_WIDTH) {
-        gtk_paned_set_position(self->editor_paned, EDITOR_MIN_WIDTH);
+    int clamped = clamp_editor_pane_start(w, position);
+    if (clamped != position) {
+        self->preview_pane_silence = TRUE;
+        gtk_paned_set_position(self->editor_paned, clamped);
+        self->preview_pane_silence = FALSE;
     }
+    if (!self->preview_split_seeded) return;
+    self->preview_pane_pos = gtk_paned_get_position(self->editor_paned);
+    self->preview_pane_restorable = TRUE;
 }
 
 static void on_tab_changed(AdwTabView *view, GParamSpec *pspec, gpointer user_data)
@@ -1563,6 +2360,7 @@ static void on_tab_changed(AdwTabView *view, GParamSpec *pspec, gpointer user_da
         silktex_structure_set_editor(self->structure, editor);
         if (self->auto_compile) restart_compile_timer(self);
     }
+    refresh_git_state(self);
 }
 
 typedef struct {
@@ -1679,6 +2477,10 @@ static const GActionEntry win_actions[] = {
     {"cleanup", action_cleanup},
     {"stats", action_stats},
     {"open-pdf-external", action_open_pdf_external},
+    {"git-status", action_git_status},
+    {"git-commit", action_git_commit},
+    {"git-pull", action_git_pull},
+    {"git-push", action_git_push},
     {"open-menu", action_open_menu},
 };
 
@@ -1720,6 +2522,13 @@ static void silktex_window_dispose(GObject *object)
     self->current_toast = NULL;
 
     if (self->compiler) silktex_compiler_stop(self->compiler);
+    self->git_branch_label = NULL;
+    self->git_repo_label = NULL;
+    self->git_list = NULL;
+    self->git_commit_message = NULL;
+    self->git_dialog = NULL;
+    g_clear_pointer(&self->git_status, silktex_git_status_free);
+    g_clear_pointer(&self->git_status_message, g_free);
     g_clear_object(&self->compiler);
     g_clear_object(&self->snippets);
 
@@ -1735,6 +2544,7 @@ static void silktex_window_class_init(SilktexWindowClass *klass)
 
     gtk_widget_class_set_template_from_resource(widget_class, "/app/silktex/main.ui");
 
+    gtk_widget_class_bind_template_child(widget_class, SilktexWindow, root_toolbar_view);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, window_title);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, toast_overlay);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, tab_view);
@@ -1757,10 +2567,34 @@ static void silktex_window_class_init(SilktexWindowClass *klass)
 static void silktex_window_init(SilktexWindow *self)
 {
     g_type_ensure(SILKTEX_TYPE_PREVIEW);
+    install_silktex_chrome_css();
     gtk_widget_init_template(GTK_WIDGET(self));
+
+    gtk_widget_set_size_request(GTK_WIDGET(self), WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
+
+    /* Flat top bars: avoid an extra "step" and shadow between title bar,
+     * tab strip, and the split — reads as one continuous header band. */
+    if (self->root_toolbar_view) {
+        adw_toolbar_view_set_top_bar_style(self->root_toolbar_view, ADW_TOOLBAR_FLAT);
+    }
+    if (self->editor_toolbar_view) {
+        adw_toolbar_view_set_top_bar_style(self->editor_toolbar_view, ADW_TOOLBAR_FLAT);
+    }
+    if (self->preview_toolbar_view) {
+        adw_toolbar_view_set_top_bar_style(self->preview_toolbar_view, ADW_TOOLBAR_FLAT);
+    }
+    /* Flat bottom bars: same hairline weight as the paned separator (raised
+     * toolbars use a heavier top edge that looked bigger than the split). */
+    if (self->editor_toolbar_view) {
+        adw_toolbar_view_set_bottom_bar_style(self->editor_toolbar_view, ADW_TOOLBAR_FLAT);
+    }
+    if (self->preview_toolbar_view) {
+        adw_toolbar_view_set_bottom_bar_style(self->preview_toolbar_view, ADW_TOOLBAR_FLAT);
+    }
 
     g_action_map_add_action_entries(G_ACTION_MAP(self), win_actions, G_N_ELEMENTS(win_actions),
                                     self);
+    update_git_actions(self);
 
     /* Reflect the persisted theme choice in the "Theme" radio state. */
     GAction *theme_action = g_action_map_lookup_action(G_ACTION_MAP(self), "set-theme");
@@ -1803,7 +2637,7 @@ static void silktex_window_init(SilktexWindow *self)
     /* ---- search bar ----
      *
      * Attach the search overlay as a *top* bar of the editor's ToolbarView
-     * so it appears directly under the tab bar when opened and does not
+     * so it sits directly under the window tab strip when opened and does not
      * interfere with the bottom toolbar or the compile-log revealer. */
     self->searchbar = silktex_searchbar_new();
     if (self->editor_toolbar_view) {
@@ -1821,6 +2655,7 @@ static void silktex_window_init(SilktexWindow *self)
     g_signal_connect(key_ctrl, "key-released", G_CALLBACK(on_window_key_released), self);
 
     g_signal_connect(self->btn_preview, "toggled", G_CALLBACK(on_preview_toggled), self);
+    on_preview_toggled(self->btn_preview, self);
     g_signal_connect(self, "notify::width", G_CALLBACK(on_window_width_changed), self);
     g_signal_connect(self->editor_paned, "notify::position",
                      G_CALLBACK(on_editor_paned_position_changed), self);
@@ -1838,6 +2673,7 @@ static void silktex_window_init(SilktexWindow *self)
      * left. */
     {
         GtkWidget *revealer = gtk_revealer_new();
+        gtk_widget_add_css_class(revealer, "silktex-compile-log");
         gtk_revealer_set_transition_type(GTK_REVEALER(revealer),
                                          GTK_REVEALER_TRANSITION_TYPE_SLIDE_UP);
         gtk_revealer_set_reveal_child(GTK_REVEALER(revealer), FALSE);
@@ -1877,6 +2713,7 @@ static void silktex_window_init(SilktexWindow *self)
 
     /* ---- initial tab ---- */
     silktex_window_new_tab(self);
+    refresh_git_state(self);
 
     /* ---- accelerators ---- */
     const char *accels[][2] = {
@@ -1946,6 +2783,7 @@ void silktex_window_open_file(SilktexWindow *self, GFile *file)
     if (self->auto_compile) {
         restart_compile_timer(self);
     }
+    refresh_git_state(self);
 }
 
 void silktex_window_new_tab(SilktexWindow *self)
@@ -1970,6 +2808,7 @@ void silktex_window_new_tab(SilktexWindow *self)
     g_object_unref(editor);
 
     update_window_title(self);
+    refresh_git_state(self);
 }
 
 SilktexEditor *silktex_window_get_active_editor(SilktexWindow *self)

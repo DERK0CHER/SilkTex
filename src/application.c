@@ -7,6 +7,7 @@
 #include "application.h"
 #include "window.h"
 #include "configfile.h"
+#include "style-schemes.h"
 #include "utils.h"
 #include "i18n.h"
 
@@ -76,6 +77,8 @@ static void silktex_application_startup(GApplication *app)
 
     slog_init(0);
     config_init();
+    /* Discover bundled GtkSourceView styles ($prefix/share/silktex/styles). */
+    silktex_init_style_scheme_paths();
 
     g_action_map_add_action_entries(G_ACTION_MAP(app), app_actions, G_N_ELEMENTS(app_actions), app);
 

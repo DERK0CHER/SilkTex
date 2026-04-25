@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Lights out: near-OLED / minimal luminance. Paired with forced dark Adwaita UI.
+-->
+<style-scheme id="silktex-lights-out" _name="Lights out" version="1.0">
+  <author>SilkTex</author>
+  <description>Low-luminance black background for the editor area.</description>
+
+  <color name="bg0"       value="#0a0a0a"/>
+  <color name="bg1"       value="#141414"/>
+  <color name="fg0"       value="#e0e0e0"/>
+  <color name="fg1"       value="#c4c4c4"/>
+  <color name="fg4"       value="#6b6b6b"/>
+  <color name="red"       value="#e55353"/>
+  <color name="green"     value="#7fd59a"/>
+  <color name="yellow"    value="#e5c07b"/>
+  <color name="blue"      value="#6caedd"/>
+  <color name="purple"    value="#c39ac9"/>
+  <color name="aqua"      value="#7fbbb3"/>
+  <color name="orange"    value="#e39b7d"/>
+  <color name="gray"      value="#5c5c5c"/>
+
+  <style name="text"                        foreground="fg1"   background="bg0"/>
+  <style name="selection"                  foreground="bg0"   background="fg4"/>
+  <style name="cursor"                     foreground="fg0"/>
+  <style name="current-line"               background="bg1"/>
+  <style name="line-numbers"                foreground="gray"  background="bg0"/>
+  <style name="line-numbers:current-line"  foreground="fg1"   background="bg1"/>
+  <style name="bracket-match"              foreground="orange"  background="bg1" bold="true"/>
+  <style name="bracket-mismatch"           foreground="red"     background="bg1" bold="true"/>
+  <style name="right-margin"                foreground="gray"  background="bg0"/>
+  <style name="search-match"                background="bg1"    foreground="yellow"/>
+  <style name="background-pattern"         foreground="bg1"    background="bg0"/>
+
+  <style name="def:comment"                foreground="gray"  italic="true"/>
+  <style name="def:doc-comment"            foreground="gray"  italic="true"/>
+  <style name="def:doc-comment-element"     foreground="aqua"  bold="true"/>
+  <style name="def:keyword"                foreground="red"  bold="true"/>
+  <style name="def:string"                 foreground="green"/>
+  <style name="def:special-constant"       foreground="purple"/>
+  <style name="def:identifier"             foreground="fg1"/>
+  <style name="def:type"                  foreground="yellow"/>
+  <style name="def:function"               foreground="aqua"/>
+  <style name="def:preprocessor"            foreground="aqua"  bold="true"/>
+  <style name="def:underlined"             foreground="blue"  underline="true"/>
+  <style name="def:note"                    foreground="yellow"/>
+  <style name="def:warning"                foreground="yellow"/>
+  <style name="def:error"                 foreground="red"   bold="true"/>
+  <style name="def:statement"              foreground="orange"/>
+
+  <style name="latex:command"              foreground="blue"  bold="true"/>
+  <style name="latex:include"              foreground="aqua"/>
+  <style name="latex:math"                 foreground="purple"/>
+  <style name="others:line-marker"         background="red"/>
+</style-scheme>

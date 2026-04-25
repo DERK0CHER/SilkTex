@@ -161,8 +161,12 @@ static void silktex_preview_render_pages(SilktexPreview *self)
         int lw = surface_logical_width(surface);
         int lh = surface_logical_height(surface);
         self->total_height = lh + 2 * PAGE_PADDING;
-        gtk_widget_set_size_request(self->drawing_area, MAX(lw + 2 * PAGE_PADDING, 1),
-                                    MAX((int)self->total_height, 1));
+        /* Content size for scroll range — do not use gtk_widget_set_size_request for
+         * width, or the paned end child reports a huge min width and shoves the editor. */
+        gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(self->drawing_area),
+                                           MAX(lw + 2 * PAGE_PADDING, 1));
+        gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(self->drawing_area),
+                                            MAX((int)self->total_height, 1));
         return;
     }
 
@@ -204,16 +208,42 @@ static void silktex_preview_render_pages(SilktexPreview *self)
         self->total_height += (self->n_pages - 1) * page_gap;
     }
     self->total_height += 2 * PAGE_PADDING;
-    gtk_widget_set_size_request(self->drawing_area, MAX(max_width + 2 * PAGE_PADDING, 1),
-                                MAX((int)self->total_height, 1));
+    gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(self->drawing_area),
+                                       MAX(max_width + 2 * PAGE_PADDING, 1));
+    gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(self->drawing_area),
+                                        MAX((int)self->total_height, 1));
 }
 
-/* Pick a preview background color that pairs well with the current
- * Adwaita light/dark scheme.  The user reported the fixed dark grey
- * being too dark in light mode; we now use a subtle neutral grey there
- * and a slightly warmer charcoal in dark mode (matches Evince / Papers). */
-static void preview_bg_color(double *r, double *g, double *b)
+/* Canvas behind the PDF: use the same background as the rest of the UI
+ * (view / window base), not a hand-tuned grey — keeps the split pane
+ * visually consistent with Adwaita & libadwaita.  Falls back to our old
+ * light/dark approximations if the theme has no named colors. */
+static void preview_bg_color(SilktexPreview *self, double *r, double *g, double *b)
 {
+    static const char *candidates[] = {
+        "view_bg_color", /* same token as .view in gtk.css */
+        "theme_bg_color",
+    };
+
+    gboolean from_theme;
+    G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+    {
+        GtkStyleContext *ctx = gtk_widget_get_style_context(self->drawing_area);
+        GdkRGBA rgba;
+        from_theme = FALSE;
+        for (guint i = 0; i < G_N_ELEMENTS(candidates); i++) {
+            if (gtk_style_context_lookup_color(ctx, candidates[i], &rgba)) {
+                *r = rgba.red;
+                *g = rgba.green;
+                *b = rgba.blue;
+                from_theme = TRUE;
+                break;
+            }
+        }
+    }
+    G_GNUC_END_IGNORE_DEPRECATIONS
+    if (from_theme) return;
+
     AdwStyleManager *sm = adw_style_manager_get_default();
     if (adw_style_manager_get_dark(sm)) {
         *r = 0.15;
@@ -226,12 +256,22 @@ static void preview_bg_color(double *r, double *g, double *b)
     }
 }
 
+/* Subtle “paper” depth under the PDF page, visible against the view background. */
+static void draw_page_paper_shadow(cairo_t *cr, double x, double y, int lw, int lh)
+{
+    for (int i = 3; i >= 1; i--) {
+        cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.08 * (double)(4 - i));
+        cairo_rectangle(cr, x + (double)i, y + (double)i, (double)lw, (double)lh);
+        cairo_fill(cr);
+    }
+}
+
 static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer user_data)
 {
     SilktexPreview *self = SILKTEX_PREVIEW(user_data);
 
     double bg_r, bg_g, bg_b;
-    preview_bg_color(&bg_r, &bg_g, &bg_b);
+    preview_bg_color(self, &bg_r, &bg_g, &bg_b);
     cairo_set_source_rgb(cr, bg_r, bg_g, bg_b);
     cairo_paint(cr);
 
@@ -261,6 +301,7 @@ static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, 
         if (x < 0) x = PAGE_PADDING;
         double y = PAGE_PADDING;
 
+        draw_page_paper_shadow(cr, x, y, lw, lh);
         cairo_set_source_surface(cr, self->cached_surface, x, y);
         cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
         cairo_paint(cr);
@@ -282,6 +323,7 @@ static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, 
         double x = (width - lw) / 2.0;
         if (x < 0) x = PAGE_PADDING;
 
+        draw_page_paper_shadow(cr, x, y, lw, lh);
         cairo_set_source_surface(cr, surface, x, y);
         cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
         cairo_paint(cr);
@@ -434,10 +476,18 @@ static void silktex_preview_init(SilktexPreview *self)
     gtk_widget_set_focusable(self->scrolled_window, TRUE);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(self->scrolled_window), GTK_POLICY_AUTOMATIC,
                                    GTK_POLICY_AUTOMATIC);
+    /* PDF content can be very wide/tall: must not grow the parent GtkPaned min size. */
+    gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(self->scrolled_window),
+                                                      FALSE);
+    gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(self->scrolled_window),
+                                                      FALSE);
 
     self->drawing_area = gtk_drawing_area_new();
+    /* Match GtkTextView / list canvas backgrounds for theme color lookup. */
+    gtk_widget_add_css_class(self->drawing_area, "view");
     gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(self->drawing_area), draw_func, self, NULL);
-    gtk_widget_set_size_request(self->drawing_area, 400, 600);
+    gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(self->drawing_area), 400);
+    gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(self->drawing_area), 600);
     gtk_widget_set_hexpand(self->drawing_area, TRUE);
     gtk_widget_set_vexpand(self->drawing_area, TRUE);
 
