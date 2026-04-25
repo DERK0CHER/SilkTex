@@ -2,6 +2,10 @@
  * SilkTex — bundled GtkSourceView style schemes and resolution.
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Implements path registration and "auto" theme: picks Gruvbox or Lights-out
+ * variants based on AdwStyleManager and config overrides. GUMMI_DATA is the
+ * compile-time data root (historical macro name from the Gummi fork).
  */
 
 #include "style-schemes.h"

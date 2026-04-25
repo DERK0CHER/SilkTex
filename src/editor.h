@@ -2,6 +2,10 @@
  * SilkTex - Modern LaTeX Editor
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Public API for the GtkSourceView-backed editor instance. One SilktexEditor
+ * per tab; not a GtkWidget subclass — use silktex_editor_get_view() for the
+ * widget to pack into a container.
  */
 
 #pragma once

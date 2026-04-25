@@ -2,6 +2,12 @@
  * SilkTex - Modern LaTeX Editor
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * SilktexPreview — custom GtkWidget PDF preview using Poppler.
+ *
+ * Renders pages in a GtkDrawingArea (continuous vertical strip or single-page
+ * mode), caches cairo surfaces per page and zoom for performance, and supports
+ * programmatic scroll (SyncTeX). Hi-DPI: cache keys include the widget scale.
  */
 
 #include "preview.h"
@@ -45,7 +51,7 @@ struct _SilktexPreview {
 
 G_DEFINE_FINAL_TYPE (SilktexPreview, silktex_preview, GTK_TYPE_WIDGET)
 
-    enum { PROP_0, PROP_PAGE, PROP_N_PAGES, PROP_ZOOM, PROP_LAYOUT, N_PROPS };
+enum { PROP_0, PROP_PAGE, PROP_N_PAGES, PROP_ZOOM, PROP_LAYOUT, N_PROPS };
 
 static GParamSpec *properties[N_PROPS];
 

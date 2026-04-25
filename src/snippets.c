@@ -3,6 +3,9 @@
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
+ * GObject-owned snippet table + expansion state machine. The main window
+ * installs key handlers that call silktex_snippets_handle_key/_release.
+ *
  * Expansion model (matches original Gummi behaviour):
  *   1. Insert raw snippet body (including "$1", "${2:default}", etc.) at cursor.
  *   2. Create left/right gravity marks around every placeholder.

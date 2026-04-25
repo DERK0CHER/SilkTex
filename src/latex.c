@@ -2,6 +2,10 @@
  * SilkTex - LaTeX insertion helpers
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Pure generators (tables, matrices, graphics) plus Adwaita dialogs that
+ * collect parameters and insert at the cursor via silktex_editor_* APIs.
+ * Kept separate from editor.c to limit recompiles when dialog UI changes.
  */
 #include "latex.h"
 #include "i18n.h"

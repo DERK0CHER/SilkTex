@@ -2,6 +2,10 @@
  * SilkTex - Modern LaTeX Editor
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Public API for the main window. Implementation is split across window.c,
+ * window-git.c, and window-primary-menu.c; internal layout lives in
+ * window-private.h (not included here).
  */
 
 #pragma once

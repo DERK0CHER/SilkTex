@@ -2,6 +2,9 @@
  * SilkTex - configfile.h
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Key/value config API (string, boolean, integer). Call config_init() once at
+ * startup before reading; config_save() persists pending changes to disk.
  */
 
 #ifndef SILKTEX_CONFIGFILE_H

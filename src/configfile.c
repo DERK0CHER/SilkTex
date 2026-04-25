@@ -2,6 +2,10 @@
  * SilkTex - configfile.c
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * GLib KeyFile persistence for ~/.config/silktex/config.ini (see constants.h).
+ * config_init() creates the file from an embedded default if missing;
+ * getters/setters are thin wrappers used across the app and prefs dialog.
  */
 
 #include "configfile.h"

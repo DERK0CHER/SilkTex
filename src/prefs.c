@@ -3,8 +3,11 @@
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * All settings are written immediately to configfile and the apply-callback
- * is fired so the window can push them to every open editor.
+ * Implementation: builds Adwaita preference rows programmatically, binds them
+ * to config keys, embeds a snippet JSON editor with validation, and exposes
+ * GtkSourceView scheme / typesetter choices. All settings are written to
+ * configfile on apply; the apply-callback pushes changes to every open editor
+ * and restarts autosave / compile options as needed.
  */
 #include "prefs.h"
 #include "configfile.h"
@@ -74,12 +77,13 @@ static void snippets_apply_modifiers(SilktexPrefs *self);
 
 G_DEFINE_FINAL_TYPE (SilktexPrefs, silktex_prefs, ADW_TYPE_PREFERENCES_DIALOG)
 
-    /* ------------------------------------------------------------------ helpers */
+/* -------------------------------------------------------------------------- */
+/* Helpers */
 
-    static void fire_apply(SilktexPrefs *self)
-    {
-        if (self->apply_func) self->apply_func(self->apply_data);
-    }
+static void fire_apply(SilktexPrefs *self)
+{
+    if (self->apply_func) self->apply_func(self->apply_data);
+}
 
 /* Build a GtkStringList whose display names match the style scheme list.
  * Also fill self->scheme_ids with the corresponding IDs. */

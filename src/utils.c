@@ -2,6 +2,10 @@
  * SilkTex - utils.c
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Miscellaneous helpers: coloured stderr logging (slog), a tiny two-field
+ * linked list (slist) used by the snippet engine, file/path utilities, and
+ * subprocess helpers where GLib alone is not enough.
  */
 
 #include <stdio.h>

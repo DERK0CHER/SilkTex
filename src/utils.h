@@ -2,6 +2,9 @@
  * SilkTex - utils.h
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Shared macros (log levels, path permissions), slog_* logging, slist, and
+ * small string/file helpers used across the codebase.
  */
 
 #ifndef SILKTEX_UTILS_H

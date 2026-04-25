@@ -2,6 +2,9 @@
  * SilkTex - Modern LaTeX Editor
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Async LaTeX compilation service: worker thread, log buffer, optional
+ * BibTeX / makeindex one-shots. Signals are emitted from the main thread.
  */
 
 #pragma once

@@ -2,6 +2,10 @@
  * SilkTex - Preferences dialog
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * AdwPreferencesDialog subclass: editor, compile, file, and snippet settings.
+ * Values are written through configfile; SilktexPrefsApplyFunc notifies the
+ * main window to refresh all editors and the compiler without restart.
  */
 #pragma once
 #include <adwaita.h>

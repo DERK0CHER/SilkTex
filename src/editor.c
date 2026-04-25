@@ -2,6 +2,19 @@
  * SilkTex - Modern LaTeX Editor
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * SilktexEditor — GObject wrapper around GtkSourceView + GtkSourceBuffer.
+ *
+ * Responsibilities:
+ *   - Load/save the on-disk .tex path and a separate cache "workfile" used
+ *     for compilation (see constants.h C_TMPDIR; avoids TeX output next
+ *     to sources and respects openout_any).
+ *   - Text styling (bold/italic/align), search/replace, error highlighting,
+ *     and SyncTeX-friendly cursor/line navigation.
+ *   - Emits "changed" when the buffer changes; exposes modified state for tabs.
+ *
+ * The view is owned by this object; the window places it inside a scrolled
+ * page and stores a pointer via g_object_get_data(..., "silktex-editor").
  */
 
 #include "editor.h"
@@ -38,7 +51,7 @@ struct _SilktexEditor {
 
 G_DEFINE_FINAL_TYPE (SilktexEditor, silktex_editor, G_TYPE_OBJECT)
 
-    enum { PROP_0, PROP_MODIFIED, N_PROPS };
+enum { PROP_0, PROP_MODIFIED, N_PROPS };
 
 static GParamSpec *properties[N_PROPS];
 
