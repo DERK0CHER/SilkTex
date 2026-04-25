@@ -2,6 +2,8 @@
  * SilkTex - Inline find/replace bar
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Find/replace UI widget; must be given the active SilktexEditor for operations.
  */
 #pragma once
 #include <gtk/gtk.h>

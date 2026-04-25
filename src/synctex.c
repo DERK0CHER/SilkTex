@@ -3,8 +3,9 @@
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * We call the command-line `synctex view` / `synctex edit` tools rather than
- * linking libsynctex directly, so the build has no extra dependency.
+ * Invokes the `synctex` CLI (view / edit) instead of linking libsynctex so
+ * minimal Flatpak SDKs can omit the library. Parses stdout for Page/Line/Column
+ * and drives SilktexPreview scroll or SilktexEditor goto_line accordingly.
  */
 #include "synctex.h"
 #include "utils.h"

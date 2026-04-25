@@ -2,6 +2,10 @@
  * SilkTex - Document outline sidebar
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Parses the active buffer for LaTeX sectioning commands and shows a GtkListBox
+ * outline. Refresh is debounced on editor "changed" to avoid rescans on every
+ * keystroke. See structure.h for supported commands and navigation behaviour.
  */
 #include "structure.h"
 #include "i18n.h"
@@ -28,13 +32,13 @@ struct _SilktexStructure {
 
 G_DEFINE_FINAL_TYPE (SilktexStructure, silktex_structure, GTK_TYPE_WIDGET)
 
-    static void outline_entry_free(gpointer p)
-    {
-        OutlineEntry *e = p;
-        if (!e) return;
-        g_free(e->title);
-        g_free(e);
-    }
+static void outline_entry_free(gpointer p)
+{
+    OutlineEntry *e = p;
+    if (!e) return;
+    g_free(e->title);
+    g_free(e);
+}
 
 /* Return structure level 0-5 for a LaTeX sectioning command, or -1. */
 static int match_level(const char *cmd)

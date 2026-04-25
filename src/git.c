@@ -2,6 +2,12 @@
  * SilkTex - Modern LaTeX Editor
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Git subprocess helpers — synchronous g_spawn_* wrappers, no GTK.
+ *
+ * Parses porcelain v1 status, discovers repo root from a file path, and
+ * exposes stage / unstage / commit / pull / push. Callers (window-git.c)
+ * must run these off the UI thread for responsiveness.
  */
 
 #include "git.h"

@@ -2,6 +2,10 @@
  * SilkTex - Modern LaTeX Editor
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * SilktexApplication — application-wide state and lifecycle. Registers app.*
+ * GActions (quit, about), opens a SilktexWindow on first activate, and
+ * runs one-time startup (config_init, bundled GtkSourceView scheme paths).
  */
 
 #include "application.h"
@@ -17,11 +21,13 @@ struct _SilktexApplication {
 
 G_DEFINE_FINAL_TYPE (SilktexApplication, silktex_application, ADW_TYPE_APPLICATION)
 
-    static void action_quit(GSimpleAction *action, GVariant *parameter, gpointer user_data)
-    {
-        GApplication *app = G_APPLICATION(user_data);
-        g_application_quit(app);
-    }
+static void action_quit(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    (void)action;
+    (void)parameter;
+    GApplication *app = G_APPLICATION(user_data);
+    g_application_quit(app);
+}
 
 static void action_about(GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {

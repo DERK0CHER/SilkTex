@@ -2,6 +2,10 @@
  * SilkTex - Modern LaTeX Editor
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * GtkApplication / AdwApplication subclass: global app actions (quit, about),
+ * activation (create or raise SilktexWindow), and startup hooks such as
+ * config and style-scheme path setup.
  */
 
 #pragma once

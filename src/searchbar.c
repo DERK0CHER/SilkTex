@@ -2,6 +2,9 @@
  * SilkTex - Inline find/replace bar
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Custom GtkWidget: revealer + entries + toggles, delegates search/replace
+ * to SilktexEditor. Packed as a top bar of the editor toolbar in the window.
  */
 #include "searchbar.h"
 #include "i18n.h"
@@ -26,20 +29,20 @@ struct _SilktexSearchbar {
 
 G_DEFINE_FINAL_TYPE (SilktexSearchbar, silktex_searchbar, GTK_TYPE_WIDGET)
 
-    /* ---------- helpers ---------- */
+/* ---------- helpers ---------- */
 
-    static void do_search(SilktexSearchbar *self)
-    {
-        if (!self->editor) return;
-        const char *term = gtk_editable_get_text(GTK_EDITABLE(self->search_entry));
-        if (!term || !*term) return;
+static void do_search(SilktexSearchbar *self)
+{
+    if (!self->editor) return;
+    const char *term = gtk_editable_get_text(GTK_EDITABLE(self->search_entry));
+    if (!term || !*term) return;
 
-        gboolean backwards = gtk_check_button_get_active(self->chk_backwards);
-        gboolean whole = gtk_check_button_get_active(self->chk_whole);
-        gboolean matchcase = gtk_check_button_get_active(self->chk_case);
+    gboolean backwards = gtk_check_button_get_active(self->chk_backwards);
+    gboolean whole = gtk_check_button_get_active(self->chk_whole);
+    gboolean matchcase = gtk_check_button_get_active(self->chk_case);
 
-        silktex_editor_search(self->editor, term, backwards, whole, matchcase);
-    }
+    silktex_editor_search(self->editor, term, backwards, whole, matchcase);
+}
 
 /* ---------- signals ---------- */
 

@@ -2,6 +2,10 @@
  * SilkTex - constants.h
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Package identifiers and XDG paths. C_GUMMI_* names are legacy from Gummi;
+ * they point at ~/.config/silktex and related dirs. C_TMPDIR is the cache
+ * dir for per-tab TeX workfiles (see editor.c).
  */
 
 #ifndef SILKTEX_CONSTANTS_H

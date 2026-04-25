@@ -2,6 +2,17 @@
  * SilkTex - Modern LaTeX Editor
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * SilktexCompiler — background LaTeX runner for one process-wide queue.
+ *
+ * A dedicated worker thread waits on a condition variable, runs the configured
+ * typesetter (e.g. pdflatex) against the editor's workfile, captures log
+ * output, and emits compile-finished / compile-error on the main loop.
+ * PDFs are backed up before each run so a failed build can restore the last
+ * good preview (see run_typesetter).
+ *
+ * request_compile coalesces rapid edits; force_compile runs immediately from
+ * the UI (Compile action).
  */
 
 #include "compiler.h"
@@ -34,7 +45,7 @@ struct _SilktexCompiler {
 
 G_DEFINE_FINAL_TYPE (SilktexCompiler, silktex_compiler, G_TYPE_OBJECT)
 
-    enum { SIGNAL_COMPILE_STARTED, SIGNAL_COMPILE_FINISHED, SIGNAL_COMPILE_ERROR, N_SIGNALS };
+enum { SIGNAL_COMPILE_STARTED, SIGNAL_COMPILE_FINISHED, SIGNAL_COMPILE_ERROR, N_SIGNALS };
 
 static guint signals[N_SIGNALS];
 
