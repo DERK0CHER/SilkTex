@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Flatpak manifest for Flathub.
-# GNOME 49 already ships GTK4, libadwaita, gtksourceview5 and poppler-glib,
+# GNOME 50 already ships GTK4, libadwaita, gtksourceview5 and poppler-glib,
 # so we only build SilkTex here.
 #
 # LaTeX compile tools (pdflatex, bibtex, makeindex, synctex) are executed
@@ -16,7 +16,7 @@
 #   2. Disable compile support in Flatpak and document an override command.
 app-id: app.silktex.SilkTex
 runtime: org.gnome.Platform
-runtime-version: '49'
+runtime-version: '50'
 sdk: org.gnome.Sdk
 command: silktex
 

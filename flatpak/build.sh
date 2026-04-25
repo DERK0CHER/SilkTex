@@ -70,8 +70,8 @@ trap 'rm -f "$LOCAL_MANIFEST"' EXIT
 
 # Install the runtime / SDK declared in the manifest.
 flatpak install --user --noninteractive flathub \
-    org.gnome.Platform//49 \
-    org.gnome.Sdk//49
+    org.gnome.Platform//50 \
+    org.gnome.Sdk//50
 
 cd "$REPO_DIR"
 

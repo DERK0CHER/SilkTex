@@ -24,7 +24,7 @@ want to reproduce what Flathub will build, or to test end-user packaging.
 
 ```bash
 # One-time: install the runtime + SDK declared by the manifest.
-flatpak install --user flathub org.gnome.Platform//49 org.gnome.Sdk//49
+flatpak install --user flathub org.gnome.Platform//50 org.gnome.Sdk//50
 
 # Clean build and install into the user's Flatpak repository:
 ./flatpak/build.sh

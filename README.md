@@ -78,7 +78,7 @@ authoritative in `flake.nix`.
 ## Building a Flatpak
 
 A Flatpak manifest and helper script live in [`flatpak/`](flatpak/). The
-Flatpak targets the GNOME 49 runtime, which already supplies GTK 4,
+Flatpak targets the GNOME 50 runtime, which already supplies GTK 4,
 libadwaita, gtksourceview 5 and poppler-glib, so only SilkTex itself is
 built by the manifest.
 
@@ -87,7 +87,7 @@ shell above and run the Flatpak build on a Linux host / VM / CI job.
 
 ```bash
 # One-time: install the runtime + SDK declared by the manifest.
-flatpak install --user flathub org.gnome.Platform//49 org.gnome.Sdk//49
+flatpak install --user flathub org.gnome.Platform//50 org.gnome.Sdk//50
 
 # Clean build + install into the user's Flatpak repository:
 ./flatpak/build.sh
