@@ -11,6 +11,8 @@ flatpak/.local.*.yml
 *.swp
 *.swo
 *~
+.opam*
+andrej*
 
 # Runtime state
 .cache/
