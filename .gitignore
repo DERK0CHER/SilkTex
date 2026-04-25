@@ -1,5 +1,6 @@
 # Build outputs
 build/
+.goblint/
 build-gtk4/
 build-flatpak/
 build-flatpak-repo/
