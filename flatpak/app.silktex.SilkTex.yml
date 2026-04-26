@@ -2,18 +2,8 @@
 # Copyright (C) 2026 Bela Georg Barthelmes
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Flatpak manifest for Flathub.
-# GNOME 50 already ships GTK4, libadwaita, gtksourceview5 and poppler-glib,
-# so we only build SilkTex here.
-#
-# LaTeX compile tools (pdflatex, bibtex, makeindex, synctex) are executed
-# from the host via `flatpak-spawn --host`. Bundling TeX Live would add
-# several GB to the Flatpak.
-#
-# This is why we request `--talk-name=org.freedesktop.Flatpak`.
-# Flathub reviewers may ask to tighten this. If needed:
-#   1. Use `org.freedesktop.Sdk.Extension.texlive` and compile in-sandbox.
-#   2. Disable compile support in Flatpak and document an override command.
+# Local development manifest. GNOME Builder can open this file directly and
+# build the current checkout as a Flatpak.
 app-id: app.silktex.SilkTex
 runtime: org.gnome.Platform
 runtime-version: '50'
@@ -21,27 +11,15 @@ sdk: org.gnome.Sdk
 command: silktex
 
 finish-args:
-  # Basic desktop app permissions.
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
   - --device=dri
-
-  # Network access for package installs and web links.
   - --share=network
-
-  # LaTeX projects often live outside sandbox dirs, so we keep host FS access.
-  # This matches how other LaTeX editors are packaged on Flathub.
   - --filesystem=host
-
-  # App config and cache directories.
   - --filesystem=xdg-config/silktex:create
   - --filesystem=xdg-cache/silktex:create
-
-  # Open compiled PDFs in external viewers via the portal.
   - --talk-name=org.freedesktop.portal.OpenURI
-
-  # Needed for `flatpak-spawn --host` to call host TeX tools.
   - --talk-name=org.freedesktop.Flatpak
 
 cleanup:
@@ -54,17 +32,32 @@ cleanup:
   - '*.a'
 
 modules:
+  - name: poppler
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_GTK_TESTS=OFF
+      - -DBUILD_QT5_TESTS=OFF
+      - -DBUILD_QT6_TESTS=OFF
+      - -DBUILD_CPP_TESTS=OFF
+      - -DENABLE_BOOST=OFF
+      - -DENABLE_CPP=OFF
+      - -DENABLE_GLIB=ON
+      - -DENABLE_GOBJECT_INTROSPECTION=OFF
+      - -DENABLE_GTK_DOC=OFF
+      - -DENABLE_QT5=OFF
+      - -DENABLE_QT6=OFF
+      - -DENABLE_UTILS=OFF
+    sources:
+      - type: git
+        url: https://gitlab.freedesktop.org/poppler/poppler.git
+        tag: poppler-25.07.0
+
   - name: silktex
     buildsystem: meson
     config-opts:
-      # flatpak-builder already passes --prefix=/app; -Dprefix duplicates it on Meson.
-      - --buildtype=release
+      - --buildtype=debugoptimized
+      - --libdir=lib
     sources:
-      # Pin the release tag. After tagging this commit as v1.0.2 on GitHub,
-      # set `commit:` to `git rev-parse v1.0.2^{commit}` (must match the tag).
-      - type: git
-        url: https://github.com/DERK0CHER/SilkTex.git
-        tag: v1.0.2
-        x-checker-data:
-          type: git
-          tag-pattern: '^v([\d.]+)$'
+      - type: dir
+        path: ..
