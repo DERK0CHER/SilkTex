@@ -243,7 +243,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
               }
 
               Gtk.Button btn_export_doc {
-                icon-name: "document-save-symbolic";
+                icon-name: "document-save-as-symbolic";
                 tooltip-text: _("Export PDF");
                 action-name: "win.export-pdf";
 
@@ -251,7 +251,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
               }
 
               Gtk.MenuButton btn_git_menu {
-                icon-name: "folder-symbolic";
+                icon-name: "git-symbolic";
                 tooltip-text: _("Git");
                 menu-model: git_menu;
 
@@ -386,7 +386,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
                 }
 
                 Gtk.Button btn_export {
-                  icon-name: "document-save-symbolic";
+                  icon-name: "document-save-as-symbolic";
                   tooltip-text: _("Export PDF");
                   action-name: "win.export-pdf";
 

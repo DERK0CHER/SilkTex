@@ -1462,20 +1462,20 @@ static void silktex_window_init(SilktexWindow *self)
 
     {
         GtkIconTheme *it = gtk_icon_theme_get_for_display(gdk_display_get_default());
-        const char *const export_icons[] = {"arrow-into-box-symbolic", "document-save-symbolic",
-                                            "document-export-symbolic", "folder-download-symbolic",
+        const char *const export_icons[] = {"document-export-symbolic", "document-save-as-symbolic",
+                                            "folder-download-symbolic", "document-save-symbolic",
                                             NULL};
-        const char *const git_icons[] = {"branch-arrow-symbolic", "vcs-git-symbolic",
+        const char *const git_icons[] = {"git-symbolic", "vcs-git-symbolic", "branch-arrow-symbolic",
                                          "version-control-symbolic", "folder-symbolic", NULL};
 
-        const char *export_icon = export_icons[1];
+        const char *export_icon = export_icons[3];
         for (int i = 0; export_icons[i]; i++) {
             if (gtk_icon_theme_has_icon(it, export_icons[i])) {
                 export_icon = export_icons[i];
                 break;
             }
         }
-        const char *git_icon = git_icons[3];
+        const char *git_icon = git_icons[4];
         for (int i = 0; git_icons[i]; i++) {
             if (gtk_icon_theme_has_icon(it, git_icons[i])) {
                 git_icon = git_icons[i];
