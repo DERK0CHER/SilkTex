@@ -26,6 +26,8 @@ finish-args:
   - --filesystem=xdg-cache/silktex:create
   - --talk-name=org.freedesktop.portal.OpenURI
   - --talk-name=org.freedesktop.Flatpak
+  # Avoid Mesa/Zink EGL startup failures on systems without a usable GPU path.
+  - --env=GSK_RENDERER=cairo
 
 cleanup:
   - /include
