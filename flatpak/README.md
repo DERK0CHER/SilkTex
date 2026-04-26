@@ -158,9 +158,10 @@ git push origin vX.Y.Z
 ## Notes on bundled vs host TeX Live
 
 LaTeX itself (`pdflatex`, `bibtex`, `makeindex`, `synctex`) is used from
-the host — the manifest requests `--filesystem=host` and the
-`org.freedesktop.Flatpak` talk-name so SilkTex can run `flatpak-spawn
---host pdflatex …`. Bundling TeX Live would add several GB to every
+the host — install `texlive-full` / `texlive-scheme-full` on the host
+system. The manifest requests `--filesystem=host` and the
+`org.freedesktop.Flatpak` talk-name so SilkTex can run those tools through
+`flatpak-spawn --host`. Bundling TeX Live would add several GB to every
 Flatpak download and is avoided deliberately.
 
 If Flathub asks for a tighter sandbox, the alternative is to build

@@ -4,6 +4,11 @@
 #
 # Release manifest for Flathub. Copy this file to
 # app.silktex.SilkTex.yml in the Flathub repository.
+#
+# TeX Live is intentionally NOT bundled here. SilkTex runs the host's
+# pdflatex/bibtex/makeindex/synctex via flatpak-spawn --host so users can
+# keep using their existing texlive-full/texlive-scheme-full installation
+# without adding several GB to the Flatpak.
 app-id: app.silktex.SilkTex
 runtime: org.gnome.Platform
 runtime-version: '50'

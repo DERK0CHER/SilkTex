@@ -106,7 +106,8 @@ as the Flatpak configuration.
 
 LaTeX itself (`pdflatex`, `bibtex`, `makeindex`, `synctex`) is used from
 the host through `flatpak-spawn --host`, rather than bundling the
-several-GB TeX Live distribution. See
+several-GB TeX Live distribution. Install a full TeX Live on the host
+instead, for example `sudo dnf install texlive-scheme-full` on Fedora. See
 [`flatpak/README.md`](flatpak/README.md) for the rationale and more
 details.
 
