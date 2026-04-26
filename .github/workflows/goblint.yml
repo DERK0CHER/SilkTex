@@ -41,7 +41,10 @@ jobs:
         run: opam install -y goblint --assume-depexts --confirm-level=unsafe-yes
 
       - name: Meson + Goblint
+        env:
+          # Graphene: avoid SIMD vector intrinsics CIL cannot parse (see scripts/goblint_all.py)
+          CFLAGS: -D__GI_SCANNER__
         run: |
           eval "$(opam env)"
           meson setup build
-          python3 scripts/goblint_all.py build/compile_commands.json .goblint/preprocessed
+          python3 scripts/goblint_all.py build/compile_commands.json
