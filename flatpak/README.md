@@ -48,6 +48,35 @@ GNOME Builder can use `app.silktex.SilkTex.yml` directly. It points at
 `path: ..`, so Builder and `flatpak-builder` both build your working copy
 instead of downloading the tagged release from GitHub.
 
+### GNOME Builder: `fusermount3` / `rofiles-fuse` errors
+
+`flatpak-builder` uses **rofiles-fuse** under its state directory. If a
+build is interrupted, mounts can be left behind; the next run may fail
+with errors like `fusermount3: ... Permission denied` or `Failure
+spawning rofiles-fuse`.
+
+1. Quit GNOME Builder.
+2. Unmount stale rofiles mounts, then remove the cache (adjust the path
+   if your projects live elsewhere), for example:
+   ```bash
+   STATE="$HOME/Projects/.gnome-builder/flatpak-builder"
+   findmnt -T "$STATE/rofiles" 2>/dev/null || true
+   for d in "$STATE"/rofiles/rofiles-*; do
+     [ -d "$d" ] || continue
+     fusermount3 -u "$d" 2>/dev/null || umount "$d" 2>/dev/null || true
+   done
+   rm -rf "$STATE/rofiles"
+   ```
+3. Build again from Builder.
+
+As a fallback, build from a terminal with this repo’s helper script; it
+passes `--disable-rofiles-fuse` to `flatpak-builder` (builds are a bit
+slower but avoid rofiles-fuse entirely):
+
+```bash
+./flatpak/build.sh
+```
+
 ## Submitting to Flathub (one-time)
 
 Flathub is a curated store. The app has to be accepted once; from that
