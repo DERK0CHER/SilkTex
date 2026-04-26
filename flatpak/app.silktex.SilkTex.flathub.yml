@@ -1,0 +1,67 @@
+# SilkTex - Modern LaTeX Editor
+# Copyright (C) 2026 Bela Georg Barthelmes
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Release manifest for Flathub. Copy this file to
+# app.silktex.SilkTex.yml in the Flathub repository.
+app-id: app.silktex.SilkTex
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: silktex
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --share=network
+  - --filesystem=host
+  - --filesystem=xdg-config/silktex:create
+  - --filesystem=xdg-cache/silktex:create
+  - --talk-name=org.freedesktop.portal.OpenURI
+  - --talk-name=org.freedesktop.Flatpak
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /lib/cmake
+  - /share/gtk-doc
+  - /share/man
+  - '*.la'
+  - '*.a'
+
+modules:
+  - name: poppler
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_GTK_TESTS=OFF
+      - -DBUILD_QT5_TESTS=OFF
+      - -DBUILD_QT6_TESTS=OFF
+      - -DBUILD_CPP_TESTS=OFF
+      - -DENABLE_BOOST=OFF
+      - -DENABLE_CPP=OFF
+      - -DENABLE_GLIB=ON
+      - -DENABLE_GOBJECT_INTROSPECTION=OFF
+      - -DENABLE_GTK_DOC=OFF
+      - -DENABLE_QT5=OFF
+      - -DENABLE_QT6=OFF
+      - -DENABLE_UTILS=OFF
+    sources:
+      - type: git
+        url: https://gitlab.freedesktop.org/poppler/poppler.git
+        tag: poppler-25.07.0
+
+  - name: silktex
+    buildsystem: meson
+    config-opts:
+      - --buildtype=release
+      - --libdir=lib
+    sources:
+      - type: git
+        url: https://github.com/DERK0CHER/SilkTex.git
+        tag: v1.0.2
+        x-checker-data:
+          type: git
+          tag-pattern: '^v([\d.]+)$'
