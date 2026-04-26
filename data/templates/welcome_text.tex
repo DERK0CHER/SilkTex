@@ -1,5 +1,5 @@
-\documentclass[10pt]{article}
-\synctex=1
+\documentclass[11pt]{article}
+%\synctex=1
 
 %% Usepackages ............................................................. %%
 \usepackage{amsmath,amssymb,amsfonts,amsthm,mathtools,xfrac,enumitem}
@@ -13,11 +13,11 @@
 
 
 %% Styling ................................................................ %%
-\numberwithin{equation}{section}
-\textwidth 16cm
-\oddsidemargin -0.01cm
-\addtolength{\textheight}{2cm}
-\addtolength{\topmargin}{-1cm}
+%\numberwithin{equation}{section}
+%\textwidth 16cm
+%\oddsidemargin -0.01cm
+%\addtolength{\textheight}{2cm}
+%\addtolength{\topmargin}{-1cm}
 
 
 %% Newcommands ............................................................ %%
@@ -29,6 +29,7 @@
 \newcommand{\N}{\mathbb{N}}
 \newcommand{\R}{\mathbb{R}}
 \newcommand{\Z}{\mathbb{Z}}
+\newcommand{\Q}{\mathbb{Q}}
 
 \makeatletter
 \renewcommand*\env@matrix[1][*\c@MaxMatrixCols c]{%
@@ -48,7 +49,7 @@
 
 
 %% Horizontal rule
-\def\hline{%
+\def\horizontalline{%
 \vspace{-12pt}
 \begin{center}
 \rule{0.7\linewidth}{0.5pt}
@@ -59,7 +60,29 @@
 
 \begin{document}
 
-{\centerline{\Large{\bf Title }}}
-\hline
 
+
+{\centerline{\Large{\bf Welcome to $\mathbb{S}i\lambda \kappa \mathcal{T} \epsilon \chi$ }}}
+\horizontalline
+
+
+SilkTex is  modern LaTe$\chi$ editor for GNOME. SilkTex is a derivation of
+Gummi, the venerable GTK3 Late$\chi$ editor, rebuilt on top of GTK 4,
+libadwaita and Blueprint, with a sharper PDF preview on HiDPI displays and
+a configurable snippet engine.
+
+\subsection*{Features}
+
+\begin{enumerate}[label=(\roman*)]
+\item[$\bullet$]  GTK 4 / libadwaita UI
+\item[$\bullet$] Live PDF preview via Poppler with device-scale aware rendering for
+  crisp output on HiDPI displays
+\item[$\bullet$]  Configurable snippet engine with two global modifier keys plus a letter and tab placeholders to jump
+\item[$\bullet$]  Document outline, search bar, SyncTeX forward/inverse sync
+\item[$\bullet$]  BibTeX, `makeindex`, build-file cleanup, document statistics
+\item[$\bullet$]  Preferences dialog with editor font, spell-check toggle, snippet editor
+  and global shortcut keys
+\end{enumerate}
+
+\thispagestyle{empty}
 \end{document}
