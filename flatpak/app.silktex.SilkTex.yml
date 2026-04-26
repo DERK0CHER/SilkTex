@@ -29,6 +29,7 @@ finish-args:
   - --filesystem=xdg-config/silktex:create
   - --filesystem=xdg-cache/silktex:create
   - --talk-name=org.freedesktop.portal.OpenURI
+  - --talk-name=org.freedesktop.Flatpak
   - --env=PATH=/app/texlive/bin:/app/texlive/bin/x86_64-linux:/app/texlive/bin/aarch64-linux:/app/bin:/usr/bin
   - --env=LD_LIBRARY_PATH=/app/texlive/lib
   # Avoid Mesa/Zink EGL startup failures on systems without a usable GPU path.
