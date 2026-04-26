@@ -6,14 +6,9 @@
 #
 # Build a SilkTex Flatpak bundle from the working copy.
 #
-#   ./flatpak/build.sh            # clean build + install into ./build-flatpak
+#   ./flatpak/build.sh            # clean build + install locally
 #   ./flatpak/build.sh --run      # same, plus launch the result
 #   ./flatpak/build.sh --bundle   # export a distributable .flatpak file
-#
-# The committed manifest (app.silktex.SilkTex.yml) uses `type: git` so
-# Flathub consumes it as-is. For local builds we generate a scratch
-# manifest that swaps the source for `type: dir`, so you build whatever
-# is on disk instead of what is pushed to GitHub.
 #
 # NOTE: flatpak-builder only runs on Linux. On macOS use the Nix dev
 # shell (`./run.sh`) for regular development, and run this script on a
@@ -23,14 +18,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-SRC_MANIFEST="$SCRIPT_DIR/app.silktex.SilkTex.yml"
-LOCAL_MANIFEST="$SCRIPT_DIR/.local.app.silktex.SilkTex.yml"
+MANIFEST="$SCRIPT_DIR/app.silktex.SilkTex.yml"
 BUILD_DIR="$REPO_DIR/build-flatpak"
 STATE_DIR="$REPO_DIR/.flatpak-builder"
 APP_ID="app.silktex.SilkTex"
 
 usage() {
-    sed -n '2,16p' "$0"
+    sed -n '2,13p' "$0"
     exit "${1:-0}"
 }
 
@@ -50,24 +44,6 @@ if ! command -v flatpak >/dev/null || ! command -v flatpak-builder >/dev/null; t
     exit 1
 fi
 
-# Derive a local manifest that points at the working copy instead of the
-# remote git repo.  Strip the `- type: git` … block (and its
-# x-checker-data annotation) and replace it with a `type: dir` source.
-python3 - "$SRC_MANIFEST" "$LOCAL_MANIFEST" <<'PY'
-import re, sys, pathlib
-# The `sources:` block is the last field of the last module in the
-# manifest, so we can just replace everything from that line to EOF
-# with a minimal `type: dir` source pointing at the repo root.
-src = pathlib.Path(sys.argv[1]).read_text()
-out = re.sub(
-    r'(?ms)^    sources:\n.*\Z',
-    '    sources:\n      - type: dir\n        path: ..\n',
-    src,
-)
-pathlib.Path(sys.argv[2]).write_text(out)
-PY
-trap 'rm -f "$LOCAL_MANIFEST"' EXIT
-
 # Install the runtime / SDK declared in the manifest.
 flatpak install --user --noninteractive flathub \
     org.gnome.Platform//50 \
@@ -77,12 +53,13 @@ cd "$REPO_DIR"
 
 flatpak-builder \
     --force-clean \
+    --disable-rofiles-fuse \
     --user \
     --install \
     --install-deps-from=flathub \
     --state-dir="$STATE_DIR" \
     "$BUILD_DIR" \
-    "$LOCAL_MANIFEST"
+    "$MANIFEST"
 
 if $make_bundle; then
     BUNDLE_REPO="$REPO_DIR/build-flatpak-repo"
@@ -93,7 +70,8 @@ if $make_bundle; then
         --repo="$BUNDLE_REPO" \
         --state-dir="$STATE_DIR" \
         --force-clean \
-        "$BUILD_DIR" "$LOCAL_MANIFEST"
+        --disable-rofiles-fuse \
+        "$BUILD_DIR" "$MANIFEST"
 
     flatpak build-bundle "$BUNDLE_REPO" "$BUNDLE_FILE" "$APP_ID" master
     echo "Wrote $BUNDLE_FILE"
