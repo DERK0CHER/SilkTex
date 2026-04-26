@@ -5,27 +5,32 @@
 # Local development manifest. GNOME Builder can open this file directly and
 # build the current checkout as a Flatpak.
 #
-# TeX Live is intentionally NOT bundled here. SilkTex runs the host's
-# pdflatex/bibtex/makeindex/synctex via flatpak-spawn --host so users can
-# keep using their existing texlive-full/texlive-scheme-full installation
-# without adding several GB to the Flatpak.
+# LaTeX tools come from org.freedesktop.Sdk.Extension.texlive, mounted at
+# /app/texlive and exposed through PATH.
 app-id: app.silktex.SilkTex
 runtime: org.gnome.Platform
 runtime-version: '50'
 sdk: org.gnome.Sdk
 command: silktex
 
+add-extensions:
+  org.freedesktop.Sdk.Extension.texlive:
+    directory: texlive
+    subdirectories: true
+    autodelete: true
+    version: '25.08'
+
 finish-args:
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
   - --device=dri
-  - --share=network
   - --filesystem=host
   - --filesystem=xdg-config/silktex:create
   - --filesystem=xdg-cache/silktex:create
   - --talk-name=org.freedesktop.portal.OpenURI
-  - --talk-name=org.freedesktop.Flatpak
+  - --env=PATH=/app/texlive/bin:/app/texlive/bin/x86_64-linux:/app/texlive/bin/aarch64-linux:/app/bin:/usr/bin
+  - --env=LD_LIBRARY_PATH=/app/texlive/lib
   # Avoid Mesa/Zink EGL startup failures on systems without a usable GPU path.
   - --env=GSK_RENDERER=cairo
 
@@ -39,6 +44,11 @@ cleanup:
   - '*.a'
 
 modules:
+  - name: texlive-extension-point
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/texlive
+
   - name: poppler
     buildsystem: cmake-ninja
     config-opts:

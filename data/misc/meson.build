@@ -19,5 +19,3 @@ configure_file(
     install:       true,
     configuration: conf_data,
 )
-
-install_data('default.tex', install_dir: join_paths(pkgdatadir, 'misc'))

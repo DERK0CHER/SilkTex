@@ -24,13 +24,7 @@ static char *run_synctex(const char *args)
     int status = 0;
     GError *err = NULL;
 
-    if (g_getenv("FLATPAK_ID")) {
-        g_autofree char *inner = g_strdup_printf("synctex %s", args);
-        g_autofree char *quoted_inner = g_shell_quote(inner);
-        cmd = g_strdup_printf("flatpak-spawn --host sh -c %s", quoted_inner);
-    } else {
-        cmd = g_strdup_printf("synctex %s", args);
-    }
+    cmd = g_strdup_printf("synctex %s", args);
 
     g_spawn_command_line_sync(cmd, &output, NULL, &status, &err);
     if (err) {

@@ -41,13 +41,7 @@ icondir     = join_paths(datadir, 'icons/hicolor/')
 schemadir   = join_paths(datadir, 'glib-2.0/schemas')
 mandir      = join_paths(datadir, 'man/man1/')
 
-# Directory the binary reads read-only data from at runtime. We keep the
-# legacy `gummi` macro name (GUMMI_DATA) because it is referenced from
-# several places, but the install path uses the project name.
 pkgdatadir  = join_paths(datadir, meson.project_name())
-# Alias kept for legacy subdirs/snippets/meson.build until they are
-# modernised; safe to remove once those files no longer reference it.
-gummidir    = pkgdatadir
 
 math_dep = cc.find_library('m', required: false)
 intl_dep = dependency('intl', required: false)
@@ -67,9 +61,7 @@ project_dependencies = [
 ]
 
 build_args = [
-    '-DGUMMI_DATA='    + '"' + join_paths(meson.project_source_root(), 'data') + '"',
-    '-DGUMMI_LIBS='    + '"' + join_paths(prefix, libdir, meson.project_name()) + '"',
-    '-DGUMMI_LOCALES=' + '"' + join_paths(prefix, localesdir) + '"',
+    '-DSILKTEX_DATA=' + '"' + join_paths(meson.project_source_root(), 'data') + '"',
 ]
 
 # The --export-dynamic linker flag is only meaningful on ELF targets.

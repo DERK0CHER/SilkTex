@@ -17,8 +17,7 @@
     <p>
       SilkTex is a modern LaTeX editor built with GTK4 and libadwaita.
       It provides an integrated live PDF preview, a document outline,
-      snippet shortcuts, and a clean preferences dialog — a modernised
-      take on the classic Gummi editor.
+      snippet shortcuts, and a clean preferences dialog.
     </p>
     <p>Features include:</p>
     <ul>
@@ -108,7 +107,7 @@
     </release>
     <release version="0.9.0" date="2026-04-24">
       <description>
-        <p>Initial SilkTex release based on the Gummi code base.</p>
+        <p>Initial SilkTex release.</p>
         <ul>
           <li>Ported the UI to GTK 4 / libadwaita / Blueprint.</li>
           <li>HiDPI-aware PDF preview with device-scale aware rendering.</li>

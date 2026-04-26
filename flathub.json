@@ -1,0 +1,5 @@
+{
+  "$comment": "Standard Flathub config used by many GNOME apps: limit supported architectures and allow safe automerge of flathubbot bump PRs. Docs: https://docs.flathub.org/docs/for-app-authors/flathub-json",
+  "only-arches": ["x86_64", "aarch64"],
+  "automerge-flathubbot-prs": true
+}

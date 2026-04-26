@@ -47,7 +47,8 @@ fi
 # Install the runtime / SDK declared in the manifest.
 flatpak install --user --noninteractive flathub \
     org.gnome.Platform//50 \
-    org.gnome.Sdk//50
+    org.gnome.Sdk//50 \
+    org.freedesktop.Sdk.Extension.texlive//25.08
 
 cd "$REPO_DIR"
 

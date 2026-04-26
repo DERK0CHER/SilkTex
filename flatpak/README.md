@@ -8,7 +8,6 @@ and the pieces that are submitted to [Flathub](https://flathub.org).
 | File                                  | Purpose                                                |
 | ------------------------------------- | ------------------------------------------------------ |
 | `app.silktex.SilkTex.yml`             | Local Flatpak-builder manifest for GNOME Builder       |
-| `app.silktex.SilkTex.flathub.yml`     | Release manifest to copy into the Flathub repository   |
 | `flathub.json`                        | Flathub build options (architectures, auto-merge, etc.) |
 | `build.sh`                            | Helper script that runs `flatpak-builder` locally      |
 
@@ -27,8 +26,11 @@ Flatpak-builder only runs on Linux.  On macOS use the Nix dev shell
 want to reproduce what Flathub will build, or to test end-user packaging.
 
 ```bash
-# One-time: install the runtime + SDK declared by the manifest.
-flatpak install --user flathub org.gnome.Platform//50 org.gnome.Sdk//50
+# One-time: install the runtime, SDK and TeX Live extension.
+flatpak install --user flathub \
+    org.gnome.Platform//50 \
+    org.gnome.Sdk//50 \
+    org.freedesktop.Sdk.Extension.texlive//25.08
 
 # Clean build and install into the user's Flatpak repository:
 ./flatpak/build.sh
@@ -54,9 +56,9 @@ the build source, and updates become automatic (see the next section).
 
 1. Fork <https://github.com/flathub/flathub>.
 2. Create a branch named **`new-pr`** (the name is required by the bot).
-3. Copy the following files from this repo into the root of your fork:
-   - `flatpak/app.silktex.SilkTex.flathub.yml` → `app.silktex.SilkTex.yml`
-   - `flatpak/flathub.json`            → `flathub.json`
+3. Copy the following root-level files from this repo into the root of your fork:
+   - `app.silktex.SilkTex.yml`
+   - `flathub.json`
 4. Open a PR against `flathub/flathub:new-pr`. `flathubbot` will build
    it automatically and report back. A human reviewer then audits the
    manifest, finish-args, metainfo, icons, etc.
@@ -77,30 +79,13 @@ the build source, and updates become automatic (see the next section).
   nix develop --command appstreamcli validate --pedantic \
       data/misc/app.silktex.SilkTex.metainfo.xml.in
   ```
-- **Reproducible sources.** The Flathub manifest uses `type: git` with
-  `tag: v1.0.3`. Before submitting, tag a real release in this repo and
-  add a matching `commit:` SHA:
-  ```bash
-  git tag -a v1.0.3 -m "SilkTex 1.0.3"
-  git push origin v1.0.3
-  sha=$(git rev-parse v1.0.3^{commit})
-  python3 - <<PY
-  from pathlib import Path
-  p = Path("flatpak/app.silktex.SilkTex.flathub.yml")
-  s = p.read_text()
-  s = s.replace("        tag: v1.0.3\n", "        tag: v1.0.3\n        commit: $sha\n")
-  p.write_text(s)
-  PY
-  git add flatpak/app.silktex.SilkTex.flathub.yml
-  git commit -m "flatpak: pin release source"
-  git push
-  ```
+- **Reproducible sources.** The Flathub manifest uses `type: git` sources
+  with both `tag:` and `commit:` pinned. Update both when cutting a new
+  release.
 - **Sandbox review.** The manifest keeps `--filesystem=host` and
-  `--talk-name=org.freedesktop.Flatpak` because SilkTex shells out to
-  the host's `pdflatex` / `bibtex` / `makeindex` / `synctex`. This is
-  the same model that TeXstudio and similar LaTeX editors use on
-  Flathub, but reviewers may still push back. Fallback options are
-  documented in the header of `app.silktex.SilkTex.yml`.
+  uses `org.freedesktop.Sdk.Extension.texlive` for
+  `pdflatex` / `bibtex` / `makeindex` / `synctex`, so LaTeX compilation
+  works without host-spawn permissions.
 
 ## Automated updates after acceptance
 
@@ -155,16 +140,12 @@ git push origin vX.Y.Z
 #    update to the `stable` channel within ~30 minutes.
 ```
 
-## Notes on bundled vs host TeX Live
+## Notes on TeX Live
 
-LaTeX itself (`pdflatex`, `bibtex`, `makeindex`, `synctex`) is used from
-the host — install `texlive-full` / `texlive-scheme-full` on the host
-system. The manifest requests `--filesystem=host` and the
-`org.freedesktop.Flatpak` talk-name so SilkTex can run those tools through
-`flatpak-spawn --host`. Bundling TeX Live would add several GB to every
-Flatpak download and is avoided deliberately.
+The root-level Flathub manifest uses
+`org.freedesktop.Sdk.Extension.texlive`, mounted at `/app/texlive`, so the
+Flatpak can run `pdflatex`, `bibtex`, `makeindex`, and `synctex` without
+host-spawn permissions.
 
-If Flathub asks for a tighter sandbox, the alternative is to build
-against the `org.freedesktop.Sdk.Extension.texlive` SDK extension, drop
-the host-spawn permissions, and adjust `src/compiler.c` to look in
-`/app/bin/` first. The manifest header comments outline that migration.
+The local development manifest in this directory is still optimized for
+GNOME Builder and local testing of the current checkout.

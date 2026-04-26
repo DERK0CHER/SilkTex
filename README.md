@@ -1,9 +1,7 @@
 # SilkTex
 
-A modern LaTeX editor for GNOME. SilkTex is a derivation of
-[Gummi](https://github.com/alexandervdm/gummi) rebuilt on top of GTK 4,
-libadwaita and Blueprint, with a sharper PDF preview on HiDPI displays and
-a configurable snippet engine.
+A modern LaTeX editor for GNOME, built on GTK 4, libadwaita and Blueprint,
+with a sharp PDF preview on HiDPI displays and a configurable snippet engine.
 
 ## Features
 
@@ -86,8 +84,11 @@ dependency.
 shell above and run the Flatpak build on a Linux host / VM / CI job.
 
 ```bash
-# One-time: install the runtime + SDK declared by the manifest.
-flatpak install --user flathub org.gnome.Platform//50 org.gnome.Sdk//50
+# One-time: install the runtime, SDK and TeX Live extension.
+flatpak install --user flathub \
+    org.gnome.Platform//50 \
+    org.gnome.Sdk//50 \
+    org.freedesktop.Sdk.Extension.texlive//25.08
 
 # Clean build + install into the user's Flatpak repository:
 ./flatpak/build.sh
@@ -104,12 +105,9 @@ flatpak run app.silktex.SilkTex
 In GNOME Builder, open `flatpak/app.silktex.SilkTex.yml` and build/run it
 as the Flatpak configuration.
 
-LaTeX itself (`pdflatex`, `bibtex`, `makeindex`, `synctex`) is used from
-the host through `flatpak-spawn --host`, rather than bundling the
-several-GB TeX Live distribution. Install a full TeX Live on the host
-instead, for example `sudo dnf install texlive-scheme-full` on Fedora. See
-[`flatpak/README.md`](flatpak/README.md) for the rationale and more
-details.
+The Flathub manifest at the repository root uses
+`org.freedesktop.Sdk.Extension.texlive` for LaTeX tools. The development
+manifest in `flatpak/` is intended for local GNOME Builder workflows.
 
 ## Project layout
 
@@ -118,7 +116,8 @@ data/
   ui/main.blp          libadwaita UI (Blueprint)
   snippets/            default snippet library
   icons/               app icon (hicolor)
-  misc/                .desktop, AppStream metainfo, default.tex
+  misc/                .desktop and AppStream metainfo
+  templates/           default new-document template
 flatpak/               Flatpak manifest + build script
 src/
   application.c        GApplication subclass (startup / activate / open)
@@ -162,7 +161,5 @@ Author: Bela Georg Barthelmes.
 
 ## Credits
 
-SilkTex is a GTK 4 / libadwaita reimagining of
-[Gummi](https://github.com/alexandervdm/gummi) by Alexander van der Mey
-and the original Gummi team. Thanks to the GNOME, GTK, libadwaita and
-gtksourceview projects for the platform this is built on.
+Thanks to the GNOME, GTK, libadwaita and gtksourceview projects for the
+platform this is built on.

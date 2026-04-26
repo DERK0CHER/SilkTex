@@ -29,18 +29,22 @@
 #include "utils.h"
 #include "i18n.h"
 
+#ifndef SILKTEX_DATA
+#define SILKTEX_DATA "/usr/share/silktex"
+#endif
+
 G_DEFINE_FINAL_TYPE (SilktexWindow, silktex_window, ADW_TYPE_APPLICATION_WINDOW)
 
-/* -------------------------------------------------------------------------- */
-/* Title, log, theme — shared with menu / git modules via window-private.h */
+    /* -------------------------------------------------------------------------- */
+    /* Title, log, theme — shared with menu / git modules via window-private.h */
 
-SilktexEditor *silktex_window_editor_for_page(AdwTabPage *page)
-{
-    if (page == NULL) return NULL;
-    GtkWidget *child = adw_tab_page_get_child(page);
-    if (child == NULL) return NULL;
-    return g_object_get_data(G_OBJECT(child), "silktex-editor");
-}
+    SilktexEditor *silktex_window_editor_for_page(AdwTabPage *page)
+    {
+        if (page == NULL) return NULL;
+        GtkWidget *child = adw_tab_page_get_child(page);
+        if (child == NULL) return NULL;
+        return g_object_get_data(G_OBJECT(child), "silktex-editor");
+    }
 
 void silktex_window_update_window_title(SilktexWindow *self)
 {
@@ -274,7 +278,8 @@ GtkWidget *silktex_window_create_editor_page(SilktexWindow *self, SilktexEditor 
     gtk_scrolled_window_set_placement(GTK_SCROLLED_WINDOW(scrolled), GTK_CORNER_TOP_RIGHT);
     gtk_widget_set_vexpand(scrolled, TRUE);
     gtk_widget_set_hexpand(scrolled, TRUE);
-    GtkEventController *scroll = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL);
+    GtkEventController *scroll =
+        gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL);
     g_signal_connect(scroll, "scroll", G_CALLBACK(on_editor_scroll_zoom), self);
     gtk_widget_add_controller(scrolled, scroll);
 
@@ -294,7 +299,8 @@ static gboolean on_editor_scroll_zoom(GtkEventControllerScroll *ctrl, double dx,
 {
     (void)dx;
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
-    GdkModifierType state = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(ctrl));
+    GdkModifierType state =
+        gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(ctrl));
     if ((state & GDK_CONTROL_MASK) == 0) return GDK_EVENT_PROPAGATE;
     if (dy < 0)
         gtk_widget_activate_action(GTK_WIDGET(self), "win.zoom-in", NULL);
@@ -865,7 +871,7 @@ static void action_cleanup(GSimpleAction *a, GVariant *p, gpointer ud)
         }
     }
 
-    /* Also mop up any legacy or user-run artefacts next to the source. */
+    /* Also clean files created by manual TeX runs next to the source. */
     const char *fname = silktex_editor_get_filename(e);
     if (fname && *fname) {
         g_autofree char *src_dir = g_path_get_dirname(fname);
@@ -1421,7 +1427,8 @@ static void silktex_window_init(SilktexWindow *self)
     silktex_window_install_chrome_css();
     gtk_widget_init_template(GTK_WIDGET(self));
 
-    gtk_widget_set_size_request(GTK_WIDGET(self), SILKTEX_WINDOW_MIN_WIDTH, SILKTEX_WINDOW_MIN_HEIGHT);
+    gtk_widget_set_size_request(GTK_WIDGET(self), SILKTEX_WINDOW_MIN_WIDTH,
+                                SILKTEX_WINDOW_MIN_HEIGHT);
 
     /* Flat top bars: avoid an extra "step" and shadow between title bar,
      * tab strip, and the split — reads as one continuous header band. */
@@ -1465,8 +1472,9 @@ static void silktex_window_init(SilktexWindow *self)
         const char *const export_icons[] = {"document-export-symbolic", "document-save-as-symbolic",
                                             "folder-download-symbolic", "document-save-symbolic",
                                             NULL};
-        const char *const git_icons[] = {"git-symbolic", "vcs-git-symbolic", "branch-arrow-symbolic",
-                                         "version-control-symbolic", "folder-symbolic", NULL};
+        const char *const git_icons[] = {"git-symbolic",          "vcs-git-symbolic",
+                                         "branch-arrow-symbolic", "version-control-symbolic",
+                                         "folder-symbolic",       NULL};
 
         const char *export_icon = export_icons[3];
         for (int i = 0; export_icons[i]; i++) {
@@ -1504,7 +1512,8 @@ static void silktex_window_init(SilktexWindow *self)
     silktex_window_apply_preview_theme(self);
 
     if (self->editor_toolbar_view) {
-        gtk_widget_set_size_request(GTK_WIDGET(self->editor_toolbar_view), SILKTEX_EDITOR_MIN_WIDTH, -1);
+        gtk_widget_set_size_request(GTK_WIDGET(self->editor_toolbar_view), SILKTEX_EDITOR_MIN_WIDTH,
+                                    -1);
     }
 
     g_signal_connect(self->preview, "notify::page", G_CALLBACK(on_preview_page_changed), self);
@@ -1667,16 +1676,31 @@ void silktex_window_open_file(SilktexWindow *self, GFile *file)
     silktex_window_git_refresh_state(self);
 }
 
+static char *find_default_template_path(void)
+{
+    char *path = g_build_filename(SILKTEX_DATA, "templates", "default.tex", NULL);
+    if (g_file_test(path, G_FILE_TEST_IS_REGULAR)) return path;
+    g_free(path);
+
+    const char *const *dirs = g_get_system_data_dirs();
+    for (int i = 0; dirs && dirs[i]; i++) {
+        path = g_build_filename(dirs[i], "silktex", "templates", "default.tex", NULL);
+        if (g_file_test(path, G_FILE_TEST_IS_REGULAR)) return path;
+        g_free(path);
+    }
+    return NULL;
+}
+
 void silktex_window_new_tab(SilktexWindow *self)
 {
     g_return_if_fail(SILKTEX_IS_WINDOW(self));
 
     SilktexEditor *editor = silktex_editor_new();
 
-    g_autofree char *vorlage = g_build_filename(GUMMI_DATA, "templates", "vorlage.tex", NULL);
-    if (g_file_test(vorlage, G_FILE_TEST_EXISTS)) {
+    g_autofree char *template_path = find_default_template_path();
+    if (template_path && g_file_test(template_path, G_FILE_TEST_EXISTS)) {
         g_autofree char *text = NULL;
-        if (g_file_get_contents(vorlage, &text, NULL, NULL))
+        if (g_file_get_contents(template_path, &text, NULL, NULL))
             silktex_editor_set_text(editor, text, -1);
     }
 

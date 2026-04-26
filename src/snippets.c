@@ -6,7 +6,7 @@
  * GObject-owned snippet table + expansion state machine. The main window
  * installs key handlers that call silktex_snippets_handle_key/_release.
  *
- * Expansion model (matches original Gummi behaviour):
+ * Expansion model:
  *   1. Insert raw snippet body (including "$1", "${2:default}", etc.) at cursor.
  *   2. Create left/right gravity marks around every placeholder.
  *   3. "initial_expand": replace placeholder syntax with default text / macros.
@@ -71,22 +71,20 @@ G_DEFINE_FINAL_TYPE (SilktexSnippets, silktex_snippets, G_TYPE_OBJECT)
  *
  * We ship a default snippets.json in $datadir/silktex/snippets/snippets.json.
  * On first run (or after reset), we copy that file verbatim to the user's
- * config directory.  During development the build system exports GUMMI_DATA
+ * config directory. During development the build system exports SILKTEX_DATA,
  * which points at the in-tree data/ folder.
  */
 
-#ifndef GUMMI_DATA
-#define GUMMI_DATA "/usr/share/silktex"
+#ifndef SILKTEX_DATA
+#define SILKTEX_DATA "/usr/share/silktex"
 #endif
 
     static char *find_default_snippets_path(void)
     {
-        /* 1) development: GUMMI_DATA/snippets/snippets.json              */
-        char *p = g_build_filename(GUMMI_DATA, "snippets", "snippets.json", NULL);
+        char *p = g_build_filename(SILKTEX_DATA, "snippets", "snippets.json", NULL);
         if (g_file_test(p, G_FILE_TEST_IS_REGULAR)) return p;
         g_free(p);
 
-        /* 2) installed prefix next to this binary (datadir/silktex/…)    */
         const char *const *dirs = g_get_system_data_dirs();
         for (int i = 0; dirs && dirs[i]; i++) {
             char *q = g_build_filename(dirs[i], "silktex", "snippets", "snippets.json", NULL);
@@ -133,10 +131,9 @@ static void free_slist(slist *head)
  * Parse the ACCEL field of a snippet header.
  *
  * Two formats are accepted:
- *   1. Legacy full accelerator string: "<Shift><Alt>e" or "<Control>F3"
- *      (anything gtk_accelerator_parse understands).
- *   2. New short form: a single letter/keyword such as "e" — the global
- *      modifier pair (set via silktex_snippets_set_modifiers) is applied.
+ *   1. Full accelerator string: "<Shift><Alt>e" or "<Control>F3".
+ *   2. Short form: a single letter such as "e"; the global modifier pair
+ *      from preferences is applied.
  *
  * Empty / missing → no shortcut.
  */
@@ -153,7 +150,7 @@ static void parse_and_store_accel(SilktexSnippets *self, const char *header)
     GdkModifierType mods = 0;
 
     if (strchr(accel, '<') != NULL) {
-        /* Legacy explicit-modifier form: "<Shift><Alt>e" */
+        /* Explicit-modifier form: "<Shift><Alt>e" */
         gtk_accelerator_parse(accel, &kv, &mods);
     } else {
         /* Short form: just the letter; combine with global modifiers. */
@@ -164,9 +161,8 @@ static void parse_and_store_accel(SilktexSnippets *self, const char *header)
     /*
      * Safety: never register an accelerator with no modifiers — otherwise
      * every bare keystroke matching `kv` would trigger the snippet.  If
-     * the user has misconfigured both modifier slots, the short-form
-     * snippet is silently skipped; legacy snippets with explicit
-     * modifiers are still honored.
+     * both modifier slots are empty, the short-form snippet is skipped;
+     * explicit accelerators still work.
      */
     if (kv != 0 && kv != GDK_KEY_VoidSymbol && mods != 0) {
         SnippetAccel *a = g_new0(SnippetAccel, 1);
@@ -219,7 +215,8 @@ static void append_snippet(SilktexSnippets *self, const char *prefix, const char
     }
 
     slist *tail = self->head;
-    while (tail->next) tail = tail->next;
+    while (tail->next)
+        tail = tail->next;
     tail->next = node;
 }
 
@@ -293,126 +290,18 @@ static gboolean load_json_snippets(SilktexSnippets *self, const char *path)
 
         g_autofree char *prefix = snippet_prefix_from_json_member(entry);
         g_autofree char *body = snippet_body_from_json_member(entry);
-        const char *description =
-            json_object_has_member(entry, "description")
-                ? json_object_get_string_member(entry, "description")
-                : name;
-        const char *accelerator =
-            json_object_has_member(entry, "accelerator")
-                ? json_object_get_string_member(entry, "accelerator")
-                : "";
+        const char *description = json_object_has_member(entry, "description")
+                                      ? json_object_get_string_member(entry, "description")
+                                      : name;
+        const char *accelerator = json_object_has_member(entry, "accelerator")
+                                      ? json_object_get_string_member(entry, "accelerator")
+                                      : "";
 
         append_snippet(self, prefix, accelerator, description && *description ? description : name,
                        body);
     }
 
     return TRUE;
-}
-
-static gboolean load_legacy_cfg_into_memory(SilktexSnippets *self, const char *path)
-{
-    FILE *fh = fopen(path, "r");
-    if (!fh) return FALSE;
-
-    char buf[BUFSIZ];
-    slist *prev = NULL;
-
-    while (fgets(buf, sizeof(buf), fh)) {
-        int len = (int)strlen(buf);
-        if (len > 0 && buf[len - 1] == '\n') buf[len - 1] = '\0';
-        if (!buf[0] || buf[0] == '#') continue;
-
-        if (buf[0] != '\t') {
-            char *sp = strchr(buf, ' ');
-            if (!sp) continue;
-            const char *header = sp + 1;
-            slist *node = g_new0(slist, 1);
-            node->first = g_strdup(header);
-            if (!self->head) self->head = node;
-            if (prev) prev->next = node;
-            prev = node;
-        } else if (prev) {
-            const char *line = buf + 1;
-            if (!prev->second) {
-                prev->second = g_strdup(line);
-            } else {
-                char *old = prev->second;
-                prev->second = g_strconcat(old, "\n", line, NULL);
-                g_free(old);
-            }
-        }
-    }
-    fclose(fh);
-    return TRUE;
-}
-
-static void add_json_body(JsonBuilder *builder, const char *body)
-{
-    if (!body || !strchr(body, '\n')) {
-        json_builder_add_string_value(builder, body ? body : "");
-        return;
-    }
-
-    json_builder_begin_array(builder);
-    gchar **lines = g_strsplit(body, "\n", -1);
-    for (int i = 0; lines[i]; i++) {
-        json_builder_add_string_value(builder, lines[i]);
-    }
-    g_strfreev(lines);
-    json_builder_end_array(builder);
-}
-
-static gboolean save_memory_as_json(SilktexSnippets *self, const char *path, GError **error)
-{
-    g_autoptr(JsonBuilder) builder = json_builder_new();
-    json_builder_begin_object(builder);
-
-    for (slist *c = self->head; c; c = c->next) {
-        gchar **parts = g_strsplit(c->first ? c->first : "", ",", 3);
-        const char *prefix = parts[0] ? parts[0] : "";
-        const char *accelerator = parts[1] ? parts[1] : "";
-        const char *name = (parts[2] && *parts[2]) ? parts[2] : prefix;
-
-        json_builder_set_member_name(builder, name);
-        json_builder_begin_object(builder);
-        json_builder_set_member_name(builder, "prefix");
-        json_builder_add_string_value(builder, prefix);
-        if (accelerator && *accelerator) {
-            json_builder_set_member_name(builder, "accelerator");
-            json_builder_add_string_value(builder, accelerator);
-        }
-        json_builder_set_member_name(builder, "body");
-        add_json_body(builder, c->second);
-        json_builder_set_member_name(builder, "description");
-        json_builder_add_string_value(builder, name);
-        json_builder_end_object(builder);
-
-        g_strfreev(parts);
-    }
-
-    json_builder_end_object(builder);
-
-    g_autoptr(JsonGenerator) gen = json_generator_new();
-    g_autoptr(JsonNode) root = json_builder_get_root(builder);
-    json_generator_set_root(gen, root);
-    json_generator_set_pretty(gen, TRUE);
-    json_generator_set_indent(gen, 2);
-    return json_generator_to_file(gen, path, error);
-}
-
-static gboolean migrate_legacy_cfg(SilktexSnippets *self, const char *legacy_path)
-{
-    if (!g_file_test(legacy_path, G_FILE_TEST_IS_REGULAR)) return FALSE;
-    if (!load_legacy_cfg_into_memory(self, legacy_path)) return FALSE;
-
-    GError *error = NULL;
-    gboolean ok = save_memory_as_json(self, self->filename, &error);
-    if (!ok) {
-        slog(L_WARNING, "Snippets: failed to migrate %s to JSON: %s\n", legacy_path,
-             error ? error->message : "unknown error");
-        g_clear_error(&error);
-    }
-    return ok;
 }
 
 static void load_snippets_file(SilktexSnippets *self)
@@ -423,14 +312,7 @@ static void load_snippets_file(SilktexSnippets *self)
     self->accels = NULL;
 
     if (!g_file_test(self->filename, G_FILE_TEST_IS_REGULAR)) {
-        g_autofree char *confdir = g_path_get_dirname(self->filename);
-        g_autofree char *legacy = g_build_filename(confdir, "snippets.cfg", NULL);
-        if (migrate_legacy_cfg(self, legacy)) {
-            free_slist(self->head);
-            self->head = NULL;
-        } else {
-            slog(L_WARNING, "Snippets: seeding %s from default template\n", self->filename);
-        }
+        slog(L_WARNING, "Snippets: seeding %s from default template\n", self->filename);
     }
 
     if (!g_file_test(self->filename, G_FILE_TEST_IS_REGULAR)) {
@@ -658,7 +540,7 @@ static gboolean goto_next(SnippetState *s, GtkTextBuffer *buf, GtkTextView *view
     }
 
     if (!s->current) {
-        /* Gummi behavior: final landing on $0 if present */
+        /* $0 is the final cursor position after the last editable placeholder. */
         for (GList *c = s->unique; c; c = c->next) {
             if (((Holder *)c->data)->group == 0) {
                 focus_holder(c->data, buf, view);
@@ -811,13 +693,12 @@ static void silktex_snippets_init(SilktexSnippets *self) {}
 SilktexSnippets *silktex_snippets_new(void)
 {
     SilktexSnippets *self = g_object_new(SILKTEX_TYPE_SNIPPETS, NULL);
-    char *confdir = C_GUMMI_CONFDIR;
+    char *confdir = C_SILKTEX_CONFDIR;
     g_mkdir_with_parents(confdir, DIR_PERMS);
     self->filename = g_build_filename(confdir, "snippets.json", NULL);
     g_free(confdir);
 
-    /* Default global modifier pair (user-overridable via prefs).
-     * Matches the original Gummi default (<Shift><Alt>). */
+    /* Default global modifier pair; users can change it in Preferences. */
     self->global_mods = GDK_SHIFT_MASK | GDK_ALT_MASK;
 
     load_snippets_file(self);
@@ -877,7 +758,7 @@ gboolean silktex_snippets_handle_key(SilktexSnippets *self, SilktexEditor *edito
         }
     }
 
-    /* Gummi behavior: on Tab, try keyword expansion before placeholder nav */
+    /* On Tab, try keyword expansion before placeholder navigation. */
     if (keyval == GDK_KEY_Tab && !(state & GDK_SHIFT_MASK)) {
         GtkTextIter cur;
         gtk_text_buffer_get_iter_at_mark(buf, &cur, gtk_text_buffer_get_insert(buf));
@@ -905,8 +786,8 @@ gboolean silktex_snippets_handle_key(SilktexSnippets *self, SilktexEditor *edito
     }
 
     /* Auto-deactivate if the cursor has wandered outside the snippet body.
-     * Use the last holder mark as the end boundary and
-     * start_offset as the start boundary, matching Gummi's behaviour. */
+     * Use the last holder mark as the end boundary and start_offset as
+     * the start boundary. */
     if (self->active && self->active->holders) {
         GList *last_node = g_list_last(self->active->holders);
         if (last_node) {
@@ -929,7 +810,6 @@ gboolean silktex_snippets_handle_key(SilktexSnippets *self, SilktexEditor *edito
  * Must be called from the window's key-released signal so that group
  * mirroring fires AFTER the typed character has been committed to the
  * buffer (GTK processes input between key-press and key-release).
- * This matches Gummi's snippets_key_release_cb() behaviour exactly.
  */
 gboolean silktex_snippets_handle_key_release(SilktexSnippets *self, SilktexEditor *editor,
                                              guint keyval, GdkModifierType state)

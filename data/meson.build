@@ -8,7 +8,7 @@ subdir('snippets')
 subdir('ui')
 
 install_data(
-    'templates/vorlage.tex',
+    'templates/default.tex',
     install_dir: join_paths(pkgdatadir, 'templates'),
 )
 

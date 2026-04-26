@@ -3,9 +3,8 @@
  * Copyright (C) 2026 Bela Georg Barthelmes
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Implements path registration and "auto" theme: picks Gruvbox or Lights-out
- * variants based on AdwStyleManager and config overrides. GUMMI_DATA is the
- * compile-time data root (historical macro name from the Gummi fork).
+ * Registers bundled GtkSourceView schemes and resolves the automatic editor
+ * theme from the current Adwaita color preference.
  */
 
 #include "style-schemes.h"
@@ -16,8 +15,8 @@
 #include <gtksourceview/gtksource.h>
 #include <string.h>
 
-#ifndef GUMMI_DATA
-#define GUMMI_DATA "/usr/share/silktex"
+#ifndef SILKTEX_DATA
+#define SILKTEX_DATA "/usr/share/silktex"
 #endif
 
 static gboolean paths_initialized;
@@ -30,7 +29,7 @@ void silktex_init_style_scheme_paths(void)
 
     GtkSourceStyleSchemeManager *mgr = gtk_source_style_scheme_manager_get_default();
 
-    g_autofree char *dev = g_build_filename(GUMMI_DATA, "styles", NULL);
+    g_autofree char *dev = g_build_filename(SILKTEX_DATA, "styles", NULL);
     if (g_file_test(dev, G_FILE_TEST_IS_DIR))
         gtk_source_style_scheme_manager_prepend_search_path(mgr, dev);
 
@@ -41,7 +40,7 @@ void silktex_init_style_scheme_paths(void)
             gtk_source_style_scheme_manager_prepend_search_path(mgr, p);
     }
 
-    g_autofree char *confdir = C_GUMMI_CONFDIR;
+    g_autofree char *confdir = C_SILKTEX_CONFDIR;
     g_autofree char *custom = g_build_filename(confdir, "styles", NULL);
     if (g_file_test(custom, G_FILE_TEST_IS_DIR))
         gtk_source_style_scheme_manager_prepend_search_path(mgr, custom);
@@ -72,7 +71,8 @@ static const char *default_scheme_for_ui_mode(void)
 }
 
 /* First installed scheme in try_ids, or NULL. */
-static const char *first_existing_scheme(GtkSourceStyleSchemeManager *mgr, const char *const *try_ids)
+static const char *first_existing_scheme(GtkSourceStyleSchemeManager *mgr,
+                                         const char *const *try_ids)
 {
     for (int i = 0; try_ids[i]; i++) {
         if (gtk_source_style_scheme_manager_get_scheme(mgr, try_ids[i]) != NULL) return try_ids[i];
@@ -90,8 +90,13 @@ const char *silktex_resolved_style_scheme_id(void)
     if (gtk_source_style_scheme_manager_get_scheme(mgr, d) != NULL) return d;
 
     const char *const fallbacks[] = {
-        "silktex-gruvbox-dark", "silktex-gruvbox-light", "silktex-lights-out", "Adwaita-dark",
-        "Adwaita",              "classic",              NULL,
+        "silktex-gruvbox-dark",
+        "silktex-gruvbox-light",
+        "silktex-lights-out",
+        "Adwaita-dark",
+        "Adwaita",
+        "classic",
+        NULL,
     };
     const char *f = first_existing_scheme(mgr, fallbacks);
     return f ? f : d;

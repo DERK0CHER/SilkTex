@@ -73,7 +73,7 @@ static gchar *conf_filepath = NULL;
 
 void config_init(void)
 {
-    gchar *confdir = C_GUMMI_CONFDIR;
+    gchar *confdir = C_SILKTEX_CONFDIR;
 
     if (!g_file_test(confdir, G_FILE_TEST_IS_DIR)) {
         g_mkdir_with_parents(confdir, DIR_PERMS);
@@ -109,7 +109,7 @@ void config_init(void)
         config_save();
     }
 
-    /* Drop legacy "lightsout" mode in favor of regular dark mode. */
+    /* Old builds used "lightsout"; keep those configs readable. */
     if (g_key_file_has_key(key_file, "Interface", "theme", NULL)) {
         g_autofree char *theme = g_key_file_get_string(key_file, "Interface", "theme", NULL);
         if (g_strcmp0(theme, "lightsout") == 0) {

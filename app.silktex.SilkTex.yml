@@ -2,30 +2,34 @@
 # Copyright (C) 2026 Bela Georg Barthelmes
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Release manifest for Flathub. Copy this file to
-# app.silktex.SilkTex.yml in the Flathub repository.
+# Release manifest for Flathub.
 #
-# TeX Live is intentionally NOT bundled here. SilkTex runs the host's
-# pdflatex/bibtex/makeindex/synctex via flatpak-spawn --host so users can
-# keep using their existing texlive-full/texlive-scheme-full installation
-# without adding several GB to the Flatpak.
+# LaTeX tools are provided by org.freedesktop.Sdk.Extension.texlive, mounted
+# at /app/texlive and exposed through PATH.
 app-id: app.silktex.SilkTex
 runtime: org.gnome.Platform
 runtime-version: '50'
 sdk: org.gnome.Sdk
 command: silktex
 
+add-extensions:
+  org.freedesktop.Sdk.Extension.texlive:
+    directory: texlive
+    subdirectories: true
+    autodelete: true
+    version: '25.08'
+
 finish-args:
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
   - --device=dri
-  - --share=network
   - --filesystem=host
   - --filesystem=xdg-config/silktex:create
   - --filesystem=xdg-cache/silktex:create
   - --talk-name=org.freedesktop.portal.OpenURI
-  - --talk-name=org.freedesktop.Flatpak
+  - --env=PATH=/app/texlive/bin:/app/texlive/bin/x86_64-linux:/app/texlive/bin/aarch64-linux:/app/bin:/usr/bin
+  - --env=LD_LIBRARY_PATH=/app/texlive/lib
   # Avoid Mesa/Zink EGL startup failures on systems without a usable GPU path.
   - --env=GSK_RENDERER=cairo
 
@@ -39,6 +43,11 @@ cleanup:
   - '*.a'
 
 modules:
+  - name: texlive-extension-point
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/texlive
+
   - name: poppler
     buildsystem: cmake-ninja
     config-opts:
@@ -59,6 +68,7 @@ modules:
       - type: git
         url: https://gitlab.freedesktop.org/poppler/poppler.git
         tag: poppler-25.07.0
+        commit: e4e52f48c64085dc6fda0befc43843ab72b87b35
 
   - name: silktex
     buildsystem: meson
@@ -69,6 +79,7 @@ modules:
       - type: git
         url: https://github.com/DERK0CHER/SilkTex.git
         tag: v1.0.3
+        commit: da08ab052c19c33af569e730d8743f683c6e726b
         x-checker-data:
           type: git
           tag-pattern: '^v([\d.]+)$'
