@@ -5,16 +5,20 @@ and the pieces that are submitted to [Flathub](https://flathub.org).
 
 ## Files
 
-| File                                 | Purpose                                                 |
-| ------------------------------------ | ------------------------------------------------------- |
-| `app.silktex.SilkTex.yml`            | Flatpak-builder manifest (the Flathub "source of truth") |
-| `flathub.json`                       | Flathub build options (architectures, auto-merge, etc.)  |
-| `build.sh`                           | Helper script that runs `flatpak-builder` locally       |
+| File                                  | Purpose                                                |
+| ------------------------------------- | ------------------------------------------------------ |
+| `app.silktex.SilkTex.yml`             | Local Flatpak-builder manifest for GNOME Builder       |
+| `app.silktex.SilkTex.flathub.yml`     | Release manifest to copy into the Flathub repository   |
+| `flathub.json`                        | Flathub build options (architectures, auto-merge, etc.) |
+| `build.sh`                            | Helper script that runs `flatpak-builder` locally      |
 
 The desktop entry (`app.silktex.SilkTex.desktop.in`), AppStream metainfo
 (`app.silktex.SilkTex.metainfo.xml.in`) and app icon live in
 `../data/misc/` and `../data/icons/` and are installed automatically by
 Meson during the Flatpak build.
+
+The GNOME 50 runtime supplies the GTK/libadwaita stack. Poppler's GLib
+bindings are built by the manifest because they are not part of the SDK.
 
 ## Building locally (development)
 
@@ -24,7 +28,7 @@ want to reproduce what Flathub will build, or to test end-user packaging.
 
 ```bash
 # One-time: install the runtime + SDK declared by the manifest.
-flatpak install --user flathub org.gnome.Platform//49 org.gnome.Sdk//49
+flatpak install --user flathub org.gnome.Platform//50 org.gnome.Sdk//50
 
 # Clean build and install into the user's Flatpak repository:
 ./flatpak/build.sh
@@ -38,9 +42,9 @@ flatpak run app.silktex.SilkTex
 ./flatpak/build.sh --bundle
 ```
 
-> The `build.sh` script temporarily swaps the manifest's `type: git`
-> source for a `type: dir` source so it builds your working copy. The
-> committed manifest keeps `type: git` so Flathub can consume it as-is.
+GNOME Builder can use `app.silktex.SilkTex.yml` directly. It points at
+`path: ..`, so Builder and `flatpak-builder` both build your working copy
+instead of downloading the tagged release from GitHub.
 
 ## Submitting to Flathub (one-time)
 
@@ -51,7 +55,7 @@ the build source, and updates become automatic (see the next section).
 1. Fork <https://github.com/flathub/flathub>.
 2. Create a branch named **`new-pr`** (the name is required by the bot).
 3. Copy the following files from this repo into the root of your fork:
-   - `flatpak/app.silktex.SilkTex.yml` → `app.silktex.SilkTex.yml`
+   - `flatpak/app.silktex.SilkTex.flathub.yml` → `app.silktex.SilkTex.yml`
    - `flatpak/flathub.json`            → `flathub.json`
 4. Open a PR against `flathub/flathub:new-pr`. `flathubbot` will build
    it automatically and report back. A human reviewer then audits the
@@ -73,17 +77,22 @@ the build source, and updates become automatic (see the next section).
   nix develop --command appstreamcli validate --pedantic \
       data/misc/app.silktex.SilkTex.metainfo.xml.in
   ```
-- **Reproducible sources.** The manifest uses `type: git` with
-  `tag: v0.9.0` and a zeroed `commit:` placeholder. Before submitting,
-  tag a real release in this repo and replace the placeholder SHA:
+- **Reproducible sources.** The Flathub manifest uses `type: git` with
+  `tag: v1.0.3`. Before submitting, tag a real release in this repo and
+  add a matching `commit:` SHA:
   ```bash
-  git tag -a v0.9.0 -m "SilkTex 0.9.0"
-  git push origin v0.9.0
-  sha=$(git rev-parse v0.9.0^{commit})
-  sed -i "s|commit: 0\{40\}|commit: $sha|" \
-      flatpak/app.silktex.SilkTex.yml
-  git add flatpak/app.silktex.SilkTex.yml
-  git commit -m "flatpak: pin to v0.9.0"
+  git tag -a v1.0.3 -m "SilkTex 1.0.3"
+  git push origin v1.0.3
+  sha=$(git rev-parse v1.0.3^{commit})
+  python3 - <<PY
+  from pathlib import Path
+  p = Path("flatpak/app.silktex.SilkTex.flathub.yml")
+  s = p.read_text()
+  s = s.replace("        tag: v1.0.3\n", "        tag: v1.0.3\n        commit: $sha\n")
+  p.write_text(s)
+  PY
+  git add flatpak/app.silktex.SilkTex.flathub.yml
+  git commit -m "flatpak: pin release source"
   git push
   ```
 - **Sandbox review.** The manifest keeps `--filesystem=host` and
@@ -149,9 +158,10 @@ git push origin vX.Y.Z
 ## Notes on bundled vs host TeX Live
 
 LaTeX itself (`pdflatex`, `bibtex`, `makeindex`, `synctex`) is used from
-the host — the manifest requests `--filesystem=host` and the
-`org.freedesktop.Flatpak` talk-name so SilkTex can run `flatpak-spawn
---host pdflatex …`. Bundling TeX Live would add several GB to every
+the host — install `texlive-full` / `texlive-scheme-full` on the host
+system. The manifest requests `--filesystem=host` and the
+`org.freedesktop.Flatpak` talk-name so SilkTex can run those tools through
+`flatpak-spawn --host`. Bundling TeX Live would add several GB to every
 Flatpak download and is avoided deliberately.
 
 If Flathub asks for a tighter sandbox, the alternative is to build

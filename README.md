@@ -77,17 +77,17 @@ authoritative in `flake.nix`.
 
 ## Building a Flatpak
 
-A Flatpak manifest and helper script live in [`flatpak/`](flatpak/). The
-Flatpak targets the GNOME 49 runtime, which already supplies GTK 4,
-libadwaita, gtksourceview 5 and poppler-glib, so only SilkTex itself is
-built by the manifest.
+A GNOME Builder-friendly Flatpak manifest and helper script live in
+[`flatpak/`](flatpak/). The default manifest builds the current checkout
+against the GNOME 50 runtime and bundles the missing `poppler-glib`
+dependency.
 
 **Flatpak builds only run on Linux.** On macOS, develop with the Nix
 shell above and run the Flatpak build on a Linux host / VM / CI job.
 
 ```bash
 # One-time: install the runtime + SDK declared by the manifest.
-flatpak install --user flathub org.gnome.Platform//49 org.gnome.Sdk//49
+flatpak install --user flathub org.gnome.Platform//50 org.gnome.Sdk//50
 
 # Clean build + install into the user's Flatpak repository:
 ./flatpak/build.sh
@@ -101,9 +101,13 @@ flatpak run app.silktex.SilkTex
 ./flatpak/build.sh --bundle
 ```
 
+In GNOME Builder, open `flatpak/app.silktex.SilkTex.yml` and build/run it
+as the Flatpak configuration.
+
 LaTeX itself (`pdflatex`, `bibtex`, `makeindex`, `synctex`) is used from
-the host — the manifest requests `--filesystem=host` rather than bundling
-the several-GB TeX Live distribution. See
+the host through `flatpak-spawn --host`, rather than bundling the
+several-GB TeX Live distribution. Install a full TeX Live on the host
+instead, for example `sudo dnf install texlive-scheme-full` on Fedora. See
 [`flatpak/README.md`](flatpak/README.md) for the rationale and more
 details.
 

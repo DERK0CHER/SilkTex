@@ -1399,10 +1399,10 @@ void silktex_window_install_chrome_css(void)
         "  color: @error_color;"
         "}"
         ".silktex-preview-scroller scrollbar slider {"
-        "  background-color: alpha(0.5, 0.45);"
+        "  background-color: alpha(currentColor, 0.45);"
         "}"
         ".silktex-preview-scroller scrollbar {"
-        "  background-color: alpha(0.5, 0.15);"
+        "  background-color: alpha(currentColor, 0.15);"
         "}");
     gtk_style_context_add_provider_for_display(gdk_display_get_default(),
                                                GTK_STYLE_PROVIDER(provider),

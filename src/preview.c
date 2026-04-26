@@ -12,7 +12,17 @@
 
 #include "preview.h"
 #include <adwaita.h>
-#include <poppler.h>
+#if defined(__has_include)
+#  if __has_include(<poppler.h>)
+#    include <poppler.h>
+#  elif __has_include(<poppler/glib/poppler.h>)
+#    include <poppler/glib/poppler.h>
+#  else
+#    error "Poppler GLib headers not found"
+#  endif
+#else
+#  include <poppler.h>
+#endif
 #include <math.h>
 
 /* Outer breathing room around every rendered page.  Requested by the

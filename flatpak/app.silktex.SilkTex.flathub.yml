@@ -2,8 +2,8 @@
 # Copyright (C) 2026 Bela Georg Barthelmes
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Local development manifest. GNOME Builder can open this file directly and
-# build the current checkout as a Flatpak.
+# Release manifest for Flathub. Copy this file to
+# app.silktex.SilkTex.yml in the Flathub repository.
 #
 # TeX Live is intentionally NOT bundled here. SilkTex runs the host's
 # pdflatex/bibtex/makeindex/synctex via flatpak-spawn --host so users can
@@ -63,8 +63,12 @@ modules:
   - name: silktex
     buildsystem: meson
     config-opts:
-      - --buildtype=debugoptimized
+      - --buildtype=release
       - --libdir=lib
     sources:
-      - type: dir
-        path: ..
+      - type: git
+        url: https://github.com/DERK0CHER/SilkTex.git
+        tag: v1.0.3
+        x-checker-data:
+          type: git
+          tag-pattern: '^v([\d.]+)$'

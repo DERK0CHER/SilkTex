@@ -5,7 +5,7 @@
 project(
     'silktex',
     'c',
-    version: '0.9.1',
+    version: '1.0.3',
     license: 'GPL-3.0-or-later',
     meson_version: '>=0.62.0',
     default_options: [
@@ -49,65 +49,22 @@ pkgdatadir  = join_paths(datadir, meson.project_name())
 # modernised; safe to remove once those files no longer reference it.
 gummidir    = pkgdatadir
 
-# Homebrew leaves pkg-config metadata under $(brew --prefix)/lib/pkgconfig (and
-# sometimes only under $(brew --prefix poppler)/lib/pkgconfig). IDEs and minimal
-# shells often run Meson without PKG_CONFIG_PATH, so poppler-glib.pc is
-# invisible. If the probe misses on Darwin, retry all deps with those paths.
-brew_pc_extra = []
-_poppler_probe = dependency('poppler-glib', required: false)
-if not _poppler_probe.found() and host_machine.system() == 'darwin'
-    _brew = find_program('brew', required: false)
-    if _brew.found()
-        _r = run_command(_brew, '--prefix', capture: true, check: false)
-        if _r.returncode() == 0
-            _root = _r.stdout().strip()
-            brew_pc_extra += join_paths(_root, 'lib', 'pkgconfig')
-        endif
-        _rp = run_command(_brew, '--prefix', 'poppler', capture: true, check: false)
-        if _rp.returncode() == 0
-            brew_pc_extra += join_paths(_rp.stdout().strip(), 'lib', 'pkgconfig')
-        endif
-    endif
-endif
-
 math_dep = cc.find_library('m', required: false)
-if brew_pc_extra.length() > 0
-    intl_dep = dependency('intl', required: false, pkg_config_path: brew_pc_extra)
-else
-    intl_dep = dependency('intl', required: false)
-endif
+intl_dep = dependency('intl', required: false)
 if not intl_dep.found()
     intl_dep = cc.find_library('intl', required: false)
 endif
 
-if brew_pc_extra.length() > 0
-    project_dependencies = [
-        dependency('gtk4', pkg_config_path: brew_pc_extra),
-        dependency('libadwaita-1', pkg_config_path: brew_pc_extra),
-        dependency('glib-2.0', pkg_config_path: brew_pc_extra),
-        dependency('json-glib-1.0', pkg_config_path: brew_pc_extra),
-        dependency('gtksourceview-5', pkg_config_path: brew_pc_extra),
-        dependency('poppler-glib', pkg_config_path: brew_pc_extra),
-        math_dep,
-        intl_dep,
-    ]
-else
-    if _poppler_probe.found()
-        _poppler_dep = _poppler_probe
-    else
-        _poppler_dep = dependency('poppler-glib', required: true)
-    endif
-    project_dependencies = [
-        dependency('gtk4'),
-        dependency('libadwaita-1'),
-        dependency('glib-2.0'),
-        dependency('json-glib-1.0'),
-        dependency('gtksourceview-5'),
-        _poppler_dep,
-        math_dep,
-        intl_dep,
-    ]
-endif
+project_dependencies = [
+    dependency('gtk4'),
+    dependency('libadwaita-1'),
+    dependency('glib-2.0'),
+    dependency('json-glib-1.0'),
+    dependency('gtksourceview-5'),
+    dependency('poppler-glib'),
+    math_dep,
+    intl_dep,
+]
 
 build_args = [
     '-DGUMMI_DATA='    + '"' + join_paths(meson.project_source_root(), 'data') + '"',

@@ -49,6 +49,39 @@ enum { SIGNAL_COMPILE_STARTED, SIGNAL_COMPILE_FINISHED, SIGNAL_COMPILE_ERROR, N_
 
 static guint signals[N_SIGNALS];
 
+static gboolean running_in_flatpak(void)
+{
+    return g_getenv("FLATPAK_ID") != NULL;
+}
+
+static gboolean spawn_tex_command(const char *working_dir, GPtrArray *argv, char **stdout_buf,
+                                  char **stderr_buf, int *exit_status, GError **error)
+{
+    if (running_in_flatpak()) {
+        g_autoptr(GString) command = g_string_new(NULL);
+
+        if (working_dir && *working_dir) {
+            g_autofree char *quoted_dir = g_shell_quote(working_dir);
+            g_string_append_printf(command, "cd %s && ", quoted_dir);
+        }
+
+        for (guint i = 0; i + 1 < argv->len; i++) {
+            if (i > 0) g_string_append_c(command, ' ');
+            g_autofree char *quoted_arg = g_shell_quote(g_ptr_array_index(argv, i));
+            g_string_append(command, quoted_arg);
+        }
+
+        gchar *spawn_argv[] = {"flatpak-spawn", "--host", "sh", "-c", command->str, NULL};
+        return g_spawn_sync(NULL, spawn_argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, stdout_buf,
+                            stderr_buf, exit_status, error);
+    }
+
+    const char *child_cwd = running_in_flatpak() ? NULL : working_dir;
+    return g_spawn_sync(child_cwd && *child_cwd ? child_cwd : NULL, (gchar **)argv->pdata, NULL,
+                        G_SPAWN_SEARCH_PATH, NULL, NULL, stdout_buf, stderr_buf, exit_status,
+                        error);
+}
+
 static gboolean emit_compile_finished(gpointer user_data)
 {
     SilktexCompiler *self = SILKTEX_COMPILER(user_data);
@@ -107,9 +140,8 @@ static gboolean run_typesetter(SilktexCompiler *self, const char *workfile, cons
     g_ptr_array_add(argv, g_strdup(workfile));
     g_ptr_array_add(argv, NULL);
 
-    gboolean result = g_spawn_sync(source_dir && *source_dir ? source_dir : NULL,
-                                   (gchar **)argv->pdata, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL,
-                                   &stdout_buf, &stderr_buf, &exit_status, &error);
+    gboolean result =
+        spawn_tex_command(source_dir, argv, &stdout_buf, &stderr_buf, &exit_status, &error);
 
     g_ptr_array_unref(argv);
 
@@ -433,11 +465,14 @@ gboolean silktex_compiler_run_makeindex(SilktexCompiler *self, SilktexEditor *ed
     if (dot) *dot = '\0';
 
     g_autofree char *idx_file = g_strdup_printf("%s/%s.idx", dirname, basename);
-    gchar *argv[] = {"makeindex", idx_file, NULL};
+    GPtrArray *argv = g_ptr_array_new_with_free_func(g_free);
+    g_ptr_array_add(argv, g_strdup("makeindex"));
+    g_ptr_array_add(argv, g_strdup(idx_file));
+    g_ptr_array_add(argv, NULL);
 
     int exit_status = 0;
-    gboolean result = g_spawn_sync(dirname, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL,
-                                   &exit_status, NULL);
+    gboolean result = spawn_tex_command(dirname, argv, NULL, NULL, &exit_status, NULL);
+    g_ptr_array_unref(argv);
 
     return result && exit_status == 0;
 }
@@ -456,11 +491,14 @@ gboolean silktex_compiler_run_bibtex(SilktexCompiler *self, SilktexEditor *edito
     char *dot = strrchr(basename, '.');
     if (dot) *dot = '\0';
 
-    gchar *argv[] = {"bibtex", basename, NULL};
+    GPtrArray *argv = g_ptr_array_new_with_free_func(g_free);
+    g_ptr_array_add(argv, g_strdup("bibtex"));
+    g_ptr_array_add(argv, g_strdup(basename));
+    g_ptr_array_add(argv, NULL);
 
     int exit_status = 0;
-    gboolean result = g_spawn_sync(dirname, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL,
-                                   &exit_status, NULL);
+    gboolean result = spawn_tex_command(dirname, argv, NULL, NULL, &exit_status, NULL);
+    g_ptr_array_unref(argv);
 
     return result && exit_status == 0;
 }

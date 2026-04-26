@@ -6,6 +6,7 @@ build-flatpak/
 build-flatpak-repo/
 .flatpak-builder/
 flatpak/.local.*.yml
+app.silktex.SilkTex.flatpak
 
 # Editor / OS
 .DS_Store

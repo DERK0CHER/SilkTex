@@ -66,6 +66,14 @@ static const char style_commands[][3][20] = {{"bold", "\\textbf{", "}"},
                                              {"center", "\\begin{center}", "\\end{center}"},
                                              {"right", "\\begin{flushright}", "\\end{flushright}"}};
 
+static char *silktex_editor_get_tmpdir(void)
+{
+    if (g_getenv("FLATPAK_ID"))
+        return g_build_filename(g_get_home_dir(), ".cache", "silktex", NULL);
+
+    return C_TMPDIR;
+}
+
 static void on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data)
 {
     SilktexEditor *self = SILKTEX_EDITOR(user_data);
@@ -83,11 +91,12 @@ static void silktex_editor_init_workfile(SilktexEditor *self)
      * openout_any=p refuses to write files whose name starts with "."
      * which caused the old ".<base>.aux" pattern to fail outright.
      */
-    if (!g_file_test(C_TMPDIR, G_FILE_TEST_IS_DIR)) {
-        g_mkdir_with_parents(C_TMPDIR, 0755);
+    g_autofree char *tmpdir = silktex_editor_get_tmpdir();
+    if (!g_file_test(tmpdir, G_FILE_TEST_IS_DIR)) {
+        g_mkdir_with_parents(tmpdir, 0755);
     }
 
-    self->fdname = g_build_filename(C_TMPDIR, "silktex_XXXXXX", NULL);
+    self->fdname = g_build_filename(tmpdir, "silktex_XXXXXX", NULL);
     self->workfd = g_mkstemp(self->fdname);
 
     self->workfile = g_strdup_printf("%s.tex", self->fdname);
@@ -631,7 +640,7 @@ char *silktex_editor_get_source_dir(SilktexEditor *self)
 {
     g_return_val_if_fail(SILKTEX_IS_EDITOR(self), NULL);
     if (self->filename != NULL) return g_path_get_dirname(self->filename);
-    return g_strdup(C_TMPDIR);
+    return silktex_editor_get_tmpdir();
 }
 
 const char *silktex_editor_get_pdffile(SilktexEditor *self)
