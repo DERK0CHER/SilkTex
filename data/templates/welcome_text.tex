@@ -1,7 +1,7 @@
 \documentclass[11pt]{article}
 %\synctex=1
 
-%% Usepackages ............................................................. %%
+%% Usepackages .............................................................................................. %%
 \usepackage{amsmath,amssymb,amsfonts,amsthm,mathtools,xfrac,enumitem}
 \usepackage{graphicx, float}
 \usepackage{color}
@@ -12,7 +12,7 @@
 \usepackage{xr,xr-hyper}
 
 
-%% Styling ................................................................ %%
+%% Styling ....................................................................................................... %%
 %\numberwithin{equation}{section}
 %\textwidth 16cm
 %\oddsidemargin -0.01cm
@@ -20,26 +20,15 @@
 %\addtolength{\topmargin}{-1cm}
 
 
-%% Newcommands ............................................................ %%
-\newcommand{\ov}{\overline}
-\renewcommand{\a }{\alpha }
-\renewcommand{\b }{\beta }
-\renewcommand{\d}{\delta }
-\renewcommand{\l}{\lambda }
+%% Newcommands .......................................................................................... %%
 \newcommand{\N}{\mathbb{N}}
 \newcommand{\R}{\mathbb{R}}
 \newcommand{\Z}{\mathbb{Z}}
 \newcommand{\Q}{\mathbb{Q}}
 
-\makeatletter
-\renewcommand*\env@matrix[1][*\c@MaxMatrixCols c]{%
-  \hskip -\arraycolsep
-  \let\@ifnextchar\new@ifnextchar
-  \array{#1}}
-\makeatother
 
 
-%% Environments .......................................................... %%
+%% Environments ............................................................................................ %%
 \newtheorem{corollary}{Corollary}[section]
 \newtheorem{remark}{Remark}[section]
 \newtheorem{lemma}{Lemma}[section]
@@ -48,7 +37,7 @@
 \newtheorem{definition}{Definition}[section]
 
 
-%% Horizontal rule
+%% Horizontal Line ......................................................................................... %% 
 \def\horizontalline{%
 \vspace{-12pt}
 \begin{center}
@@ -58,9 +47,16 @@
 }
 
 
+%% Title, Name and Date ............................................................................... %%
+\title{Title}    
+\author{Your Name}
+\date{\today}
+
+
+
 \begin{document}
 
-
+%\maketitle
 
 {\centerline{\Large{\bf Welcome to $\mathbb{S}i\lambda \kappa \mathcal{T} \epsilon \chi$ }}}
 \horizontalline
