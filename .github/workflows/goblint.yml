@@ -47,4 +47,7 @@ jobs:
         run: |
           eval "$(opam env)"
           meson setup build
+          # Generated sources (e.g. silktex-resources.c, main.ui) must exist before Goblint
+          # replays compile_commands.json entries.
+          ninja -C build
           python3 scripts/goblint_all.py build/compile_commands.json

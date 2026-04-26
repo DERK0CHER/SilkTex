@@ -9,6 +9,11 @@ For GTK/Graphene on x86_64, CIL cannot parse GCC SIMD vector intrinsics. The
 `__GI_SCANNER__` define makes Graphene use its scalar code paths (same idea as
 gobject-introspection). The Goblint job sets `CFLAGS=-D__GI_SCANNER__` so Meson
 records it in compile_commands.json; do not add it only in this script.
+
+Run ``ninja -C build`` at least once first: ``compile_commands.json`` lists
+generated C (e.g. the build tree’s ``.../data/ui/silktex-resources.c``), but
+those files are only created when Ninja runs the glib-compile-resources/Blueprint
+custom targets.
 """
 
 from __future__ import annotations

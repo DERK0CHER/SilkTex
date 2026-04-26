@@ -1472,9 +1472,12 @@ static void silktex_window_init(SilktexWindow *self)
         const char *const export_icons[] = {"document-export-symbolic", "document-save-as-symbolic",
                                             "folder-download-symbolic", "document-save-symbolic",
                                             NULL};
-        const char *const git_icons[] = {"git-symbolic",          "vcs-git-symbolic",
-                                         "branch-arrow-symbolic", "version-control-symbolic",
-                                         "folder-symbolic",       NULL};
+        /* VCS / branch icons only — do not use folder-symbolic here: on some themes
+         * the Git names are missing from has_icon() but folder-symbolic matches last,
+         * so the menu looked like a folder despite main.blp using git-symbolic. */
+        const char *const git_icons[] = {
+            "git-symbolic", "vcs-git-symbolic", "branch-arrow-symbolic", "version-control-symbolic", NULL
+        };
 
         const char *export_icon = export_icons[3];
         for (int i = 0; export_icons[i]; i++) {
@@ -1483,7 +1486,7 @@ static void silktex_window_init(SilktexWindow *self)
                 break;
             }
         }
-        const char *git_icon = git_icons[4];
+        const char *git_icon = "git-symbolic";
         for (int i = 0; git_icons[i]; i++) {
             if (gtk_icon_theme_has_icon(it, git_icons[i])) {
                 git_icon = git_icons[i];
