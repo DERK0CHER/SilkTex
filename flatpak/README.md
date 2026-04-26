@@ -78,17 +78,17 @@ the build source, and updates become automatic (see the next section).
       data/misc/app.silktex.SilkTex.metainfo.xml.in
   ```
 - **Reproducible sources.** The Flathub manifest uses `type: git` with
-  `tag: v1.0.2`. Before submitting, tag a real release in this repo and
+  `tag: v1.0.3`. Before submitting, tag a real release in this repo and
   add a matching `commit:` SHA:
   ```bash
-  git tag -a v1.0.2 -m "SilkTex 1.0.2"
-  git push origin v1.0.2
-  sha=$(git rev-parse v1.0.2^{commit})
+  git tag -a v1.0.3 -m "SilkTex 1.0.3"
+  git push origin v1.0.3
+  sha=$(git rev-parse v1.0.3^{commit})
   python3 - <<PY
   from pathlib import Path
   p = Path("flatpak/app.silktex.SilkTex.flathub.yml")
   s = p.read_text()
-  s = s.replace("        tag: v1.0.2\n", "        tag: v1.0.2\n        commit: $sha\n")
+  s = s.replace("        tag: v1.0.3\n", "        tag: v1.0.3\n        commit: $sha\n")
   p.write_text(s)
   PY
   git add flatpak/app.silktex.SilkTex.flathub.yml

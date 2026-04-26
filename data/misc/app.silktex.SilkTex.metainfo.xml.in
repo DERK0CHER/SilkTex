@@ -76,6 +76,16 @@
   </screenshots>
 
   <releases>
+    <release version="1.0.3" date="2026-04-26">
+      <description>
+        <p>Flatpak readiness release.</p>
+        <ul>
+          <li>Builds cleanly from GNOME Builder and the Flatpak manifest.</li>
+          <li>Uses the host TeX Live tools through flatpak-spawn to avoid bundling TeX Live.</li>
+          <li>Improves Flatpak preview startup reliability and default template compatibility.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.2" date="2026-04-26">
       <description>
         <p>Maintenance release.</p>

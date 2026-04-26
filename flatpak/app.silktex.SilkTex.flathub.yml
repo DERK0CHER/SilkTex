@@ -68,7 +68,7 @@ modules:
     sources:
       - type: git
         url: https://github.com/DERK0CHER/SilkTex.git
-        tag: v1.0.2
+        tag: v1.0.3
         x-checker-data:
           type: git
           tag-pattern: '^v([\d.]+)$'
