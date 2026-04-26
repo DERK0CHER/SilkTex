@@ -13,6 +13,14 @@ import sys
 from pathlib import Path
 
 
+GOBLINT_PREPROCESS_DEFINES = [
+    # Graphene normally selects SSE/GCC vector headers on x86_64. Goblint's
+    # CIL frontend cannot parse those compiler vector builtins, so use the same
+    # scalar fallback Graphene exposes for gobject-introspection.
+    "-D__GI_SCANNER__",
+]
+
+
 def is_app_src(path: str) -> bool:
     p = path.replace("\\", "/")
     return "/src/" in p and p.endswith(".c") and "silktex-resources" not in p
@@ -54,7 +62,7 @@ def command_to_preprocess_argv(cmd: str, build_dir: Path, i_out: Path) -> list[s
         i += 1
     if not src:
         return None
-    return [compiler, "-E", *filtered, src, "-o", str(i_out)]
+    return [compiler, "-E", *GOBLINT_PREPROCESS_DEFINES, *filtered, src, "-o", str(i_out)]
 
 
 def main() -> int:
