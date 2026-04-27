@@ -153,7 +153,10 @@ Adw.ToolbarView editor_toolbar_view {
     Gtk.Box {
       orientation: horizontal;
       spacing: 2;
-
+      Gtk.Box tools_split_extra {
+            orientation: horizontal;
+            spacing: 2;
+      }
       Gtk.Box {
         orientation: horizontal;
         spacing: 0;
@@ -252,10 +255,6 @@ Adw.ToolbarView editor_toolbar_view {
         child: Gtk.Box {
           orientation: horizontal;
           spacing: 2;
-          Gtk.Box tools_split_extra {
-            orientation: horizontal;
-            spacing: 2;
-          }
           Gtk.Box {
             orientation: horizontal;
             spacing: 0;
