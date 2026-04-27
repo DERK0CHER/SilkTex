@@ -152,9 +152,10 @@ Adw.ToolbarView editor_toolbar_view {
     // ── LEFT ZONE ──────────────────────────────────────────────────────
     Gtk.Box {
       orientation: horizontal;
-      spacing: 2; Gtk.Box tools_split_extra {
-          orientation: horizontal;
-          spacing: 2;
+      spacing: 2;
+      Gtk.Box tools_split_extra {
+            orientation: horizontal;
+            spacing: 2;
       }
       Gtk.Box {
         orientation: horizontal;
@@ -251,17 +252,21 @@ Adw.ToolbarView editor_toolbar_view {
       Gtk.Revealer revealer_right {
         transition-type: slide_left;
         reveal-child: bind btn_tools_toggle.active;
-        child: Gtk.Box tools_toggle_git_group {
-        orientation: horizontal;
-        spacing: 0;
-        Gtk.Separator { orientation: vertical; }
-        Gtk.MenuButton btn_git_menu {
-          icon-name: "git-symbolic";
-          tooltip-text: _("Git");
-          menu-model: git_menu;
-          styles ["flat"]
-        }
-      };
+        child: Gtk.Box {
+          orientation: horizontal;
+          spacing: 2;
+          Gtk.Box {
+            orientation: horizontal;
+            spacing: 0;
+            Gtk.Separator { orientation: vertical; }
+            Gtk.MenuButton btn_git_menu {
+              icon-name: "git-symbolic";
+              tooltip-text: _("Git");
+              menu-model: git_menu;
+              styles ["flat"]
+            }
+          }
+        };
       }
 
       Gtk.Box {
@@ -289,7 +294,7 @@ Adw.ToolbarView editor_toolbar_view {
           // Pane 3 - preview.  View tools (zoom / page / sync / export) live
           // in the preview pane's bottom toolbar, matching pane 2.
           // ------------------------------------------------------------------
-          [end]
+
           Adw.ToolbarView preview_toolbar_view {
             content: Gtk.Box preview_box {
               orientation: vertical;
