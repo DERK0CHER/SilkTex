@@ -2,6 +2,7 @@
 
 A modern LaTeX editor for GNOME, built on GTK 4, libadwaita and Blueprint,
 with a sharp PDF preview on HiDPI displays and a configurable snippet engine.
+![Local Image](./assets/screenshots/Silktex.png)
 
 ## Features
 
