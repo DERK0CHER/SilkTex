@@ -46,6 +46,7 @@ struct _SilktexPrefs {
     GtkLabel *lbl_snippet_accel_preview;
     AdwComboRow *row_snippet_mod1;
     AdwComboRow *row_snippet_mod2;
+    GtkButton *btn_snippet_save;
     GPtrArray *snippet_entries;
     guint current_snippet_index;
     gboolean snippets_updating_ui; /* guard against feedback loops while re-populating widgets */
@@ -70,13 +71,9 @@ typedef struct {
     AdwEntryRow *name_row;
     AdwEntryRow *key_row;
     GtkTextBuffer *body_buf;
-    GtkDropDown *mod1_dd;
-    GtkDropDown *mod2_dd;
+    AdwComboRow *mod1_row;
+    AdwComboRow *mod2_row;
     AdwEntryRow *letter_row;
-    AdwEntryRow *ov_name_row;
-    AdwEntryRow *ov_key_row;
-    AdwEntryRow *ov_accel_row;
-    GtkTextBuffer *ov_body_buf;
     int step;
 } SnippetWizard;
 
@@ -787,7 +784,7 @@ static const struct {
     {"Super", "Super", GDK_SUPER_MASK},
 };
 
-static const char *wizard_step_names[] = {"identity", "command", "shortcut", "overview"};
+static const char *wizard_step_names[] = {"body", "shortcut"};
 
 static char *build_accel_from_parts(guint mod1_idx, guint mod2_idx, const char *letter)
 {
