@@ -5,6 +5,7 @@
  */
 
 #include "window-private.h"
+#include "collab.h"
 #include "prefs.h"
 #include "searchbar.h"
 #include "snippets.h"
@@ -271,6 +272,7 @@ GtkWidget *silktex_window_create_editor_page(SilktexWindow *self, SilktexEditor 
                            g_object_unref);
 
     g_signal_connect(editor, "changed", G_CALLBACK(on_editor_changed), self);
+    silktex_collab_connect_editor(editor);
 
     silktex_editor_apply_settings(editor);
     silktex_window_apply_theme_to_editor(editor);
@@ -1473,6 +1475,7 @@ static void silktex_window_init(SilktexWindow *self)
                                     self);
     silktex_window_register_menu_actions(self);
     silktex_window_git_register_actions(self);
+    silktex_collab_setup_window(self);
     silktex_window_git_update_actions(self);
 
     GAction *theme_action = g_action_map_lookup_action(G_ACTION_MAP(self), "set-theme");

@@ -40,6 +40,8 @@
               pkg-config
               clang
               blueprint-compiler
+              cargo
+              rustc
             ];
 
             # Libraries resolved by pkg-config

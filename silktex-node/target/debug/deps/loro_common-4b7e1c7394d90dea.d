@@ -1,0 +1,12 @@
+/Users/beba/software/SilkTex/silktex-node/target/debug/deps/loro_common-4b7e1c7394d90dea.d: /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/lib.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/error.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/id.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/internal_string.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/logging.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/macros.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/span.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/value.rs
+
+/Users/beba/software/SilkTex/silktex-node/target/debug/deps/libloro_common-4b7e1c7394d90dea.rmeta: /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/lib.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/error.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/id.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/internal_string.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/logging.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/macros.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/span.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/value.rs
+
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/lib.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/error.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/id.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/internal_string.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/logging.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/macros.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/span.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loro-common-1.12.0/src/value.rs:

@@ -1,0 +1,12 @@
+/Users/beba/software/SilkTex/silktex-node/target/debug/deps/signature-ada3c31edae15f29.d: /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/lib.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/hazmat.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/encoding.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/error.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/keypair.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/signer.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/verifier.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/../README.md
+
+/Users/beba/software/SilkTex/silktex-node/target/debug/deps/libsignature-ada3c31edae15f29.rmeta: /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/lib.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/hazmat.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/encoding.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/error.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/keypair.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/signer.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/verifier.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/../README.md
+
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/lib.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/hazmat.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/encoding.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/error.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/keypair.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/signer.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/verifier.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/signature-2.2.0/src/../README.md:

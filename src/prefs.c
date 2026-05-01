@@ -75,6 +75,13 @@ typedef struct {
     AdwComboRow *mod2_row;
     AdwEntryRow *letter_row;
     int step;
+    /* Overview / summary step */
+    AdwEntryRow   *ov_name_row;
+    AdwEntryRow   *ov_key_row;
+    AdwEntryRow   *ov_accel_row;
+    GtkTextBuffer *ov_body_buf;
+    GtkDropDown   *mod1_dd;
+    GtkDropDown   *mod2_dd;
 } SnippetWizard;
 
 static char *extract_accel_letter(const char *accel);

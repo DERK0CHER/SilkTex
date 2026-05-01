@@ -54,6 +54,7 @@ struct _SilktexWindow {
     GtkButton *btn_compile;
     GtkToggleButton *btn_tools_toggle;
     GtkMenuButton *btn_menu;
+    GtkMenuButton *btn_collab;
     GtkMenuButton *btn_git_menu;
     GtkButton *btn_save;
     GtkToggleButton *btn_log;

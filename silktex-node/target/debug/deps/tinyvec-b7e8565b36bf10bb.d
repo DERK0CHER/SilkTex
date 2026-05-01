@@ -1,0 +1,11 @@
+/Users/beba/software/SilkTex/silktex-node/target/debug/deps/tinyvec-b7e8565b36bf10bb.d: /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/lib.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/array.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/array/const_generic_impl.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/arrayvec.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/arrayvec_drain.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/slicevec.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/tinyvec.rs
+
+/Users/beba/software/SilkTex/silktex-node/target/debug/deps/libtinyvec-b7e8565b36bf10bb.rmeta: /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/lib.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/array.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/array/const_generic_impl.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/arrayvec.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/arrayvec_drain.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/slicevec.rs /Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/tinyvec.rs
+
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/lib.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/array.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/array/const_generic_impl.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/arrayvec.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/arrayvec_drain.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/slicevec.rs:
+/Users/beba/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tinyvec-1.11.0/src/tinyvec.rs:

@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 silktex_sources = files(
+    'collab.c',
+    'collab.h',
     'application.c',
     'application.h',
     'window.c',
@@ -48,3 +50,28 @@ executable(
     c_args:       build_args,
     install:      true,
 )
+
+# silktex-node: Rust P2P sidecar — built via cargo, placed next to the silktex binary.
+# cargo handles its own incremental compilation, so build_always_stale is fine.
+cargo = find_program('cargo', required: false)
+if cargo.found()
+    node_src        = meson.project_source_root() / 'silktex-node'
+    node_target_dir = meson.current_build_dir() / 'silktex-node-target'
+
+    custom_target(
+        'silktex-node',
+        output:            'silktex-node',
+        command: [
+            'sh', '-c',
+            'cargo build --release --manifest-path "$1/Cargo.toml" --target-dir "$2" && cp "$2/release/silktex-node" "$3"',
+            'sh', node_src, node_target_dir, '@OUTPUT@',
+        ],
+        build_by_default:  true,
+        build_always_stale: true,
+        console:           true,
+        install:           true,
+        install_dir:       get_option('bindir'),
+    )
+else
+    warning('cargo not found — silktex-node will not be built; P2P collaboration disabled')
+endif
