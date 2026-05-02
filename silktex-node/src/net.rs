@@ -175,14 +175,22 @@ async fn run_inner(
         return;
     }
 
-    // Dial all bootstrap nodes. The DNS transport resolves /dnsaddr/ entries.
+    // Dial bootstrap nodes and pre-populate the Kademlia routing table so that
+    // kad.bootstrap() has peers to query immediately (avoids "No known peers").
     for addr_str in BOOTSTRAP_ADDRS {
         if let Ok(addr) = addr_str.parse::<Multiaddr>() {
+            // Extract the /p2p/<PeerId> component and seed the routing table.
+            let peer_id = addr.iter().find_map(|p| {
+                if let libp2p::multiaddr::Protocol::P2p(id) = p { Some(id) } else { None }
+            });
+            if let Some(peer_id) = peer_id {
+                swarm.behaviour_mut().kad.add_address(&peer_id, addr.clone());
+            }
             swarm.dial(addr).ok();
         }
     }
 
-    // Kick off DHT routing-table bootstrap.
+    // Now that the routing table has bootstrap peers, kick off DHT bootstrap.
     swarm.behaviour_mut().kad.bootstrap().ok();
 
     let mut peer_count: usize = 0;
@@ -194,6 +202,13 @@ async fn run_inner(
     discover_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     // Skip the immediate first tick so we don't query before bootstrap finishes.
     discover_tick.tick().await;
+
+    // Retry the snapshot request every second until gossipsub mesh forms.
+    // The first publish attempt often fails with InsufficientPeers because the mesh
+    // heartbeat (1 s) hasn't run yet even though a TCP connection is established.
+    let mut snap_req_pending = false;
+    let mut snap_retry_tick = tokio::time::interval(Duration::from_secs(1));
+    snap_retry_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
         tokio::select! {
@@ -212,6 +227,18 @@ async fn run_inner(
                 }
             }
 
+            // Retry snapshot request until the gossipsub mesh is ready.
+            _ = snap_retry_tick.tick(), if snap_req_pending && snap_tx.is_some() => {
+                let req = vec![PROTOCOL_TAG_REQ];
+                match swarm.behaviour_mut().gossipsub.publish(topic.clone(), req) {
+                    Ok(_) => {
+                        snap_req_pending = false;
+                        tracing::info!("snapshot request sent");
+                    }
+                    Err(e) => tracing::debug!("snap req retry ({e})"),
+                }
+            }
+
             event = swarm.select_next_some() => {
                 match event {
                     // ── gossipsub messages ──────────────────────────────────────
@@ -225,6 +252,7 @@ async fn run_inner(
                                 let _ = update_tx.send((doc_id.clone(), data[1..].to_vec())).await;
                             }
                             PROTOCOL_TAG_SNAP => {
+                                snap_req_pending = false;
                                 if let Some(tx) = snap_tx.take() {
                                     let _ = tx.send(data[1..].to_vec()).await;
                                 }
@@ -236,17 +264,12 @@ async fn run_inner(
                         }
                     }
 
-                    // Remote peer joined our gossipsub topic — joiner sends snapshot request.
+                    // Remote peer joined our gossipsub topic — arm the retry loop.
                     SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(
                         gossipsub::Event::Subscribed { topic: t, .. }
                     )) => {
                         if t == topic.hash() && joiner && snap_tx.is_some() {
-                            let req = vec![PROTOCOL_TAG_REQ];
-                            if let Err(e) = swarm.behaviour_mut().gossipsub
-                                .publish(topic.clone(), req)
-                            {
-                                tracing::warn!("snap req publish: {e}");
-                            }
+                            snap_req_pending = true;
                         }
                     }
 
@@ -324,6 +347,10 @@ async fn run_inner(
                                             .add_explicit_peer(&peer_id);
                                         swarm.dial(peer_id).ok();
                                     }
+                                }
+                                // Arm the retry loop; it will fire once the mesh is ready.
+                                if joiner && snap_tx.is_some() {
+                                    snap_req_pending = true;
                                 }
                             }
 

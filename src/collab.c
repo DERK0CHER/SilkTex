@@ -60,14 +60,17 @@ typedef struct {
     int peer_count;
 
     /* Header-bar button UI (owned here, attached to btn_collab) */
-    GtkStack *icon_stack;         /* "offline" / "online" pages           */
-    GtkLabel *peers_badge;        /* peer count next to icon              */
-    GtkLabel *status_label;       /* inside popover — "Not in session"    */
-    GtkRevealer *id_revealer;     /* session-ID section (host only)       */
-    AdwActionRow *session_id_row; /* subtitle = the UUID, has copy suffix */
-    GtkRevealer *join_revealer;   /* join section (before session)        */
-    GtkEditable *join_entry;      /* AdwEntryRow, implements GtkEditable  */
-    GtkButton *primary_btn;       /* "Start Session" or "Leave Session"   */
+    GtkStack   *icon_stack;         /* "offline" / "online" pages           */
+    GtkSpinner *btn_spinner;        /* spins in header button when searching */
+    GtkLabel   *peers_badge;        /* peer count next to icon              */
+    GtkLabel   *status_label;       /* inside popover — current state       */
+    GtkSpinner *status_spinner;     /* spins in popover when searching      */
+    GtkRevealer *id_revealer;       /* session-ID section (host only)       */
+    AdwActionRow *session_id_row;   /* subtitle = the UUID, has copy suffix */
+    GtkRevealer *join_revealer;     /* join + start/join buttons (no session) */
+    GtkEditable *join_entry;        /* AdwEntryRow, implements GtkEditable  */
+    GtkRevealer *leave_revealer;    /* leave button (in session)            */
+    GtkButton   *primary_btn;       /* "Leave Session"                      */
 } Collab;
 
 static Collab C; /* zero-initialized */
@@ -404,6 +407,16 @@ static void collab_update_ui(void)
     if (C.in_session) {
         gtk_stack_set_visible_child_name(C.icon_stack, "online");
 
+        gboolean waiting = (C.peer_count == 0);
+
+        /* Spinner in header button */
+        if (C.btn_spinner) {
+            gtk_widget_set_visible(GTK_WIDGET(C.btn_spinner), waiting);
+            if (waiting) gtk_spinner_start(C.btn_spinner);
+            else         gtk_spinner_stop(C.btn_spinner);
+        }
+
+        /* Peer-count badge */
         if (C.peer_count > 0) {
             g_autofree char *badge = g_strdup_printf("%d", C.peer_count);
             gtk_label_set_text(C.peers_badge, badge);
@@ -412,28 +425,42 @@ static void collab_update_ui(void)
             gtk_widget_set_visible(GTK_WIDGET(C.peers_badge), FALSE);
         }
 
-        g_autofree char *status = C.peer_count == 0
-                                      ? g_strdup("Waiting for peers…")
-                                      : g_strdup_printf("%d peer%s connected", C.peer_count,
-                                                        C.peer_count == 1 ? "" : "s");
+        /* Status label + spinner in popover */
+        g_autofree char *status = waiting
+            ? g_strdup(_("Searching for peers on the network…"))
+            : g_strdup_printf(C.peer_count == 1 ? _("%d peer connected")
+                                                : _("%d peers connected"),
+                              C.peer_count);
         gtk_label_set_text(C.status_label, status);
+        if (C.status_spinner) {
+            gtk_widget_set_visible(GTK_WIDGET(C.status_spinner), waiting);
+            if (waiting) gtk_spinner_start(C.status_spinner);
+            else         gtk_spinner_stop(C.status_spinner);
+        }
 
         if (C.session_id_row)
             adw_action_row_set_subtitle(C.session_id_row, C.session_id ? C.session_id : "");
-        gtk_revealer_set_reveal_child(C.id_revealer, TRUE);
-        gtk_revealer_set_reveal_child(C.join_revealer, FALSE);
-        gtk_button_set_label(C.primary_btn, "Leave Session");
-        gtk_widget_add_css_class(GTK_WIDGET(C.primary_btn), "destructive-action");
-        gtk_widget_remove_css_class(GTK_WIDGET(C.primary_btn), "suggested-action");
+
+        gtk_revealer_set_reveal_child(C.id_revealer,   TRUE);
+        gtk_revealer_set_reveal_child(C.join_revealer,  FALSE);
+        gtk_revealer_set_reveal_child(C.leave_revealer, TRUE);
     } else {
         gtk_stack_set_visible_child_name(C.icon_stack, "offline");
         gtk_widget_set_visible(GTK_WIDGET(C.peers_badge), FALSE);
-        gtk_label_set_text(C.status_label, "Not in session");
-        gtk_revealer_set_reveal_child(C.id_revealer, FALSE);
-        gtk_revealer_set_reveal_child(C.join_revealer, TRUE);
-        gtk_button_set_label(C.primary_btn, "Start Session");
-        gtk_widget_add_css_class(GTK_WIDGET(C.primary_btn), "suggested-action");
-        gtk_widget_remove_css_class(GTK_WIDGET(C.primary_btn), "destructive-action");
+
+        if (C.btn_spinner) {
+            gtk_spinner_stop(C.btn_spinner);
+            gtk_widget_set_visible(GTK_WIDGET(C.btn_spinner), FALSE);
+        }
+        if (C.status_spinner) {
+            gtk_spinner_stop(C.status_spinner);
+            gtk_widget_set_visible(GTK_WIDGET(C.status_spinner), FALSE);
+        }
+
+        gtk_label_set_text(C.status_label, _("Not in a collaboration session"));
+        gtk_revealer_set_reveal_child(C.id_revealer,   FALSE);
+        gtk_revealer_set_reveal_child(C.join_revealer,  TRUE);
+        gtk_revealer_set_reveal_child(C.leave_revealer, FALSE);
     }
 }
 
@@ -441,14 +468,18 @@ static void collab_update_ui(void)
 /* Popover button callbacks                                            */
 /* ------------------------------------------------------------------ */
 
+static void on_start_btn_clicked(GtkButton *btn, gpointer ud)
+{
+    (void)btn;
+    (void)ud;
+    do_create_session();
+}
+
 static void on_primary_btn_clicked(GtkButton *btn, gpointer ud)
 {
     (void)btn;
     (void)ud;
-    if (C.in_session)
-        do_leave_session();
-    else
-        do_create_session();
+    do_leave_session();
 }
 
 static void on_join_btn_clicked(GtkButton *btn, gpointer ud)
@@ -488,7 +519,7 @@ void silktex_collab_setup_window(SilktexWindow *self)
 {
     if (!self->btn_collab) return;
 
-    /* ── Button child: icon stack + peer-count badge ── */
+    /* ── Header button child: icon stack + spinner + peer-count badge ── */
     GtkWidget *btn_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
 
     GtkWidget *stack = gtk_stack_new();
@@ -506,12 +537,18 @@ void silktex_collab_setup_window(SilktexWindow *self)
 
     gtk_stack_set_visible_child_name(GTK_STACK(stack), "offline");
 
+    /* Spinner shown while searching for peers */
+    GtkWidget *btn_spinner = gtk_spinner_new();
+    gtk_widget_set_visible(btn_spinner, FALSE);
+    C.btn_spinner = GTK_SPINNER(btn_spinner);
+
     GtkWidget *badge = gtk_label_new("");
     gtk_widget_add_css_class(badge, "collab-badge");
     gtk_widget_set_visible(badge, FALSE);
     C.peers_badge = GTK_LABEL(badge);
 
     gtk_box_append(GTK_BOX(btn_box), stack);
+    gtk_box_append(GTK_BOX(btn_box), btn_spinner);
     gtk_box_append(GTK_BOX(btn_box), badge);
     gtk_menu_button_set_child(self->btn_collab, btn_box);
 
@@ -519,10 +556,10 @@ void silktex_collab_setup_window(SilktexWindow *self)
     GtkWidget *popover_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 
     GtkWidget *clamp = adw_clamp_new();
-    adw_clamp_set_maximum_size(ADW_CLAMP(clamp), 300);
+    adw_clamp_set_maximum_size(ADW_CLAMP(clamp), 320);
     adw_clamp_set_child(ADW_CLAMP(clamp), popover_box);
 
-    /* Status row */
+    /* Status row: icon · label · spinner */
     GtkWidget *status_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_widget_set_margin_start(status_row, 12);
     gtk_widget_set_margin_end(status_row, 12);
@@ -530,19 +567,26 @@ void silktex_collab_setup_window(SilktexWindow *self)
     gtk_widget_set_margin_bottom(status_row, 8);
 
     GtkWidget *status_icon = gtk_image_new_from_icon_name("system-users-symbolic");
-    GtkWidget *status_lbl = gtk_label_new(_("Not in session"));
+
+    GtkWidget *status_lbl = gtk_label_new(_("Not in a collaboration session"));
     gtk_label_set_xalign(GTK_LABEL(status_lbl), 0.0f);
+    gtk_label_set_wrap(GTK_LABEL(status_lbl), TRUE);
     gtk_widget_set_hexpand(status_lbl, TRUE);
     gtk_widget_add_css_class(status_lbl, "heading");
     C.status_label = GTK_LABEL(status_lbl);
 
+    GtkWidget *status_spinner = gtk_spinner_new();
+    gtk_widget_set_visible(status_spinner, FALSE);
+    C.status_spinner = GTK_SPINNER(status_spinner);
+
     gtk_box_append(GTK_BOX(status_row), status_icon);
     gtk_box_append(GTK_BOX(status_row), status_lbl);
+    gtk_box_append(GTK_BOX(status_row), status_spinner);
     gtk_box_append(GTK_BOX(popover_box), status_row);
 
     gtk_box_append(GTK_BOX(popover_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
-    /* ── Session ID (host only, AdwActionRow in a boxed-list) ── */
+    /* ── Session ID row (shown when hosting) ── */
     GtkWidget *id_rev = gtk_revealer_new();
     gtk_revealer_set_transition_type(GTK_REVEALER(id_rev), GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN);
     gtk_revealer_set_reveal_child(GTK_REVEALER(id_rev), FALSE);
@@ -574,53 +618,80 @@ void silktex_collab_setup_window(SilktexWindow *self)
     gtk_revealer_set_child(GTK_REVEALER(id_rev), id_list);
     gtk_box_append(GTK_BOX(popover_box), id_rev);
 
-    /* ── Join (AdwEntryRow in a boxed-list, shown before session) ── */
+    /* ── Not-in-session section: entry row + Start/Join buttons ── */
     GtkWidget *join_rev = gtk_revealer_new();
     gtk_revealer_set_transition_type(GTK_REVEALER(join_rev),
                                      GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN);
     gtk_revealer_set_reveal_child(GTK_REVEALER(join_rev), TRUE);
     C.join_revealer = GTK_REVEALER(join_rev);
 
+    GtkWidget *join_outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+    /* Entry row for session ID */
     GtkWidget *join_list = gtk_list_box_new();
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(join_list), GTK_SELECTION_NONE);
     gtk_widget_add_css_class(join_list, "boxed-list");
     gtk_widget_set_margin_start(join_list, 12);
     gtk_widget_set_margin_end(join_list, 12);
     gtk_widget_set_margin_top(join_list, 8);
-    gtk_widget_set_margin_bottom(join_list, 4);
+    gtk_widget_set_margin_bottom(join_list, 0);
 
     GtkWidget *join_entry_row = adw_entry_row_new();
-    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(join_entry_row), _("Join Session"));
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(join_entry_row), _("Paste Session ID to join"));
     C.join_entry = GTK_EDITABLE(join_entry_row);
     g_signal_connect(join_entry_row, "apply", G_CALLBACK(on_join_apply), NULL);
-
-    GtkWidget *join_btn = gtk_button_new_from_icon_name("go-next-symbolic");
-    gtk_widget_add_css_class(join_btn, "flat");
-    gtk_widget_set_tooltip_text(join_btn, _("Join"));
-    gtk_widget_set_valign(join_btn, GTK_ALIGN_CENTER);
-    g_signal_connect(join_btn, "clicked", G_CALLBACK(on_join_btn_clicked), NULL);
-    adw_entry_row_add_suffix(ADW_ENTRY_ROW(join_entry_row), join_btn);
-
     gtk_list_box_append(GTK_LIST_BOX(join_list), join_entry_row);
-    gtk_revealer_set_child(GTK_REVEALER(join_rev), join_list);
+    gtk_box_append(GTK_BOX(join_outer), join_list);
+
+    /* Two action buttons: Start Session | Join */
+    GtkWidget *btns_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_margin_start(btns_box, 12);
+    gtk_widget_set_margin_end(btns_box, 12);
+    gtk_widget_set_margin_top(btns_box, 8);
+    gtk_widget_set_margin_bottom(btns_box, 12);
+
+    GtkWidget *start_btn = gtk_button_new_with_label(_("Start Session"));
+    gtk_widget_add_css_class(start_btn, "suggested-action");
+    gtk_widget_add_css_class(start_btn, "pill");
+    gtk_widget_set_hexpand(start_btn, TRUE);
+    g_signal_connect(start_btn, "clicked", G_CALLBACK(on_start_btn_clicked), NULL);
+
+    GtkWidget *join_do_btn = gtk_button_new_with_label(_("Join"));
+    gtk_widget_add_css_class(join_do_btn, "pill");
+    gtk_widget_set_hexpand(join_do_btn, TRUE);
+    gtk_widget_set_tooltip_text(join_do_btn, _("Join the session whose ID is entered above"));
+    g_signal_connect(join_do_btn, "clicked", G_CALLBACK(on_join_btn_clicked), NULL);
+
+    gtk_box_append(GTK_BOX(btns_box), start_btn);
+    gtk_box_append(GTK_BOX(btns_box), join_do_btn);
+    gtk_box_append(GTK_BOX(join_outer), btns_box);
+
+    gtk_revealer_set_child(GTK_REVEALER(join_rev), join_outer);
     gtk_box_append(GTK_BOX(popover_box), join_rev);
 
-    /* ── Primary action button (pill style) ── */
-    GtkWidget *action_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_widget_set_margin_start(action_row, 12);
-    gtk_widget_set_margin_end(action_row, 12);
-    gtk_widget_set_margin_top(action_row, 8);
-    gtk_widget_set_margin_bottom(action_row, 12);
+    /* ── Leave Session button (shown when in session) ── */
+    GtkWidget *leave_rev = gtk_revealer_new();
+    gtk_revealer_set_transition_type(GTK_REVEALER(leave_rev),
+                                     GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN);
+    gtk_revealer_set_reveal_child(GTK_REVEALER(leave_rev), FALSE);
+    C.leave_revealer = GTK_REVEALER(leave_rev);
 
-    GtkWidget *primary_btn = gtk_button_new_with_label(_("Start Session"));
-    gtk_widget_add_css_class(primary_btn, "suggested-action");
-    gtk_widget_add_css_class(primary_btn, "pill");
-    gtk_widget_set_hexpand(primary_btn, TRUE);
-    g_signal_connect(primary_btn, "clicked", G_CALLBACK(on_primary_btn_clicked), NULL);
-    C.primary_btn = GTK_BUTTON(primary_btn);
+    GtkWidget *leave_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_margin_start(leave_box, 12);
+    gtk_widget_set_margin_end(leave_box, 12);
+    gtk_widget_set_margin_top(leave_box, 4);
+    gtk_widget_set_margin_bottom(leave_box, 12);
 
-    gtk_box_append(GTK_BOX(action_row), primary_btn);
-    gtk_box_append(GTK_BOX(popover_box), action_row);
+    GtkWidget *leave_btn = gtk_button_new_with_label(_("Leave Session"));
+    gtk_widget_add_css_class(leave_btn, "destructive-action");
+    gtk_widget_add_css_class(leave_btn, "pill");
+    gtk_widget_set_hexpand(leave_btn, TRUE);
+    g_signal_connect(leave_btn, "clicked", G_CALLBACK(on_primary_btn_clicked), NULL);
+    C.primary_btn = GTK_BUTTON(leave_btn);
+
+    gtk_box_append(GTK_BOX(leave_box), leave_btn);
+    gtk_revealer_set_child(GTK_REVEALER(leave_rev), leave_box);
+    gtk_box_append(GTK_BOX(popover_box), leave_rev);
 
     /* Attach popover */
     GtkWidget *popover = gtk_popover_new();
