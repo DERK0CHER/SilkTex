@@ -9,6 +9,9 @@ with a sharp PDF preview on HiDPI displays and a configurable snippet engine.
 - GTK 4 / libadwaita UI
 - Live PDF preview via Poppler, with device-scale aware rendering for
   crisp output on HiDPI displays
+- **Real-time P2P collaboration** — share a session code to edit the same
+  document simultaneously with peers; no server required (powered by
+  [iroh](https://github.com/n0-computer/iroh) QUIC/DERP + [Loro](https://loro.dev) CRDT)
 - Configurable snippet engine (two global modifier keys plus a letter) with
   `$1 $2 … $0` tab placeholders and `$FILENAME` / `$BASENAME` /
   `$SELECTED_TEXT` macros
@@ -74,6 +77,33 @@ ninja -C build
 Debian/Ubuntu and Arch provide equivalent packages; the dependency list is
 authoritative in `flake.nix`.
 
+## Real-time collaboration
+
+SilkTex supports serverless P2P document collaboration via a Rust sidecar
+(`silktex-node`) that runs alongside the editor. It uses
+[Loro](https://loro.dev) CRDT for conflict-free text merging and
+[iroh](https://github.com/n0-computer/iroh) for direct peer connections
+(QUIC with automatic DERP relay fallback).
+
+**To start a session:**
+1. Open the collaboration button (people icon) in the header bar.
+2. Click **Start Session** — a session code appears in the popover.
+3. Copy the code and share it with your collaborator out-of-band (chat, email, etc.).
+
+**To join a session:**
+1. Open the collaboration popover.
+2. Paste the session code into the entry field and click **Join**.
+
+The session code encodes only the host's iroh endpoint address; no
+document content is embedded in it. The sidecar binary (`silktex-node`)
+is built automatically as part of the normal build when `cargo` is
+available, and is placed next to the `silktex` binary.
+
+> **Network access:** P2P connections go directly between peers when
+> possible; when a direct path is unavailable, iroh falls back to its
+> DERP relay network. The Flatpak manifest therefore requests
+> `--share=network`.
+
 ## Building a Flatpak
 
 A GNOME Builder-friendly Flatpak manifest and helper script live in
@@ -120,6 +150,12 @@ data/
   misc/                .desktop and AppStream metainfo
   templates/           default new-document template
 flatpak/               Flatpak manifest + build script
+silktex-node/          Rust P2P sidecar (Loro CRDT + iroh networking)
+  src/
+    main.rs            IPC command loop (JSON lines over stdin/stdout)
+    net.rs             iroh endpoint management, host/joiner loops
+    doc.rs             Loro CRDT document wrapper
+  Cargo.toml
 src/
   application.c        GApplication subclass (startup / activate / open)
   window.c             main window, actions, tabs, accelerators
@@ -127,12 +163,13 @@ src/
   compiler.c           pdflatex / bibtex / makeindex driver
   preview.c            Poppler-backed PDF preview (HiDPI aware)
   prefs.c              libadwaita preferences dialog
+  collab.c             P2P collaboration bridge (spawns silktex-node)
   snippets.c           snippet engine (modifiers + placeholders)
   structure.c          document outline
   searchbar.c          find / replace
   synctex.c            forward / inverse sync via the synctex CLI
   latex.c              Insert → {Image, Table, Matrix, Bibliography}
-flake.nix              pinned dev shell + runtime env
+flake.nix              pinned dev shell + runtime env (includes cargo/rustc)
 run.sh                 build + launch wrapper around `nix develop`
 meson.build            top-level meson project
 ```
@@ -152,6 +189,12 @@ meson.build            top-level meson project
   project-wide via `-Wno-missing-field-initializers` and
   `-Wno-unused-parameter`.
 - Default Git branch: `master`.
+- Before tagging a Flatpak release, regenerate `cargo-sources.json` from
+  the current lock file:
+  ```bash
+  python3 flatpak-builder-tools/cargo/flatpak-cargo-generator.py \
+      silktex-node/Cargo.lock -o cargo-sources.json
+  ```
 
 ## License
 

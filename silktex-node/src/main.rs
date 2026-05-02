@@ -5,6 +5,7 @@ use anyhow::Result;
 use doc::Document;
 use net::Network;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::io::{self, Write};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -21,6 +22,8 @@ enum Command {
     CreateSession { doc_id: String, content: String },
     JoinSession   { doc_id: String, session_id: String },
     Op            { doc_id: String, retain: usize, insert: Option<String>, delete: Option<usize> },
+    SetName       { name: String },
+    Cursor        { doc_id: String, offset: usize },
     Shutdown,
 }
 
@@ -37,11 +40,13 @@ pub struct TextOp {
 #[derive(Serialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 enum Event<'a> {
-    SessionReady { doc_id: &'a str, session_id: &'a str },
-    RemoteOp     { doc_id: String,  #[serde(flatten)] op: TextOp },
-    Snapshot     { doc_id: &'a str, content: String },
-    PeerCount    { doc_id: &'a str, count: usize },
-    Error        { msg: String },
+    SessionReady  { doc_id: &'a str, session_id: &'a str },
+    RemoteOp      { doc_id: String,  #[serde(flatten)] op: TextOp },
+    Snapshot      { doc_id: &'a str, content: String },
+    PeerCount     { doc_id: &'a str, count: usize },
+    RemoteCursor  { doc_id: &'a str, peer_id: String, offset: usize },
+    PeerName      { peer_id: String, name: String },
+    Error         { msg: String },
 }
 
 fn emit(ev: &Event<'_>) -> bool {
@@ -113,6 +118,14 @@ async fn main() -> Result<()> {
                 })).await;
                 continue;
             }
+            if doc_id == "__meta__" {
+                /* Pass raw JSON bytes through as the insert field of a sentinel TextOp. */
+                let json_str = String::from_utf8_lossy(&update).into_owned();
+                let _ = apply_tx.send(("__meta__".into(), TextOp {
+                    retain: 0, insert: Some(json_str), delete: None,
+                })).await;
+                continue;
+            }
             let mut d = doc2.lock().await;
             match d.apply_update(&update) {
                 Ok(Some(op)) => { let _ = apply_tx.send((doc_id, op)).await; }
@@ -139,6 +152,30 @@ async fn main() -> Result<()> {
                 } else if doc_id == "__peer_count__" {
                     if !emit(&Event::PeerCount { doc_id: &current_doc_id, count: op.retain }) {
                         break 'main_loop;
+                    }
+                } else if doc_id == "__meta__" {
+                    /* Cursor / name update from a remote peer — peer_id already injected. */
+                    let json_str = op.insert.as_deref().unwrap_or("");
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
+                        if let Some(obj) = val.as_object() {
+                            let kind    = obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                            let peer_id = obj.get("peer_id").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+                            match kind {
+                                "cursor" => {
+                                    let offset = obj.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                                    if !emit(&Event::RemoteCursor { doc_id: &current_doc_id, peer_id, offset }) {
+                                        break 'main_loop;
+                                    }
+                                }
+                                "name" => {
+                                    let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+                                    if !emit(&Event::PeerName { peer_id, name }) {
+                                        break 'main_loop;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
                     }
                 } else {
                     if !emit(&Event::RemoteOp { doc_id, op }) {
@@ -208,6 +245,11 @@ async fn main() -> Result<()> {
                                 }
                             }
                         }
+                        /* Emit SessionReady for the joiner so the C layer enters session state. */
+                        if !emit(&Event::SessionReady { doc_id: &doc_id, session_id: &session_id }) {
+                            net.shutdown().await;
+                            break 'main_loop;
+                        }
                         network = Some(net);
                     }
 
@@ -234,6 +276,30 @@ async fn main() -> Result<()> {
                             }
                         }
                         let _ = doc_id;
+                    }
+
+                    Command::SetName { name } => {
+                        if let Some(net) = &network {
+                            let payload = serde_json::to_vec(&json!({
+                                "type": "name",
+                                "peer_id": net.local_peer_id,
+                                "name": name,
+                            })).unwrap_or_default();
+                            net.broadcast_meta(payload).await;
+                        }
+                    }
+
+                    Command::Cursor { doc_id, offset } => {
+                        if doc_id == current_doc_id {
+                            if let Some(net) = &network {
+                                let payload = serde_json::to_vec(&json!({
+                                    "type": "cursor",
+                                    "peer_id": net.local_peer_id,
+                                    "offset": offset,
+                                })).unwrap_or_default();
+                                net.broadcast_meta(payload).await;
+                            }
+                        }
                     }
 
                     Command::Shutdown => break 'main_loop,
