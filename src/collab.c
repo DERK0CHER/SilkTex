@@ -698,6 +698,11 @@ void silktex_collab_setup_window(SilktexWindow *self)
     gtk_widget_add_css_class(popover, "collab-popover");
     gtk_popover_set_child(GTK_POPOVER(popover), clamp);
     gtk_menu_button_set_popover(self->btn_collab, popover);
+
+    /* Stop the status spinner when the popover closes to avoid GTK
+     * "Broken accounting of active state" warnings during dismissal. */
+    g_signal_connect_swapped(popover, "closed",
+                             G_CALLBACK(gtk_spinner_stop), C.status_spinner);
 }
 
 /* ------------------------------------------------------------------ */
