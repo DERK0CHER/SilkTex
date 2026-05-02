@@ -139,14 +139,11 @@ async fn main() -> Result<()> {
                         doc.lock().await.set_content(&content);
                         current_doc_id = doc_id.clone();
 
-                        let net = Network::start(
-                            doc_id.clone(), net_tx.clone(), doc_id.clone(),
-                        ).await?;
-                        /* Use the doc_id as the session_id for simplicity;
-                         * peers join by sharing this string. */
+                        let (net, session_code) =
+                            Network::start(net_tx.clone(), doc_id.clone()).await?;
                         emit(&Event::SessionReady {
                             doc_id: &doc_id,
-                            session_id: &doc_id,
+                            session_id: &session_code,
                         });
                         network = Some(net);
                     }

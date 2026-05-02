@@ -2,7 +2,7 @@
 name = "silktex-node"
 version = "0.1.0"
 edition = "2021"
-description = "P2P collaboration node for SilkTex — Loro CRDT + libp2p gossipsub"
+description = "P2P collaboration node for SilkTex — Loro CRDT + iroh gossip"
 
 [[bin]]
 name = "silktex-node"
@@ -17,18 +17,10 @@ tokio        = { version = "1", features = ["full"] }
 tracing      = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 futures      = "0.3"
+bytes        = "1"
 
-# P2P stack — Kademlia DHT for internet-wide discovery + circuit relay for NAT traversal
-libp2p = { version = "0.54", features = [
-    "tokio",
-    "tcp",
-    "dns",
-    "noise",
-    "yamux",
-    "gossipsub",
-    "identify",
-    "kad",
-    "relay",
-    "dcutr",
-] }
-libp2p-swarm = { version = "0.45", features = ["macros"] }
+# P2P stack — iroh (QUIC + DERP relay, same infrastructure as reflection)
+iroh         = "0.98.2"
+iroh-gossip  = "0.98.0"
+postcard     = { version = "1", features = ["alloc"] }
+data-encoding = "2"

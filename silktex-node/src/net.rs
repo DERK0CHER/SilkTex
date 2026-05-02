@@ -1,15 +1,19 @@
 use anyhow::Result;
-use futures::StreamExt;
-use libp2p::{
-    dcutr,
-    gossipsub::{self, IdentTopic, MessageAuthenticity, ValidationMode},
-    identify,
-    kad::{self, store::MemoryStore},
-    noise, relay,
-    swarm::SwarmEvent,
-    tcp, yamux, Multiaddr, StreamProtocol,
+use bytes::Bytes;
+use data_encoding::BASE32_NOPAD;
+use futures::TryStreamExt;
+use iroh::{
+    address_lookup::memory::MemoryLookup,
+    endpoint::presets,
+    Endpoint, EndpointAddr, PublicKey, RelayUrl,
 };
-use libp2p_swarm::NetworkBehaviour;
+use iroh_gossip::{
+    api::Event,
+    net::{Gossip, GOSSIP_ALPN},
+    proto::TopicId,
+};
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -17,13 +21,40 @@ const PROTOCOL_TAG_OP:   u8 = 0x01;
 const PROTOCOL_TAG_SNAP: u8 = 0x02;
 const PROTOCOL_TAG_REQ:  u8 = 0x03;
 
-/// IPFS public bootstrap nodes — also serve as DHT entry points and relay candidates.
-const BOOTSTRAP_ADDRS: &[&str] = &[
-    "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
-    "/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
-    "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
-    "/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
-];
+/// Bootstrap node from the reflection project (n0 infrastructure, always online).
+const BOOTSTRAP_ID: &str =
+    "9f63a15ab95959a992af96bf72fbc3e7dc98eeb4799f788bb07b20125053e795";
+const BOOTSTRAP_RELAY: &str =
+    "https://euc1-1.relay.n0.iroh-canary.iroh.link";
+
+/// A session ticket that carries the topic ID and the host's endpoint address.
+/// Serialised with postcard + base32 so it's a single copy-pasteable string.
+#[derive(Debug, Serialize, Deserialize)]
+struct Ticket {
+    topic: TopicId,
+    peers: Vec<EndpointAddr>,
+}
+
+impl Ticket {
+    fn encode(&self) -> String {
+        let bytes = postcard::to_stdvec(self).expect("ticket serialize");
+        let mut s = BASE32_NOPAD.encode(&bytes);
+        s.make_ascii_lowercase();
+        s
+    }
+
+    fn decode(s: &str) -> Result<Self> {
+        let bytes = BASE32_NOPAD
+            .decode(s.trim().to_ascii_uppercase().as_bytes())
+            .map_err(|e| anyhow::anyhow!("ticket base32: {e}"))?;
+        postcard::from_bytes(&bytes)
+            .map_err(|e| anyhow::anyhow!("ticket decode: {e}"))
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Public Network handle                                               */
+/* ------------------------------------------------------------------ */
 
 pub struct Network {
     cmd_tx: mpsc::Sender<NetCmd>,
@@ -34,41 +65,67 @@ enum NetCmd {
     BroadcastSnapshot(Vec<u8>),
 }
 
-#[derive(NetworkBehaviour)]
-#[behaviour(prelude = "libp2p_swarm::derive_prelude")]
-struct Behaviour {
-    gossipsub: gossipsub::Behaviour,
-    kad:       kad::Behaviour<MemoryStore>,
-    identify:  identify::Behaviour,
-    relay:     relay::client::Behaviour,
-    dcutr:     dcutr::Behaviour,
-}
-
 impl Network {
+    /// Start hosting a new session.
+    /// Returns `(Network, session_code)` — the session_code is the base32 ticket
+    /// that the joining peer pastes into the "Join" dialog.
     pub async fn start(
-        session_id: String,
         update_tx: mpsc::Sender<(String, Vec<u8>)>,
         doc_id: String,
-    ) -> Result<Self> {
+    ) -> Result<(Self, String)> {
         let (cmd_tx, cmd_rx) = mpsc::channel(64);
-        tokio::spawn(run(session_id, update_tx, doc_id, cmd_rx, false));
-        Ok(Self { cmd_tx })
+
+        let memory_lookup = MemoryLookup::new();
+        let endpoint = build_endpoint(memory_lookup.clone()).await?;
+
+        // Random topic: use a fresh Ed25519 public key's bytes as 32 random bytes.
+        let topic_id = TopicId::from_bytes(iroh::SecretKey::generate().to_bytes());
+        let ticket = Ticket { topic: topic_id, peers: vec![endpoint.addr()] };
+        let session_code = ticket.encode();
+
+        tracing::info!("session host: endpoint={} code={}", endpoint.id(), session_code);
+
+        tokio::spawn(run_node(
+            endpoint, memory_lookup, topic_id,
+            update_tx, doc_id, cmd_rx, false, None,
+        ));
+
+        Ok((Self { cmd_tx }, session_code))
     }
 
-    /// Join an existing session. Returns `(Network, initial_snapshot)`.
-    /// Snapshot is `None` if no peer responded within 15 s — joiner starts with empty doc.
+    /// Join an existing session using the base32 ticket as `session_code`.
+    /// Returns `(Network, initial_snapshot)` — snapshot is `None` if the host
+    /// didn't respond within 15 s.
     pub async fn join(
-        session_id: String,
+        session_code: String,
         update_tx: mpsc::Sender<(String, Vec<u8>)>,
         doc_id: String,
     ) -> Result<(Self, Option<Vec<u8>>)> {
+        let ticket = Ticket::decode(&session_code)?;
+        let topic_id = ticket.topic;
+
+        let memory_lookup = MemoryLookup::new();
+        // Pre-populate address book with the host's endpoint address.
+        for peer_addr in ticket.peers {
+            memory_lookup.add_endpoint_info(peer_addr);
+        }
+        let endpoint = build_endpoint(memory_lookup.clone()).await?;
+
+        tracing::info!("session join: endpoint={}", endpoint.id());
+
         let (cmd_tx, cmd_rx) = mpsc::channel(64);
         let (snap_tx, mut snap_rx) = mpsc::channel::<Vec<u8>>(1);
-        tokio::spawn(run_with_snap(session_id, update_tx, doc_id, cmd_rx, snap_tx));
+
+        tokio::spawn(run_node(
+            endpoint, memory_lookup, topic_id,
+            update_tx, doc_id, cmd_rx, true, Some(snap_tx),
+        ));
+
         let snapshot = tokio::time::timeout(Duration::from_secs(15), snap_rx.recv())
             .await
             .ok()
             .flatten();
+
         Ok((Self { cmd_tx }, snapshot))
     }
 
@@ -85,136 +142,75 @@ impl Network {
     }
 }
 
-fn build_swarm() -> Result<libp2p::Swarm<Behaviour>> {
-    let gossipsub_cfg = gossipsub::ConfigBuilder::default()
-        .heartbeat_interval(Duration::from_secs(1))
-        .validation_mode(ValidationMode::Strict)
-        .build()
-        .map_err(|e| anyhow::anyhow!("gossipsub config: {e}"))?;
+/* ------------------------------------------------------------------ */
+/* Endpoint setup helpers                                              */
+/* ------------------------------------------------------------------ */
 
-    let swarm = libp2p::SwarmBuilder::with_new_identity()
-        .with_tokio()
-        .with_tcp(tcp::Config::default(), noise::Config::new, yamux::Config::default)?
-        .with_dns()?
-        .with_relay_client(noise::Config::new, yamux::Config::default)?
-        .with_behaviour(|key, relay_behaviour| {
-            let local_peer_id = key.public().to_peer_id();
+/// Build an iroh Endpoint connected to n0's relay infrastructure.
+/// Also adds the reflection bootstrap node to the address book.
+async fn build_endpoint(memory_lookup: MemoryLookup) -> Result<Endpoint> {
+    if let (Ok(id), Ok(relay)) = (
+        BOOTSTRAP_ID.parse::<PublicKey>(),
+        BOOTSTRAP_RELAY.parse::<RelayUrl>(),
+    ) {
+        memory_lookup.add_endpoint_info(EndpointAddr::new(id).with_relay_url(relay));
+    }
 
-            let gossipsub = gossipsub::Behaviour::new(
-                MessageAuthenticity::Signed(key.clone()),
-                gossipsub_cfg,
-            )?;
+    let endpoint = Endpoint::builder(presets::N0)
+        .address_lookup(memory_lookup)
+        .bind()
+        .await?;
 
-            // Use the IPFS Kademlia protocol so we can bootstrap off IPFS nodes.
-            let kad_config = kad::Config::new(StreamProtocol::new("/ipfs/kad/1.0.0"));
-            let mut kad = kad::Behaviour::with_config(
-                local_peer_id,
-                MemoryStore::new(local_peer_id),
-                kad_config,
-            );
-            // Client mode: query and provide but don't serve DHT lookups for others.
-            kad.set_mode(Some(kad::Mode::Client));
-
-            let identify = identify::Behaviour::new(
-                identify::Config::new("/silktex/0.1.0".into(), key.public()),
-            );
-
-            let dcutr = dcutr::Behaviour::new(local_peer_id);
-
-            Ok(Behaviour { gossipsub, kad, identify, relay: relay_behaviour, dcutr })
-        })?
-        .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(300)))
-        .build();
-
-    Ok(swarm)
+    // Wait until we have a home relay so our address is sharable.
+    endpoint.online().await;
+    Ok(endpoint)
 }
 
-async fn run(
-    session_id: String,
-    update_tx: mpsc::Sender<(String, Vec<u8>)>,
-    doc_id: String,
-    cmd_rx: mpsc::Receiver<NetCmd>,
-    joiner: bool,
-) {
-    run_inner(session_id, update_tx, doc_id, cmd_rx, None, joiner).await;
-}
+/* ------------------------------------------------------------------ */
+/* Gossip event loop                                                   */
+/* ------------------------------------------------------------------ */
 
-async fn run_with_snap(
-    session_id: String,
-    update_tx: mpsc::Sender<(String, Vec<u8>)>,
-    doc_id: String,
-    cmd_rx: mpsc::Receiver<NetCmd>,
-    snap_tx: mpsc::Sender<Vec<u8>>,
-) {
-    run_inner(session_id, update_tx, doc_id, cmd_rx, Some(snap_tx), true).await;
-}
-
-async fn run_inner(
-    session_id: String,
+async fn run_node(
+    endpoint: Endpoint,
+    _memory_lookup: MemoryLookup,
+    topic_id: TopicId,
     update_tx: mpsc::Sender<(String, Vec<u8>)>,
     doc_id: String,
     mut cmd_rx: mpsc::Receiver<NetCmd>,
-    mut snap_tx: Option<mpsc::Sender<Vec<u8>>>,
     joiner: bool,
+    mut snap_tx: Option<mpsc::Sender<Vec<u8>>>,
 ) {
-    let mut swarm = match build_swarm() {
-        Ok(s) => s,
-        Err(e) => { tracing::error!("swarm build failed: {e}"); return; }
+    let gossip = Gossip::builder().spawn(endpoint.clone());
+
+    // Router accepts incoming gossip connections from remote peers.
+    let router = iroh::protocol::Router::builder(endpoint.clone())
+        .accept(GOSSIP_ALPN, gossip.clone())
+        .spawn();
+
+    // Use the bootstrap node as the initial peer so both sides can find each other
+    // through n0's relay even before they know about each other directly.
+    let bootstrap_peers: Vec<PublicKey> = BOOTSTRAP_ID
+        .parse::<PublicKey>()
+        .ok()
+        .into_iter()
+        .collect();
+
+    let topic = match gossip.subscribe_and_join(topic_id, bootstrap_peers).await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("subscribe_and_join failed: {e}");
+            router.shutdown().await.ok();
+            return;
+        }
     };
 
-    let topic = IdentTopic::new(&session_id);
-    let session_key = kad::RecordKey::new(&session_id);
+    tracing::info!("joined gossip topic");
+    let (sender, mut receiver) = topic.split();
 
-    if let Err(e) = swarm.behaviour_mut().gossipsub.subscribe(&topic) {
-        tracing::error!("subscribe failed: {e}");
-        return;
-    }
-
-    if let Err(e) = swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse().unwrap()) {
-        tracing::error!("listen failed: {e}");
-        return;
-    }
-
-    // Dial bootstrap nodes and pre-populate the Kademlia routing table so that
-    // kad.bootstrap() has peers to query immediately (avoids "No known peers").
-    for addr_str in BOOTSTRAP_ADDRS {
-        if let Ok(addr) = addr_str.parse::<Multiaddr>() {
-            // Extract the /p2p/<PeerId> component and seed the routing table.
-            let peer_id = addr.iter().find_map(|p| {
-                if let libp2p::multiaddr::Protocol::P2p(id) = p { Some(id) } else { None }
-            });
-            if let Some(peer_id) = peer_id {
-                swarm.behaviour_mut().kad.add_address(&peer_id, addr.clone());
-            }
-            swarm.dial(addr).ok();
-        }
-    }
-
-    // Now that the routing table has bootstrap peers, kick off DHT bootstrap.
-    swarm.behaviour_mut().kad.bootstrap().ok();
-
-    // Session peers (those subscribed to our gossipsub topic).
-    // We track these separately so bootstrap/DHT nodes don't inflate the count.
-    let mut session_peers: std::collections::HashSet<libp2p::PeerId> = Default::default();
-
-    let mut bootstrapped = false;
-    let mut relay_listening = false;
-
-    // If bootstrap hasn't completed in 10 s, try providing / querying anyway.
-    let bootstrap_deadline = tokio::time::sleep(Duration::from_secs(10));
-    tokio::pin!(bootstrap_deadline);
-
-    // Re-query the DHT every 10 s so we find peers that registered after us.
-    let mut discover_tick = tokio::time::interval(Duration::from_secs(10));
-    discover_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    discover_tick.tick().await; // skip the immediate first tick
-
-    // Retry the snapshot request every second until gossipsub mesh forms.
+    let mut session_peers: HashSet<PublicKey> = HashSet::new();
     let mut snap_req_pending = false;
     let mut snap_retry_tick = tokio::time::interval(Duration::from_secs(1));
     snap_retry_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
-    tracing::info!("p2p node started, bootstrapping DHT…");
 
     loop {
         tokio::select! {
@@ -222,50 +218,38 @@ async fn run_inner(
                 let data = match cmd {
                     NetCmd::Broadcast(d) | NetCmd::BroadcastSnapshot(d) => d,
                 };
-                if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), data) {
-                    tracing::debug!("publish op: {e}");
+                if let Err(e) = sender.broadcast(Bytes::from(data)).await {
+                    tracing::debug!("broadcast: {e}");
                 }
             }
 
-            // Fallback: if bootstrap never fires, force the provide+query after 10 s.
-            _ = &mut bootstrap_deadline, if !bootstrapped => {
-                tracing::warn!("DHT bootstrap timed out — trying to provide/query anyway");
-                bootstrapped = true;
-                swarm.behaviour_mut().kad.start_providing(session_key.clone()).ok();
-                swarm.behaviour_mut().kad.get_providers(session_key.clone());
-            }
-
-            _ = discover_tick.tick() => {
-                if bootstrapped {
-                    // Refresh our provider record and re-query.
-                    swarm.behaviour_mut().kad.start_providing(session_key.clone()).ok();
-                    swarm.behaviour_mut().kad.get_providers(session_key.clone());
-                }
-            }
-
-            // Retry snapshot request until the gossipsub mesh is ready.
             _ = snap_retry_tick.tick(), if snap_req_pending && snap_tx.is_some() => {
-                let req = vec![PROTOCOL_TAG_REQ];
-                match swarm.behaviour_mut().gossipsub.publish(topic.clone(), req) {
+                let req = Bytes::from_static(&[PROTOCOL_TAG_REQ]);
+                match sender.broadcast(req).await {
                     Ok(_) => {
                         snap_req_pending = false;
                         tracing::info!("snapshot request sent");
                     }
-                    Err(e) => tracing::debug!("snap req retry ({e})"),
+                    Err(e) => tracing::debug!("snap req retry: {e}"),
                 }
             }
 
-            event = swarm.select_next_some() => {
+            event = receiver.try_next() => {
+                let event = match event {
+                    Ok(Some(e)) => e,
+                    Ok(None)    => break,
+                    Err(e) => { tracing::warn!("gossip stream error: {e}"); break; }
+                };
+
                 match event {
-                    // ── gossipsub messages ──────────────────────────────────────
-                    SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(
-                        gossipsub::Event::Message { message, .. }
-                    )) => {
-                        let data = message.data;
+                    Event::Received(msg) => {
+                        let data = msg.content.to_vec();
                         if data.is_empty() { continue; }
                         match data[0] {
                             PROTOCOL_TAG_OP => {
-                                let _ = update_tx.send((doc_id.clone(), data[1..].to_vec())).await;
+                                let _ = update_tx
+                                    .send((doc_id.clone(), data[1..].to_vec()))
+                                    .await;
                             }
                             PROTOCOL_TAG_SNAP => {
                                 snap_req_pending = false;
@@ -274,168 +258,27 @@ async fn run_inner(
                                 }
                             }
                             PROTOCOL_TAG_REQ => {
-                                let _ = update_tx.send(("__snap_req__".into(), vec![])).await;
+                                let _ = update_tx
+                                    .send(("__snap_req__".into(), vec![]))
+                                    .await;
                             }
                             _ => {}
                         }
                     }
 
-                    // ── gossipsub peer tracking (session peers only) ────────────
-                    SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(
-                        gossipsub::Event::Subscribed { peer_id, topic: t }
-                    )) => {
-                        if t == topic.hash() {
-                            tracing::info!("session peer joined: {peer_id}");
-                            session_peers.insert(peer_id);
-                            let count = session_peers.len();
-                            let _ = update_tx.send((
-                                "__peer_count__".into(),
-                                (count as u64).to_be_bytes().to_vec(),
-                            )).await;
-                            if joiner && snap_tx.is_some() {
-                                snap_req_pending = true;
-                            }
+                    Event::NeighborUp(peer) => {
+                        tracing::info!("neighbor up: {peer}");
+                        session_peers.insert(peer);
+                        emit_peer_count(&update_tx, session_peers.len()).await;
+                        if joiner && snap_tx.is_some() {
+                            snap_req_pending = true;
                         }
                     }
 
-                    SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(
-                        gossipsub::Event::Unsubscribed { peer_id, topic: t }
-                    )) => {
-                        if t == topic.hash() {
-                            tracing::info!("session peer left: {peer_id}");
-                            session_peers.remove(&peer_id);
-                            let count = session_peers.len();
-                            let _ = update_tx.send((
-                                "__peer_count__".into(),
-                                (count as u64).to_be_bytes().to_vec(),
-                            )).await;
-                        }
-                    }
-
-                    // ── identify: feed addresses into Kademlia; detect relays ───
-                    SwarmEvent::Behaviour(BehaviourEvent::Identify(
-                        identify::Event::Received { peer_id, info, .. }
-                    )) => {
-                        tracing::debug!("identify: peer={peer_id} agent={}", info.agent_version);
-                        for addr in &info.listen_addrs {
-                            swarm.behaviour_mut().kad.add_address(&peer_id, addr.clone());
-                        }
-
-                        // If this peer supports relay hop, reserve a slot through it.
-                        const RELAY_HOP: &str = "/libp2p/circuit/relay/0.2.0/hop";
-                        if !relay_listening
-                            && info.protocols.iter().any(|p| p.as_ref() == RELAY_HOP)
-                        {
-                            if let Some(relay_addr) = info.listen_addrs.iter().find(|a| {
-                                a.iter().any(|p| matches!(p, libp2p::multiaddr::Protocol::Tcp(_)))
-                            }) {
-                                let mut circuit = relay_addr.clone();
-                                circuit.push(libp2p::multiaddr::Protocol::P2p(peer_id));
-                                circuit.push(libp2p::multiaddr::Protocol::P2pCircuit);
-                                if swarm.listen_on(circuit.clone()).is_ok() {
-                                    relay_listening = true;
-                                    tracing::info!("circuit relay listen: {circuit}");
-                                }
-                            }
-                        }
-                    }
-
-                    // ── Kademlia ────────────────────────────────────────────────
-                    SwarmEvent::Behaviour(BehaviourEvent::Kad(
-                        kad::Event::OutboundQueryProgressed { result, .. }
-                    )) => {
-                        match result {
-                            kad::QueryResult::Bootstrap(Ok(kad::BootstrapOk {
-                                num_remaining: 0, ..
-                            })) => {
-                                if !bootstrapped {
-                                    bootstrapped = true;
-                                    tracing::info!("DHT bootstrap complete — announcing session and searching for peers");
-                                    swarm.behaviour_mut().kad
-                                        .start_providing(session_key.clone()).ok();
-                                    swarm.behaviour_mut().kad
-                                        .get_providers(session_key.clone());
-                                }
-                            }
-
-                            kad::QueryResult::Bootstrap(Err(e)) => {
-                                tracing::warn!("DHT bootstrap step failed: {e:?}");
-                                if !bootstrapped {
-                                    bootstrapped = true;
-                                    swarm.behaviour_mut().kad
-                                        .start_providing(session_key.clone()).ok();
-                                    swarm.behaviour_mut().kad
-                                        .get_providers(session_key.clone());
-                                }
-                            }
-
-                            kad::QueryResult::StartProviding(Ok(ref r)) => {
-                                tracing::info!("session announced in DHT (key={:?})", r.key);
-                            }
-                            kad::QueryResult::StartProviding(Err(ref e)) => {
-                                tracing::warn!("DHT provide failed: {e:?}");
-                            }
-
-                            kad::QueryResult::GetProviders(Ok(
-                                kad::GetProvidersOk::FoundProviders { ref providers, .. }
-                            )) => {
-                                tracing::info!("DHT found {} provider(s) for session", providers.len());
-                                for peer_id in providers.clone() {
-                                    if peer_id != *swarm.local_peer_id() {
-                                        tracing::info!("dialing session peer: {peer_id}");
-                                        swarm.behaviour_mut().gossipsub
-                                            .add_explicit_peer(&peer_id);
-                                        swarm.dial(peer_id).ok();
-                                    }
-                                }
-                                if joiner && snap_tx.is_some() {
-                                    snap_req_pending = true;
-                                }
-                            }
-
-                            kad::QueryResult::GetProviders(Ok(
-                                kad::GetProvidersOk::FinishedWithNoAdditionalRecord { .. }
-                            )) => {
-                                tracing::debug!("DHT provider query finished — no peers found yet");
-                            }
-
-                            _ => {}
-                        }
-                    }
-
-                    // ── relay ───────────────────────────────────────────────────
-                    SwarmEvent::Behaviour(BehaviourEvent::Relay(
-                        relay::client::Event::ReservationReqAccepted { relay_peer_id, .. }
-                    )) => {
-                        tracing::info!("relay reservation accepted via {relay_peer_id}");
-                        // Re-announce now that we have a routable circuit address.
-                        if bootstrapped {
-                            swarm.behaviour_mut().kad
-                                .start_providing(session_key.clone()).ok();
-                        }
-                    }
-
-                    SwarmEvent::Behaviour(BehaviourEvent::Relay(ev)) => {
-                        tracing::debug!("relay: {ev:?}");
-                    }
-
-                    SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
-                        tracing::debug!("connected: {peer_id} via {}", endpoint.get_remote_address());
-                    }
-                    SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                        tracing::debug!("disconnected: {peer_id}");
-                        // Remove from session peers if they dropped without unsubscribing.
-                        if session_peers.remove(&peer_id) {
-                            let count = session_peers.len();
-                            let _ = update_tx.send((
-                                "__peer_count__".into(),
-                                (count as u64).to_be_bytes().to_vec(),
-                            )).await;
-                        }
-                    }
-
-                    SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-                        tracing::warn!("outgoing connection failed {peer_id:?}: {error}");
+                    Event::NeighborDown(peer) => {
+                        tracing::info!("neighbor down: {peer}");
+                        session_peers.remove(&peer);
+                        emit_peer_count(&update_tx, session_peers.len()).await;
                     }
 
                     _ => {}
@@ -443,4 +286,16 @@ async fn run_inner(
             }
         }
     }
+
+    router.shutdown().await.ok();
+    tracing::info!("p2p node stopped");
+}
+
+async fn emit_peer_count(update_tx: &mpsc::Sender<(String, Vec<u8>)>, count: usize) {
+    let _ = update_tx
+        .send((
+            "__peer_count__".into(),
+            (count as u64).to_be_bytes().to_vec(),
+        ))
+        .await;
 }
