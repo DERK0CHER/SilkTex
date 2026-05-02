@@ -4,9 +4,10 @@ use libp2p::{
     gossipsub::{self, IdentTopic, MessageAuthenticity, ValidationMode},
     mdns,
     noise,
-    swarm::{NetworkBehaviour, SwarmEvent},
+    swarm::SwarmEvent,
     tcp, yamux,
 };
+use libp2p_swarm::NetworkBehaviour;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -25,6 +26,7 @@ enum NetCmd {
 }
 
 #[derive(NetworkBehaviour)]
+#[behaviour(prelude = "libp2p_swarm::derive_prelude")]
 struct Behaviour {
     gossipsub: gossipsub::Behaviour,
     mdns:      mdns::tokio::Behaviour,
@@ -110,7 +112,7 @@ async fn run(
     session_id: String,
     update_tx: mpsc::Sender<(String, Vec<u8>)>,
     doc_id: String,
-    mut cmd_rx: mpsc::Receiver<NetCmd>,
+    cmd_rx: mpsc::Receiver<NetCmd>,
     joiner: bool,
 ) {
     run_with_snap_opt(session_id, update_tx, doc_id, cmd_rx, None, joiner).await;

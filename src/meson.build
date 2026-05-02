@@ -58,12 +58,23 @@ if cargo.found()
     node_src        = meson.project_source_root() / 'silktex-node'
     node_target_dir = meson.current_build_dir() / 'silktex-node-target'
 
+    # On macOS, cargo needs the SDK's lib dir (for libiconv etc.) unless the
+    # environment already provides it (e.g. inside the Nix devshell).
+    cargo_cmd = '''
+set -e
+if [ "$(uname)" = "Darwin" ]; then
+  SDK_LIB="$(xcrun --show-sdk-path 2>/dev/null)/usr/lib"
+  export LIBRARY_PATH="${SDK_LIB}${LIBRARY_PATH:+:$LIBRARY_PATH}"
+fi
+cargo build --release --manifest-path "$1/Cargo.toml" --target-dir "$2"
+cp "$2/release/silktex-node" "$3"
+'''
+
     custom_target(
         'silktex-node',
         output:            'silktex-node',
         command: [
-            'sh', '-c',
-            'cargo build --release --manifest-path "$1/Cargo.toml" --target-dir "$2" && cp "$2/release/silktex-node" "$3"',
+            'sh', '-c', cargo_cmd,
             'sh', node_src, node_target_dir, '@OUTPUT@',
         ],
         build_by_default:  true,

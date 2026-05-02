@@ -28,3 +28,4 @@ libp2p = { version = "0.54", features = [
     "mdns",
     "identify",
 ] }
+libp2p-swarm = { version = "0.45", features = ["macros"] }

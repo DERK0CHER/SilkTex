@@ -66,6 +66,14 @@
 
             shellHook = ''
               echo "SilkTex dev shell loaded"
+
+              # macOS: expose SDK system libs (libiconv, etc.) to cargo/rustc.
+              # Required by libp2p transitive deps (if-watch, system-configuration-sys).
+              if [ "$(uname)" = "Darwin" ]; then
+                SDK_LIB="$(xcrun --show-sdk-path 2>/dev/null)/usr/lib"
+                export LIBRARY_PATH="''${SDK_LIB}''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+              fi
+
               echo "GTK4: $(pkg-config --modversion gtk4 2>/dev/null || echo missing)"
               echo "Adwaita: $(pkg-config --modversion libadwaita-1 2>/dev/null || echo missing)"
 
