@@ -84,7 +84,7 @@ impl Network {
 fn build_swarm() -> Result<libp2p::Swarm<Behaviour>> {
     let gossipsub_cfg = gossipsub::ConfigBuilder::default()
         .heartbeat_interval(Duration::from_secs(1))
-        .validation_mode(ValidationMode::Permissive)
+        .validation_mode(ValidationMode::Strict)
         .build()
         .map_err(|e| anyhow::anyhow!("gossipsub config: {e}"))?;
 
@@ -142,7 +142,6 @@ async fn run_with_snap_opt(
     };
 
     let topic = IdentTopic::new(&session_id);
-    let topic_hash = topic.hash();
 
     if let Err(e) = swarm.behaviour_mut().gossipsub.subscribe(&topic) {
         tracing::error!("subscribe failed: {e}");
@@ -152,12 +151,6 @@ async fn run_with_snap_opt(
     if let Err(e) = swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse().unwrap()) {
         tracing::error!("listen failed: {e}");
         return;
-    }
-
-    /* Joiners broadcast a snapshot request so the host sends its state. */
-    if joiner {
-        let req = vec![PROTOCOL_TAG_REQ];
-        let _ = swarm.behaviour_mut().gossipsub.publish(topic.clone(), req);
     }
 
     let mut peer_count: usize = 0;
@@ -203,28 +196,20 @@ async fn run_with_snap_opt(
                         }
                     }
 
-                    SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(
-                        gossipsub::Event::Subscribed { peer_id: _, topic: t }
-                    )) => {
-                        if t == topic_hash {
-                            peer_count += 1;
-                            let _ = update_tx.send((
-                                "__peer_count__".into(),
-                                (peer_count as u64).to_be_bytes().to_vec(),
-                            )).await;
-                        }
+                    SwarmEvent::ConnectionEstablished { .. } => {
+                        peer_count += 1;
+                        let _ = update_tx.send((
+                            "__peer_count__".into(),
+                            (peer_count as u64).to_be_bytes().to_vec(),
+                        )).await;
                     }
 
-                    SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(
-                        gossipsub::Event::Unsubscribed { peer_id: _, topic: t }
-                    )) => {
-                        if t == topic_hash {
-                            peer_count = peer_count.saturating_sub(1);
-                            let _ = update_tx.send((
-                                "__peer_count__".into(),
-                                (peer_count as u64).to_be_bytes().to_vec(),
-                            )).await;
-                        }
+                    SwarmEvent::ConnectionClosed { .. } => {
+                        peer_count = peer_count.saturating_sub(1);
+                        let _ = update_tx.send((
+                            "__peer_count__".into(),
+                            (peer_count as u64).to_be_bytes().to_vec(),
+                        )).await;
                     }
 
                     SwarmEvent::Behaviour(BehaviourEvent::Mdns(
@@ -233,6 +218,11 @@ async fn run_with_snap_opt(
                         for (peer_id, addr) in peers {
                             swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
                             swarm.add_peer_address(peer_id, addr);
+                        }
+                        /* Send snapshot request now that we know at least one peer exists. */
+                        if joiner && snap_tx.is_some() {
+                            let req = vec![PROTOCOL_TAG_REQ];
+                            let _ = swarm.behaviour_mut().gossipsub.publish(topic.clone(), req);
                         }
                     }
 

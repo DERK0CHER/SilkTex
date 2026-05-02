@@ -52,7 +52,8 @@ if ! $offline; then
     flatpak install --user --noninteractive flathub \
         org.gnome.Platform//50 \
         org.gnome.Sdk//50 \
-        org.freedesktop.Sdk.Extension.texlive//25.08
+        org.freedesktop.Sdk.Extension.texlive//25.08 \
+        org.freedesktop.Sdk.Extension.rust-stable//25.08
 else
     echo "Offline mode: skipping remote runtime/SDK installation."
 fi

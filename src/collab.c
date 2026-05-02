@@ -49,6 +49,9 @@ typedef struct {
     GCancellable *cancel;
 
     SilktexEditor *editor; /* weak — cleared automatically on tab close */
+    GtkTextBuffer *buf;    /* weak — buffer whose signals are connected  */
+    gulong insert_handler;
+    gulong delete_handler;
     char *doc_id;
     char *session_id;
 
@@ -634,11 +637,22 @@ void silktex_collab_connect_editor(SilktexEditor *editor)
 {
     collab_start_node(); /* no-op if already running */
 
+    if (C.buf) {
+        g_signal_handler_disconnect(C.buf, C.insert_handler);
+        g_signal_handler_disconnect(C.buf, C.delete_handler);
+        g_object_remove_weak_pointer(G_OBJECT(C.buf), (gpointer *)&C.buf);
+        C.buf = NULL;
+        C.insert_handler = 0;
+        C.delete_handler = 0;
+    }
+
     if (C.editor) g_object_remove_weak_pointer(G_OBJECT(C.editor), (gpointer *)&C.editor);
     C.editor = editor;
     g_object_add_weak_pointer(G_OBJECT(editor), (gpointer *)&C.editor);
 
     GtkTextBuffer *buf = GTK_TEXT_BUFFER(silktex_editor_get_buffer(editor));
-    g_signal_connect(buf, "insert-text", G_CALLBACK(on_insert_text), NULL);
-    g_signal_connect(buf, "delete-range", G_CALLBACK(on_delete_range), NULL);
+    C.buf = buf;
+    g_object_add_weak_pointer(G_OBJECT(buf), (gpointer *)&C.buf);
+    C.insert_handler = g_signal_connect(buf, "insert-text", G_CALLBACK(on_insert_text), NULL);
+    C.delete_handler = g_signal_connect(buf, "delete-range", G_CALLBACK(on_delete_range), NULL);
 }

@@ -11,6 +11,8 @@ app-id: app.silktex.SilkTex
 runtime: org.gnome.Platform
 runtime-version: '50'
 sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
 command: silktex
 
 add-extensions:
@@ -21,6 +23,7 @@ add-extensions:
     version: '25.08'
 
 finish-args:
+  - --share=network
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
@@ -71,6 +74,8 @@ modules:
 
   - name: silktex
     buildsystem: meson
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
     config-opts:
       - --buildtype=debugoptimized
       - --libdir=lib
