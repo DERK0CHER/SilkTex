@@ -15,6 +15,7 @@ use tokio::sync::{Mutex, mpsc};
 /* ------------------------------------------------------------------ */
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 enum Command {
     CreateSession { doc_id: String, content: String },
@@ -24,6 +25,7 @@ enum Command {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct TextOp {
     pub retain: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -76,7 +78,11 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    /* Channel for incoming Loro updates from the network layer.
+    /* Security boundary: silktex-node is intentionally content-only.
+     * It accepts document text/CRDT updates over stdin and iroh, but has no
+     * filesystem commands, file paths, shell execution, or project traversal API.
+     *
+     * Channel for incoming Loro updates from the network layer.
      * The doc_id "__snap_req__" is a sentinel: the network is telling us
      * that a peer wants our snapshot. */
     let (net_tx, mut net_rx) = mpsc::channel::<(String, Vec<u8>)>(64);
@@ -161,7 +167,7 @@ async fn main() -> Result<()> {
                         if let Some(net) = network.take() {
                             net.shutdown().await;
                         }
-                        doc.lock().await.set_content(&content);
+                        doc.lock().await.set_content(&content)?;
                         current_doc_id = doc_id.clone();
 
                         let (net, session_code) =
@@ -206,6 +212,14 @@ async fn main() -> Result<()> {
                     }
 
                     Command::Op { doc_id, retain, insert, delete } => {
+                        if doc_id != current_doc_id {
+                            if !emit(&Event::Error {
+                                msg: "op rejected: document is not the active collaboration session".into(),
+                            }) {
+                                break 'main_loop;
+                            }
+                            continue;
+                        }
                         let op = TextOp { retain, insert, delete };
                         match doc.lock().await.apply_op(&op) {
                             Ok(update) => {

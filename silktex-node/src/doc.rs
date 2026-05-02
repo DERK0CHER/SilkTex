@@ -12,16 +12,17 @@ impl Document {
         Self { doc: LoroDoc::new() }
     }
 
-    pub fn set_content(&mut self, text: &str) {
+    pub fn set_content(&mut self, text: &str) -> Result<()> {
         let t = self.doc.get_text("t");
         let len = t.len_unicode();
         if len > 0 {
-            t.delete(0, len).unwrap();
+            t.delete(0, len)?;
         }
         if !text.is_empty() {
-            t.insert(0, text).unwrap();
+            t.insert(0, text)?;
         }
         self.doc.commit();
+        Ok(())
     }
 
     pub fn get_content(&self) -> String {
