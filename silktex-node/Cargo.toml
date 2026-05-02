@@ -18,14 +18,17 @@ tracing      = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 futures      = "0.3"
 
-# P2P stack — same gossipsub + mDNS model as p2panda-net
+# P2P stack — Kademlia DHT for internet-wide discovery + circuit relay for NAT traversal
 libp2p = { version = "0.54", features = [
     "tokio",
     "tcp",
+    "dns",
     "noise",
     "yamux",
     "gossipsub",
-    "mdns",
     "identify",
+    "kad",
+    "relay",
+    "dcutr",
 ] }
 libp2p-swarm = { version = "0.45", features = ["macros"] }
