@@ -72,6 +72,12 @@ template $SilktexWindow : Adw.ApplicationWindow {
       }
 
       [end]
+      Gtk.MenuButton btn_collab {
+        tooltip-text: _("Collaboration");
+        styles ["flat"]
+      }
+
+      [end]
       Gtk.ToggleButton btn_preview {
         icon-name: "view-dual-symbolic";
         tooltip-text: _("Toggle preview");

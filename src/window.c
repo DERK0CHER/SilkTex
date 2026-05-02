@@ -5,6 +5,7 @@
  */
 
 #include "window-private.h"
+#include "collab.h"
 #include "prefs.h"
 #include "searchbar.h"
 #include "snippets.h"
@@ -271,6 +272,7 @@ GtkWidget *silktex_window_create_editor_page(SilktexWindow *self, SilktexEditor 
                            g_object_unref);
 
     g_signal_connect(editor, "changed", G_CALLBACK(on_editor_changed), self);
+    silktex_collab_connect_editor(editor);
 
     silktex_editor_apply_settings(editor);
     silktex_window_apply_theme_to_editor(editor);
@@ -1392,6 +1394,7 @@ static void silktex_window_class_init(SilktexWindowClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_tools_toggle);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_menu);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_git_menu);
+    gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_collab);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_save);
 }
 
@@ -1439,6 +1442,20 @@ void silktex_window_install_chrome_css(void)
         "}"
         ".silktex-preview-scroller scrollbar {"
         "  background-color: alpha(currentColor, 0.15);"
+        "}"
+        /* Collab: online icon gets accent colour */
+        ".collab-online-icon {"
+        "  color: @accent_color;"
+        "}"
+        /* Collab: peer-count badge pill */
+        ".collab-badge {"
+        "  background-color: @accent_bg_color;"
+        "  color: @accent_fg_color;"
+        "  border-radius: 100px;"
+        "  padding: 1px 4px;"
+        "  min-width: 14px;"
+        "  font-size: 8pt;"
+        "  font-weight: bold;"
         "}");
     gtk_style_context_add_provider_for_display(gdk_display_get_default(),
                                                GTK_STYLE_PROVIDER(provider),
@@ -1473,6 +1490,7 @@ static void silktex_window_init(SilktexWindow *self)
                                     self);
     silktex_window_register_menu_actions(self);
     silktex_window_git_register_actions(self);
+    silktex_collab_setup_window(self);
     silktex_window_git_update_actions(self);
 
     GAction *theme_action = g_action_map_lookup_action(G_ACTION_MAP(self), "set-theme");

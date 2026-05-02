@@ -1,0 +1,22 @@
+[package]
+name = "silktex-node"
+version = "0.1.0"
+edition = "2021"
+description = "P2P collaboration node for SilkTex — Loro CRDT + iroh direct connections"
+
+[[bin]]
+name = "silktex-node"
+path = "src/main.rs"
+
+[dependencies]
+anyhow       = "1"
+loro         = "1.10.8"
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+tokio        = { version = "1", features = ["full"] }
+tracing      = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# P2P stack — iroh direct connections (QUIC + DERP relay)
+iroh         = "0.98.2"
+postcard     = { version = "1", features = ["alloc"] }
+data-encoding = "2"

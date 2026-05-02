@@ -10,6 +10,8 @@ app-id: app.silktex.SilkTex
 runtime: org.gnome.Platform
 runtime-version: '50'
 sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
 command: silktex
 
 add-extensions:
@@ -20,6 +22,7 @@ add-extensions:
     version: '25.08'
 
 finish-args:
+  - --share=network
   - --share=ipc
   - --socket=wayland
   - --socket=fallback-x11
@@ -42,6 +45,35 @@ cleanup:
   - '*.a'
 
 modules:
+  # silktex-node: P2P sidecar built offline with vendored crates.
+  # Before tagging a release, regenerate cargo-sources.json:
+  #   python3 flatpak-cargo-generator.py silktex-node/Cargo.lock -o cargo-sources.json
+  # (flatpak-cargo-generator.py is in flatpak-builder-tools/cargo/)
+  - name: silktex-node
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/silktex-node/cargo
+    build-commands:
+      - mkdir -p .cargo
+      - |
+        cat > .cargo/config.toml << 'EOF'
+        [source.crates-io]
+        replace-with = "vendored-sources"
+        [source.vendored-sources]
+        directory = "vendor"
+        EOF
+      - cargo build --release --offline
+      - install -Dm755 target/release/silktex-node -t /app/bin/
+    sources:
+      - type: git
+        url: https://github.com/DERK0CHER/SilkTex.git
+        tag: v1.0.3
+        commit: da08ab052c19c33af569e730d8743f683c6e726b
+        subdir: silktex-node
+      - cargo-sources.json
+
   - name: texlive-extension-point
     buildsystem: simple
     build-commands:

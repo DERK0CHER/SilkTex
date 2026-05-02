@@ -13,6 +13,7 @@
 #   ./run.sh -- <args>    # pass extra arguments through to silktex
 #
 # Any arguments after `--` are forwarded to the silktex binary.
+# RUST_LOG defaults to silktex_node=info,iroh=error unless already set.
 
 set -euo pipefail
 
@@ -44,6 +45,7 @@ if ! command -v nix >/dev/null 2>&1; then
 fi
 
 pkill -f "$BUILD_DIR/src/silktex" 2>/dev/null || true
+pkill -f "$BUILD_DIR/src/silktex-node" 2>/dev/null || true
 
 if [[ $CLEAN -eq 1 ]]; then
     rm -rf "$BUILD_DIR"
@@ -60,16 +62,17 @@ nix develop --command ninja -C "$BUILD_DIR"
 # Avoid Vulkan-specific issues/warnings on some Mesa/NixOS setups unless
 # the user explicitly set a renderer.
 GSK_RENDERER_VALUE="${GSK_RENDERER:-ngl}"
+RUST_LOG_VALUE="${RUST_LOG:-silktex_node=info,iroh=error}"
 
 if [[ $DETACH -eq 1 ]]; then
-    echo ">> launching silktex (detached, GSK_RENDERER=$GSK_RENDERER_VALUE)"
-    nix develop --command env GSK_RENDERER="$GSK_RENDERER_VALUE" \
+    echo ">> launching silktex (detached, GSK_RENDERER=$GSK_RENDERER_VALUE, RUST_LOG=$RUST_LOG_VALUE)"
+    nix develop --command env GSK_RENDERER="$GSK_RENDERER_VALUE" RUST_LOG="$RUST_LOG_VALUE" \
         "$BUILD_DIR/src/silktex" "${APP_ARGS[@]}" >/dev/null 2>&1 &
     disown || true
     exit 0
 fi
 
-echo ">> launching silktex (foreground, GSK_RENDERER=$GSK_RENDERER_VALUE)"
+echo ">> launching silktex (foreground, GSK_RENDERER=$GSK_RENDERER_VALUE, RUST_LOG=$RUST_LOG_VALUE)"
 echo ">> this keeps the terminal attached while the app is running (Ctrl+C to stop)"
-exec nix develop --command env GSK_RENDERER="$GSK_RENDERER_VALUE" \
+exec nix develop --command env GSK_RENDERER="$GSK_RENDERER_VALUE" RUST_LOG="$RUST_LOG_VALUE" \
     "$BUILD_DIR/src/silktex" "${APP_ARGS[@]}"

@@ -1,4 +1,5 @@
 # Build outputs
+silktex-node/target/
 build/
 .goblint/
 build-gtk4/
