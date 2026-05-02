@@ -5,7 +5,7 @@ use futures::TryStreamExt;
 use iroh::{
     address_lookup::memory::MemoryLookup,
     endpoint::presets,
-    Endpoint, EndpointAddr, PublicKey, RelayUrl,
+    Endpoint, EndpointAddr, PublicKey,
 };
 use iroh_gossip::{
     api::Event,
@@ -21,11 +21,6 @@ const PROTOCOL_TAG_OP:   u8 = 0x01;
 const PROTOCOL_TAG_SNAP: u8 = 0x02;
 const PROTOCOL_TAG_REQ:  u8 = 0x03;
 
-/// Bootstrap node from the reflection project (n0 infrastructure, always online).
-const BOOTSTRAP_ID: &str =
-    "9f63a15ab95959a992af96bf72fbc3e7dc98eeb4799f788bb07b20125053e795";
-const BOOTSTRAP_RELAY: &str =
-    "https://euc1-1.relay.n0.iroh-canary.iroh.link";
 
 /// A session ticket that carries the topic ID and the host's endpoint address.
 /// Serialised with postcard + base32 so it's a single copy-pasteable string.
@@ -85,8 +80,9 @@ impl Network {
 
         tracing::info!("session host: endpoint={} code={}", endpoint.id(), session_code);
 
+        // Host has no bootstrap peers — it waits for joiners to connect via the ticket.
         tokio::spawn(run_node(
-            endpoint, memory_lookup, topic_id,
+            endpoint, memory_lookup, topic_id, vec![],
             update_tx, doc_id, cmd_rx, false, None,
         ));
 
@@ -105,7 +101,12 @@ impl Network {
         let topic_id = ticket.topic;
 
         let memory_lookup = MemoryLookup::new();
-        // Pre-populate address book with the host's endpoint address.
+        // Pre-populate address book with the host's endpoint address so iroh
+        // can reach the host by ID through the relay URL in the ticket.
+        let bootstrap_peers: Vec<PublicKey> = ticket.peers
+            .iter()
+            .map(|a| a.id)
+            .collect();
         for peer_addr in ticket.peers {
             memory_lookup.add_endpoint_info(peer_addr);
         }
@@ -117,7 +118,7 @@ impl Network {
         let (snap_tx, mut snap_rx) = mpsc::channel::<Vec<u8>>(1);
 
         tokio::spawn(run_node(
-            endpoint, memory_lookup, topic_id,
+            endpoint, memory_lookup, topic_id, bootstrap_peers,
             update_tx, doc_id, cmd_rx, true, Some(snap_tx),
         ));
 
@@ -147,21 +148,13 @@ impl Network {
 /* ------------------------------------------------------------------ */
 
 /// Build an iroh Endpoint connected to n0's relay infrastructure.
-/// Also adds the reflection bootstrap node to the address book.
 async fn build_endpoint(memory_lookup: MemoryLookup) -> Result<Endpoint> {
-    if let (Ok(id), Ok(relay)) = (
-        BOOTSTRAP_ID.parse::<PublicKey>(),
-        BOOTSTRAP_RELAY.parse::<RelayUrl>(),
-    ) {
-        memory_lookup.add_endpoint_info(EndpointAddr::new(id).with_relay_url(relay));
-    }
-
     let endpoint = Endpoint::builder(presets::N0)
         .address_lookup(memory_lookup)
         .bind()
         .await?;
 
-    // Wait until we have a home relay so our address is sharable.
+    // Wait until we have a home relay so our address (with relay URL) is sharable.
     endpoint.online().await;
     Ok(endpoint)
 }
@@ -174,6 +167,7 @@ async fn run_node(
     endpoint: Endpoint,
     _memory_lookup: MemoryLookup,
     topic_id: TopicId,
+    bootstrap_peers: Vec<PublicKey>,
     update_tx: mpsc::Sender<(String, Vec<u8>)>,
     doc_id: String,
     mut cmd_rx: mpsc::Receiver<NetCmd>,
@@ -187,14 +181,9 @@ async fn run_node(
         .accept(GOSSIP_ALPN, gossip.clone())
         .spawn();
 
-    // Use the bootstrap node as the initial peer so both sides can find each other
-    // through n0's relay even before they know about each other directly.
-    let bootstrap_peers: Vec<PublicKey> = BOOTSTRAP_ID
-        .parse::<PublicKey>()
-        .ok()
-        .into_iter()
-        .collect();
-
+    // Host passes vec![] — it waits for joiners.
+    // Joiner passes the host's endpoint ID — iroh reaches it via the relay URL
+    // that was pre-loaded into the MemoryLookup from the ticket.
     let topic = match gossip.subscribe_and_join(topic_id, bootstrap_peers).await {
         Ok(t) => t,
         Err(e) => {
