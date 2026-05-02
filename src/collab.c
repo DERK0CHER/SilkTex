@@ -66,7 +66,7 @@ typedef struct {
     GtkLabel   *status_label;       /* inside popover — current state       */
     GtkSpinner *status_spinner;     /* spins in popover when searching      */
     GtkRevealer *id_revealer;       /* session-ID section (host only)       */
-    AdwActionRow *session_id_row;   /* subtitle = the UUID, has copy suffix */
+    GtkEntry   *session_id_entry;   /* read-only entry showing full code    */
     GtkRevealer *join_revealer;     /* join + start/join buttons (no session) */
     GtkEditable *join_entry;        /* AdwEntryRow, implements GtkEditable  */
     GtkRevealer *leave_revealer;    /* leave button (in session)            */
@@ -438,8 +438,9 @@ static void collab_update_ui(void)
             else         gtk_spinner_stop(C.status_spinner);
         }
 
-        if (C.session_id_row)
-            adw_action_row_set_subtitle(C.session_id_row, C.session_id ? C.session_id : "");
+        if (C.session_id_entry)
+            gtk_editable_set_text(GTK_EDITABLE(C.session_id_entry),
+                                  C.session_id ? C.session_id : "");
 
         gtk_revealer_set_reveal_child(C.id_revealer,   TRUE);
         gtk_revealer_set_reveal_child(C.join_revealer,  FALSE);
@@ -506,9 +507,12 @@ static void on_copy_btn_clicked(GtkButton *btn, gpointer ud)
 {
     (void)btn;
     (void)ud;
-    if (!C.session_id) return;
+    /* Copy from the entry so we always get the complete, untruncated code. */
+    if (!C.session_id_entry) return;
+    const char *code = gtk_editable_get_text(GTK_EDITABLE(C.session_id_entry));
+    if (!code || !*code) return;
     GdkClipboard *cb = gdk_display_get_clipboard(gdk_display_get_default());
-    gdk_clipboard_set_text(cb, C.session_id);
+    gdk_clipboard_set_text(cb, code);
 }
 
 /* ------------------------------------------------------------------ */
@@ -592,30 +596,38 @@ void silktex_collab_setup_window(SilktexWindow *self)
     gtk_revealer_set_reveal_child(GTK_REVEALER(id_rev), FALSE);
     C.id_revealer = GTK_REVEALER(id_rev);
 
-    GtkWidget *id_list = gtk_list_box_new();
-    gtk_list_box_set_selection_mode(GTK_LIST_BOX(id_list), GTK_SELECTION_NONE);
-    gtk_widget_add_css_class(id_list, "boxed-list");
-    gtk_widget_set_margin_start(id_list, 12);
-    gtk_widget_set_margin_end(id_list, 12);
-    gtk_widget_set_margin_top(id_list, 8);
-    gtk_widget_set_margin_bottom(id_list, 4);
+    GtkWidget *id_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_widget_set_margin_start(id_box, 12);
+    gtk_widget_set_margin_end(id_box, 12);
+    gtk_widget_set_margin_top(id_box, 8);
+    gtk_widget_set_margin_bottom(id_box, 4);
 
-    GtkWidget *id_row = adw_action_row_new();
-    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(id_row), _("Session ID"));
-    adw_action_row_set_subtitle(ADW_ACTION_ROW(id_row), "");
-    adw_action_row_set_subtitle_selectable(ADW_ACTION_ROW(id_row), TRUE);
-    C.session_id_row = ADW_ACTION_ROW(id_row);
+    GtkWidget *id_title = gtk_label_new(_("Session Code"));
+    gtk_widget_add_css_class(id_title, "caption-heading");
+    gtk_label_set_xalign(GTK_LABEL(id_title), 0.0f);
+    gtk_box_append(GTK_BOX(id_box), id_title);
+
+    /* Read-only entry shows the full code; Ctrl+A + Ctrl+C copies it all. */
+    GtkWidget *code_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    GtkWidget *code_entry = gtk_entry_new();
+    gtk_editable_set_editable(GTK_EDITABLE(code_entry), FALSE);
+    gtk_widget_add_css_class(code_entry, "monospace");
+    gtk_widget_set_hexpand(code_entry, TRUE);
+    gtk_entry_set_placeholder_text(GTK_ENTRY(code_entry), _("Starting session…"));
+    C.session_id_entry = GTK_ENTRY(code_entry);
 
     GtkWidget *copy_btn = gtk_button_new_from_icon_name("edit-copy-symbolic");
     gtk_widget_add_css_class(copy_btn, "flat");
     gtk_widget_add_css_class(copy_btn, "circular");
-    gtk_widget_set_tooltip_text(copy_btn, _("Copy session ID"));
+    gtk_widget_set_tooltip_text(copy_btn, _("Copy session code"));
     gtk_widget_set_valign(copy_btn, GTK_ALIGN_CENTER);
     g_signal_connect(copy_btn, "clicked", G_CALLBACK(on_copy_btn_clicked), NULL);
-    adw_action_row_add_suffix(ADW_ACTION_ROW(id_row), copy_btn);
 
-    gtk_list_box_append(GTK_LIST_BOX(id_list), id_row);
-    gtk_revealer_set_child(GTK_REVEALER(id_rev), id_list);
+    gtk_box_append(GTK_BOX(code_row), code_entry);
+    gtk_box_append(GTK_BOX(code_row), copy_btn);
+    gtk_box_append(GTK_BOX(id_box), code_row);
+
+    gtk_revealer_set_child(GTK_REVEALER(id_rev), id_box);
     gtk_box_append(GTK_BOX(popover_box), id_rev);
 
     /* ── Not-in-session section: entry row + Start/Join buttons ── */

@@ -39,9 +39,16 @@ impl Ticket {
     }
 
     fn decode(s: &str) -> Result<Self> {
+        // Keep only valid base32 characters (a-z, 2-7); strips whitespace,
+        // ellipsis artifacts from UI truncation, and copy-paste noise.
+        let cleaned: String = s
+            .chars()
+            .filter(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '2'..='7'))
+            .collect::<String>()
+            .to_ascii_uppercase();
         let bytes = BASE32_NOPAD
-            .decode(s.trim().to_ascii_uppercase().as_bytes())
-            .map_err(|e| anyhow::anyhow!("ticket base32: {e}"))?;
+            .decode(cleaned.as_bytes())
+            .map_err(|e| anyhow::anyhow!("ticket invalid (copy the code again using the copy button): {e}"))?;
         postcard::from_bytes(&bytes)
             .map_err(|e| anyhow::anyhow!("ticket decode: {e}"))
     }
@@ -277,6 +284,7 @@ async fn run_node(
     }
 
     router.shutdown().await.ok();
+    endpoint.close().await;
     tracing::info!("p2p node stopped");
 }
 
