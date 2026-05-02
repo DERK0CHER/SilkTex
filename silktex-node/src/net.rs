@@ -7,7 +7,7 @@ use iroh::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
@@ -18,6 +18,10 @@ const ALPN: &[u8] = b"silktex/collab/0";
 const TAG_HELLO: u8 = 0x00; // initial handshake byte from joiner → host
 const TAG_OP:    u8 = 0x01; // Loro CRDT operation
 const TAG_SNAP:  u8 = 0x02; // full Loro snapshot
+
+const MAX_TICKET_BYTES: usize = 8 * 1024;
+const MAX_WIRE_PAYLOAD: usize = 16 * 1024 * 1024;
+const MAX_PEERS: usize = 8;
 
 /* ------------------------------------------------------------------ */
 /* Session ticket                                                       */
@@ -31,11 +35,11 @@ struct Ticket {
 }
 
 impl Ticket {
-    fn encode(&self) -> String {
-        let bytes = postcard::to_stdvec(self).expect("ticket serialize");
+    fn encode(&self) -> Result<String> {
+        let bytes = postcard::to_stdvec(self).map_err(|e| anyhow::anyhow!("ticket encode: {e}"))?;
         let mut s = BASE32_NOPAD.encode(&bytes);
         s.make_ascii_lowercase();
-        s
+        Ok(s)
     }
 
     fn decode(s: &str) -> Result<Self> {
@@ -45,6 +49,9 @@ impl Ticket {
             .filter(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '2'..='7'))
             .collect::<String>()
             .to_ascii_uppercase();
+        if cleaned.len() > MAX_TICKET_BYTES {
+            anyhow::bail!("ticket too large");
+        }
         let bytes = BASE32_NOPAD
             .decode(cleaned.as_bytes())
             .map_err(|e| anyhow::anyhow!("ticket invalid (use the copy button): {e}"))?;
@@ -57,6 +64,9 @@ impl Ticket {
 /* ------------------------------------------------------------------ */
 
 async fn write_msg(w: &mut (impl AsyncWriteExt + Unpin), tag: u8, payload: &[u8]) -> Result<()> {
+    if payload.len() > MAX_WIRE_PAYLOAD {
+        anyhow::bail!("message too large: {} bytes", payload.len());
+    }
     w.write_u8(tag).await?;
     w.write_u32(payload.len() as u32).await?;
     w.write_all(payload).await?;
@@ -66,6 +76,9 @@ async fn write_msg(w: &mut (impl AsyncWriteExt + Unpin), tag: u8, payload: &[u8]
 async fn read_msg(r: &mut (impl AsyncReadExt + Unpin)) -> Result<(u8, Vec<u8>)> {
     let tag = r.read_u8().await?;
     let len = r.read_u32().await? as usize;
+    if len > MAX_WIRE_PAYLOAD {
+        anyhow::bail!("message too large: {len} bytes");
+    }
     let mut buf = vec![0u8; len];
     r.read_exact(&mut buf).await?;
     Ok((tag, buf))
@@ -82,10 +95,15 @@ pub struct Network {
 enum NetCmd {
     Op(Vec<u8>),
     Snapshot(Vec<u8>),
+    Shutdown,
 }
 
 /// Per-peer outgoing channel map (EndpointId → sender).
 type PeerMap = Arc<Mutex<HashMap<EndpointId, mpsc::Sender<Vec<u8>>>>>;
+
+fn lock_peers(peers: &PeerMap) -> MutexGuard<'_, HashMap<EndpointId, mpsc::Sender<Vec<u8>>>> {
+    peers.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 impl Network {
     /// Start hosting.  Returns `(Network, session_code)`.
@@ -99,7 +117,7 @@ impl Network {
         let endpoint = build_endpoint(memory_lookup, true).await?;
 
         let ticket = Ticket { addr: endpoint.addr() };
-        let session_code = ticket.encode();
+        let session_code = ticket.encode()?;
         tracing::info!("session host: id={} code={}", endpoint.id(), session_code);
 
         let peers: PeerMap = Arc::new(Mutex::new(HashMap::new()));
@@ -144,6 +162,16 @@ impl Network {
     pub async fn broadcast_snapshot(&self, data: Vec<u8>) {
         let _ = self.cmd_tx.send(NetCmd::Snapshot(data)).await;
     }
+
+    pub async fn shutdown(&self) {
+        let _ = self.cmd_tx.send(NetCmd::Shutdown).await;
+    }
+}
+
+impl Drop for Network {
+    fn drop(&mut self) {
+        let _ = self.cmd_tx.try_send(NetCmd::Shutdown);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -175,12 +203,14 @@ async fn host_run(
     loop {
         tokio::select! {
             // Outgoing: broadcast op/snapshot to all connected peers.
-            Some(cmd) = cmd_rx.recv() => {
+            cmd_opt = cmd_rx.recv() => {
+                let Some(cmd) = cmd_opt else { break };
                 let (tag, data) = match cmd {
                     NetCmd::Op(d)       => (TAG_OP,   d),
                     NetCmd::Snapshot(d) => (TAG_SNAP, d),
+                    NetCmd::Shutdown    => break,
                 };
-                let map = peers.lock().unwrap();
+                let map = lock_peers(&peers);
                 for tx in map.values() {
                     let mut envelope = Vec::with_capacity(1 + data.len());
                     envelope.push(tag);
@@ -201,10 +231,14 @@ async fn host_run(
                     Err(e) => { tracing::warn!("connecting error: {e}"); continue; }
                 };
                 let peer_id = conn.remote_id();
+                if lock_peers(&peers).len() >= MAX_PEERS {
+                    tracing::warn!("rejecting peer {peer_id}: peer limit reached");
+                    continue;
+                }
                 tracing::info!("joiner connected: {peer_id}");
 
                 let (peer_tx, peer_rx) = mpsc::channel::<Vec<u8>>(64);
-                peers.lock().unwrap().insert(peer_id, peer_tx);
+                lock_peers(&peers).insert(peer_id, peer_tx);
 
                 emit_peer_count(&update_tx, &peers).await;
 
@@ -216,7 +250,7 @@ async fn host_run(
                     if let Err(e) = host_handle_peer(conn, peer_rx, update_tx2, doc_id2).await {
                         tracing::debug!("peer {peer_id} disconnected: {e}");
                     }
-                    peers2.lock().unwrap().remove(&peer_id);
+                    lock_peers(&peers2).remove(&peer_id);
                     tracing::info!("joiner disconnected: {peer_id}");
                     emit_peer_count(&update_tx3, &peers2).await;
                 });
@@ -230,7 +264,7 @@ async fn host_run(
 
 /// Called when peer count changes; sends the count to the app layer.
 async fn emit_peer_count(tx: &mpsc::Sender<(String, Vec<u8>)>, peers: &PeerMap) {
-    let count = peers.lock().unwrap().len() as u64;
+    let count = lock_peers(peers).len() as u64;
     let _ = tx.send(("__peer_count__".into(), count.to_be_bytes().to_vec())).await;
 }
 
@@ -316,10 +350,12 @@ async fn joiner_run(
     loop {
         tokio::select! {
             // Forward outgoing ops / snapshots to the host.
-            Some(cmd) = cmd_rx.recv() => {
+            cmd_opt = cmd_rx.recv() => {
+                let Some(cmd) = cmd_opt else { break };
                 let (tag, data) = match cmd {
                     NetCmd::Op(d)       => (TAG_OP,   d),
                     NetCmd::Snapshot(d) => (TAG_SNAP, d),
+                    NetCmd::Shutdown    => break,
                 };
                 if let Err(e) = write_msg(&mut send, tag, &data).await {
                     tracing::debug!("send error: {e}");

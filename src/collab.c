@@ -56,6 +56,7 @@ typedef struct {
     char *session_id;
 
     gboolean in_session;
+    gboolean session_pending;
     gboolean applying; /* TRUE while writing a remote op to the buffer */
     int peer_count;
 
@@ -172,6 +173,10 @@ static void on_node_line(GObject *src, GAsyncResult *res, gpointer ud)
     if (!line) {
         if (err && !g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED))
             g_warning("collab: node stream closed: %s", err->message);
+        C.session_pending = FALSE;
+        C.in_session = FALSE;
+        C.peer_count = 0;
+        collab_update_ui();
         g_clear_error(&err);
         return;
     }
@@ -210,6 +215,7 @@ static void on_node_line(GObject *src, GAsyncResult *res, gpointer ud)
         const char *sid = json_object_has_member(obj, "session_id")
                               ? json_object_get_string_member(obj, "session_id")
                               : "?";
+        C.session_pending = FALSE;
         C.in_session = TRUE;
         g_free(C.session_id);
         C.session_id = g_strdup(sid);
@@ -223,6 +229,8 @@ static void on_node_line(GObject *src, GAsyncResult *res, gpointer ud)
         const char *msg =
             json_object_has_member(obj, "msg") ? json_object_get_string_member(obj, "msg") : "?";
         g_warning("silktex-node: %s", msg);
+        C.session_pending = FALSE;
+        collab_update_ui();
     }
 
 done:
@@ -325,7 +333,12 @@ static gboolean collab_start_node(void)
 
 static void do_create_session(void)
 {
+    if (C.in_session || C.session_pending) return;
     if (!C.editor || !collab_start_node()) return;
+
+    C.session_pending = TRUE;
+    C.peer_count = 0;
+    collab_update_ui();
 
     g_free(C.doc_id);
     C.doc_id = g_uuid_string_random();
@@ -352,7 +365,12 @@ static void do_create_session(void)
 
 static void do_join_session(const char *session_id)
 {
+    if (C.in_session || C.session_pending) return;
     if (!collab_start_node() || !session_id || !*session_id) return;
+
+    C.session_pending = TRUE;
+    C.peer_count = 0;
+    collab_update_ui();
 
     g_free(C.doc_id);
     C.doc_id = g_uuid_string_random();
@@ -374,7 +392,6 @@ static void do_join_session(const char *session_id)
     g_object_unref(gen);
     g_object_unref(b);
 
-    C.in_session = TRUE;
     g_free(C.session_id);
     C.session_id = g_strdup(session_id);
     collab_update_ui();
@@ -390,6 +407,7 @@ static void do_leave_session(void)
     g_clear_object(&C.proc);
     C.writer = NULL;
     C.in_session = FALSE;
+    C.session_pending = FALSE;
     C.peer_count = 0;
     g_clear_pointer(&C.doc_id, g_free);
     g_clear_pointer(&C.session_id, g_free);
@@ -406,6 +424,8 @@ static void collab_update_ui(void)
 
     if (C.in_session) {
         gtk_stack_set_visible_child_name(C.icon_stack, "online");
+        if (C.primary_btn)
+            gtk_button_set_label(C.primary_btn, _("Leave Session"));
 
         gboolean waiting = (C.peer_count == 0);
 
@@ -445,9 +465,30 @@ static void collab_update_ui(void)
         gtk_revealer_set_reveal_child(C.id_revealer,   TRUE);
         gtk_revealer_set_reveal_child(C.join_revealer,  FALSE);
         gtk_revealer_set_reveal_child(C.leave_revealer, TRUE);
+    } else if (C.session_pending) {
+        gtk_stack_set_visible_child_name(C.icon_stack, "online");
+        gtk_widget_set_visible(GTK_WIDGET(C.peers_badge), FALSE);
+
+        if (C.btn_spinner) {
+            gtk_widget_set_visible(GTK_WIDGET(C.btn_spinner), TRUE);
+            gtk_spinner_start(C.btn_spinner);
+        }
+        if (C.status_spinner) {
+            gtk_widget_set_visible(GTK_WIDGET(C.status_spinner), TRUE);
+            gtk_spinner_start(C.status_spinner);
+        }
+
+        gtk_label_set_text(C.status_label, _("Starting collaboration session…"));
+        if (C.primary_btn)
+            gtk_button_set_label(C.primary_btn, _("Cancel"));
+        gtk_revealer_set_reveal_child(C.id_revealer,   FALSE);
+        gtk_revealer_set_reveal_child(C.join_revealer,  FALSE);
+        gtk_revealer_set_reveal_child(C.leave_revealer, TRUE);
     } else {
         gtk_stack_set_visible_child_name(C.icon_stack, "offline");
         gtk_widget_set_visible(GTK_WIDGET(C.peers_badge), FALSE);
+        if (C.primary_btn)
+            gtk_button_set_label(C.primary_btn, _("Leave Session"));
 
         if (C.btn_spinner) {
             gtk_spinner_stop(C.btn_spinner);

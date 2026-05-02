@@ -5,6 +5,7 @@ use anyhow::Result;
 use doc::Document;
 use net::Network;
 use serde::{Deserialize, Serialize};
+use std::io::{self, Write};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::{Mutex, mpsc};
@@ -41,10 +42,23 @@ enum Event<'a> {
     Error        { msg: String },
 }
 
-fn emit(ev: &Event<'_>) {
+fn emit(ev: &Event<'_>) -> bool {
     match serde_json::to_string(ev) {
-        Ok(s) => println!("{s}"),
-        Err(e) => eprintln!("emit error: {e}"),
+        Ok(s) => {
+            let mut stdout = io::stdout().lock();
+            match writeln!(stdout, "{s}") {
+                Ok(()) => true,
+                Err(e) if e.kind() == io::ErrorKind::BrokenPipe => false,
+                Err(e) => {
+                    eprintln!("emit error: {e}");
+                    false
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("emit error: {e}");
+            false
+        }
     }
 }
 
@@ -84,7 +98,9 @@ async fn main() -> Result<()> {
             }
             if doc_id == "__peer_count__" {
                 let count = if update.len() >= 8 {
-                    u64::from_be_bytes(update[..8].try_into().unwrap()) as usize
+                    let mut count_bytes = [0u8; 8];
+                    count_bytes.copy_from_slice(&update[..8]);
+                    u64::from_be_bytes(count_bytes) as usize
                 } else { 0 };
                 let _ = apply_tx.send(("__peer_count__".into(), TextOp {
                     retain: count, insert: None, delete: None,
@@ -104,7 +120,7 @@ async fn main() -> Result<()> {
     let stdin = BufReader::new(tokio::io::stdin());
     let mut lines = stdin.lines();
 
-    loop {
+    'main_loop: loop {
         tokio::select! {
             /* Emit events arising from remote ops. */
             Some((doc_id, op)) = apply_rx.recv() => {
@@ -115,9 +131,13 @@ async fn main() -> Result<()> {
                         net.broadcast_snapshot(snap).await;
                     }
                 } else if doc_id == "__peer_count__" {
-                    emit(&Event::PeerCount { doc_id: &current_doc_id, count: op.retain });
+                    if !emit(&Event::PeerCount { doc_id: &current_doc_id, count: op.retain }) {
+                        break 'main_loop;
+                    }
                 } else {
-                    emit(&Event::RemoteOp { doc_id, op });
+                    if !emit(&Event::RemoteOp { doc_id, op }) {
+                        break 'main_loop;
+                    }
                 }
             }
 
@@ -129,26 +149,37 @@ async fn main() -> Result<()> {
                 let cmd: Command = match serde_json::from_str(&line) {
                     Ok(c) => c,
                     Err(e) => {
-                        emit(&Event::Error { msg: format!("parse: {e}") });
+                        if !emit(&Event::Error { msg: format!("parse: {e}") }) {
+                            break 'main_loop;
+                        }
                         continue;
                     }
                 };
 
                 match cmd {
                     Command::CreateSession { doc_id, content } => {
+                        if let Some(net) = network.take() {
+                            net.shutdown().await;
+                        }
                         doc.lock().await.set_content(&content);
                         current_doc_id = doc_id.clone();
 
                         let (net, session_code) =
                             Network::start(net_tx.clone(), doc_id.clone()).await?;
-                        emit(&Event::SessionReady {
+                        if !emit(&Event::SessionReady {
                             doc_id: &doc_id,
                             session_id: &session_code,
-                        });
+                        }) {
+                            net.shutdown().await;
+                            break 'main_loop;
+                        }
                         network = Some(net);
                     }
 
                     Command::JoinSession { doc_id, session_id } => {
+                        if let Some(net) = network.take() {
+                            net.shutdown().await;
+                        }
                         current_doc_id = doc_id.clone();
 
                         let (net, snapshot) = Network::join(
@@ -158,11 +189,17 @@ async fn main() -> Result<()> {
                         if let Some(snap) = snapshot {
                             let mut d = doc.lock().await;
                             if let Err(e) = d.apply_snapshot(&snap) {
-                                emit(&Event::Error { msg: format!("snapshot: {e}") });
+                                if !emit(&Event::Error { msg: format!("snapshot: {e}") }) {
+                                    net.shutdown().await;
+                                    break 'main_loop;
+                                }
                             } else {
                                 let content = d.get_content();
                                 drop(d);
-                                emit(&Event::Snapshot { doc_id: &doc_id, content });
+                                if !emit(&Event::Snapshot { doc_id: &doc_id, content }) {
+                                    net.shutdown().await;
+                                    break 'main_loop;
+                                }
                             }
                         }
                         network = Some(net);
@@ -176,17 +213,25 @@ async fn main() -> Result<()> {
                                     net.broadcast_op(update).await;
                                 }
                             }
-                            Err(e) => emit(&Event::Error { msg: e.to_string() }),
+                            Err(e) => {
+                                if !emit(&Event::Error { msg: e.to_string() }) {
+                                    break 'main_loop;
+                                }
+                            }
                         }
                         let _ = doc_id;
                     }
 
-                    Command::Shutdown => break,
+                    Command::Shutdown => break 'main_loop,
                 }
             }
 
-            else => break,
+            else => break 'main_loop,
         }
+    }
+
+    if let Some(net) = network.take() {
+        net.shutdown().await;
     }
 
     Ok(())
