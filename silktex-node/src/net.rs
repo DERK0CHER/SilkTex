@@ -177,6 +177,32 @@ async fn run_node(
     bootstrap_peers: Vec<PublicKey>,
     update_tx: mpsc::Sender<(String, Vec<u8>)>,
     doc_id: String,
+    cmd_rx: mpsc::Receiver<NetCmd>,
+    joiner: bool,
+    snap_tx: Option<mpsc::Sender<Vec<u8>>>,
+) {
+    // Always close the endpoint when this task exits, regardless of the exit path.
+    run_node_inner(
+        endpoint.clone(),
+        topic_id,
+        bootstrap_peers,
+        update_tx,
+        doc_id,
+        cmd_rx,
+        joiner,
+        snap_tx,
+    )
+    .await;
+    endpoint.close().await;
+    tracing::info!("p2p node stopped");
+}
+
+async fn run_node_inner(
+    endpoint: Endpoint,
+    topic_id: TopicId,
+    bootstrap_peers: Vec<PublicKey>,
+    update_tx: mpsc::Sender<(String, Vec<u8>)>,
+    doc_id: String,
     mut cmd_rx: mpsc::Receiver<NetCmd>,
     joiner: bool,
     mut snap_tx: Option<mpsc::Sender<Vec<u8>>>,
@@ -284,8 +310,6 @@ async fn run_node(
     }
 
     router.shutdown().await.ok();
-    endpoint.close().await;
-    tracing::info!("p2p node stopped");
 }
 
 async fn emit_peer_count(update_tx: &mpsc::Sender<(String, Vec<u8>)>, count: usize) {
