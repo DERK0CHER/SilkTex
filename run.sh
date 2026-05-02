@@ -13,7 +13,7 @@
 #   ./run.sh -- <args>    # pass extra arguments through to silktex
 #
 # Any arguments after `--` are forwarded to the silktex binary.
-# RUST_LOG defaults to silktex_node=info,iroh=warn unless already set.
+# RUST_LOG defaults to silktex_node=info,iroh=error unless already set.
 
 set -euo pipefail
 
@@ -62,7 +62,7 @@ nix develop --command ninja -C "$BUILD_DIR"
 # Avoid Vulkan-specific issues/warnings on some Mesa/NixOS setups unless
 # the user explicitly set a renderer.
 GSK_RENDERER_VALUE="${GSK_RENDERER:-ngl}"
-RUST_LOG_VALUE="${RUST_LOG:-silktex_node=info,iroh=warn}"
+RUST_LOG_VALUE="${RUST_LOG:-silktex_node=info,iroh=error}"
 
 if [[ $DETACH -eq 1 ]]; then
     echo ">> launching silktex (detached, GSK_RENDERER=$GSK_RENDERER_VALUE, RUST_LOG=$RUST_LOG_VALUE)"

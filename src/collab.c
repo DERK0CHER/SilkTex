@@ -68,7 +68,7 @@ typedef struct {
     GtkRevealer *id_revealer;       /* session-ID section (host only)       */
     GtkEntry   *session_id_entry;   /* read-only entry showing full code    */
     GtkRevealer *join_revealer;     /* join + start/join buttons (no session) */
-    GtkEditable *join_entry;        /* AdwEntryRow, implements GtkEditable  */
+    GtkEditable *join_entry;        /* GtkEntry for pasting a session code     */
     GtkRevealer *leave_revealer;    /* leave button (in session)            */
     GtkButton   *primary_btn;       /* "Leave Session"                      */
 } Collab;
@@ -495,10 +495,9 @@ static void on_join_btn_clicked(GtkButton *btn, gpointer ud)
     }
 }
 
-/* AdwEntryRow fires "apply" when the user presses Enter. */
-static void on_join_apply(AdwEntryRow *row, gpointer ud)
+static void on_join_entry_activate(GtkEntry *entry, gpointer ud)
 {
-    (void)row;
+    (void)entry;
     (void)ud;
     on_join_btn_clicked(NULL, NULL);
 }
@@ -630,37 +629,36 @@ void silktex_collab_setup_window(SilktexWindow *self)
     gtk_revealer_set_child(GTK_REVEALER(id_rev), id_box);
     gtk_box_append(GTK_BOX(popover_box), id_rev);
 
-    /* ── Not-in-session section: entry row + Start/Join buttons ── */
+    /* ── Not-in-session section: entry + Start/Join buttons ── */
     GtkWidget *join_rev = gtk_revealer_new();
     gtk_revealer_set_transition_type(GTK_REVEALER(join_rev),
                                      GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN);
     gtk_revealer_set_reveal_child(GTK_REVEALER(join_rev), TRUE);
     C.join_revealer = GTK_REVEALER(join_rev);
 
-    GtkWidget *join_outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *join_outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_margin_start(join_outer, 12);
+    gtk_widget_set_margin_end(join_outer, 12);
+    gtk_widget_set_margin_top(join_outer, 8);
+    gtk_widget_set_margin_bottom(join_outer, 12);
 
-    /* Entry row for session ID */
-    GtkWidget *join_list = gtk_list_box_new();
-    gtk_list_box_set_selection_mode(GTK_LIST_BOX(join_list), GTK_SELECTION_NONE);
-    gtk_widget_add_css_class(join_list, "boxed-list");
-    gtk_widget_set_margin_start(join_list, 12);
-    gtk_widget_set_margin_end(join_list, 12);
-    gtk_widget_set_margin_top(join_list, 8);
-    gtk_widget_set_margin_bottom(join_list, 0);
+    GtkWidget *join_title = gtk_label_new(_("Join a Session"));
+    gtk_widget_add_css_class(join_title, "caption-heading");
+    gtk_label_set_xalign(GTK_LABEL(join_title), 0.0f);
+    gtk_box_append(GTK_BOX(join_outer), join_title);
 
-    GtkWidget *join_entry_row = adw_entry_row_new();
-    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(join_entry_row), _("Paste Session ID to join"));
-    C.join_entry = GTK_EDITABLE(join_entry_row);
-    g_signal_connect(join_entry_row, "apply", G_CALLBACK(on_join_apply), NULL);
-    gtk_list_box_append(GTK_LIST_BOX(join_list), join_entry_row);
-    gtk_box_append(GTK_BOX(join_outer), join_list);
+    GtkWidget *join_entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(join_entry), _("Paste session code"));
+    gtk_entry_set_activates_default(GTK_ENTRY(join_entry), TRUE);
+    gtk_widget_add_css_class(join_entry, "monospace");
+    gtk_widget_set_hexpand(join_entry, TRUE);
+    C.join_entry = GTK_EDITABLE(join_entry);
+    g_signal_connect(join_entry, "activate", G_CALLBACK(on_join_entry_activate), NULL);
+    gtk_box_append(GTK_BOX(join_outer), join_entry);
 
     /* Two action buttons: Start Session | Join */
     GtkWidget *btns_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_widget_set_margin_start(btns_box, 12);
-    gtk_widget_set_margin_end(btns_box, 12);
-    gtk_widget_set_margin_top(btns_box, 8);
-    gtk_widget_set_margin_bottom(btns_box, 12);
+    gtk_widget_set_margin_top(btns_box, 2);
 
     GtkWidget *start_btn = gtk_button_new_with_label(_("Start Session"));
     gtk_widget_add_css_class(start_btn, "suggested-action");
