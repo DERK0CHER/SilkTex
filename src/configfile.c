@@ -66,9 +66,17 @@ static const gchar default_config[] =
 
 static GKeyFile *key_file = NULL;
 static gchar *conf_filepath = NULL;
+/* Cache for config_get_string: avoids leaking the gchar* returned by
+ * g_key_file_get_string on every call.  Keyed by "group\x01key". */
+static GHashTable *string_cache = NULL;
 
 void config_init(void)
 {
+    g_free(conf_filepath);
+    g_clear_pointer(&key_file, g_key_file_free);
+    if (string_cache)
+        g_hash_table_remove_all(string_cache);
+
     gchar *confdir = C_SILKTEX_CONFDIR;
 
     if (!g_file_test(confdir, G_FILE_TEST_IS_DIR)) {
@@ -170,11 +178,16 @@ const gchar *config_get_string(const gchar *group, const gchar *key)
 
     GError *error = NULL;
     gchar *value = g_key_file_get_string(key_file, group, key, &error);
-
     if (error != NULL) {
         g_clear_error(&error);
         return "";
     }
+
+    if (!string_cache)
+        string_cache = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+
+    gchar *cache_key = g_strdup_printf("%s\x01%s", group, key);
+    g_hash_table_insert(string_cache, cache_key, value);
     return value;
 }
 

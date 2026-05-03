@@ -139,6 +139,47 @@ static void bench_subinstr_icase(void)
     PERF_REPORT(ITERS / elapsed, "subinstr/sec (hit, case-insensitive)");
 }
 
+static void bench_subinstr_long_haystack(void)
+{
+    /* 10 KB of LaTeX — realistic document size for incremental search */
+    GString *buf = g_string_sized_new(10240);
+    g_string_append(buf, "\\begin{document}\n");
+    for (int i = 0; i < 200; i++)
+        g_string_append_printf(buf, "\\section{Section %d} This is paragraph %d of the document.\n", i, i);
+    g_string_append(buf, "\\textbf{TARGET} \\end{document}\n");
+    const char *hay = buf->str;
+
+    g_test_timer_start();
+    for (int i = 0; i < ITERS; i++) {
+        gboolean r = utils_subinstr("TARGET", hay, FALSE);
+        (void)r;
+    }
+    double elapsed = g_test_timer_elapsed();
+    PERF_REPORT(ITERS / elapsed, "subinstr/sec (hit, case-sensitive, 10 KB haystack)");
+
+    g_string_free(buf, TRUE);
+}
+
+static void bench_subinstr_long_haystack_icase(void)
+{
+    GString *buf = g_string_sized_new(10240);
+    g_string_append(buf, "\\begin{document}\n");
+    for (int i = 0; i < 200; i++)
+        g_string_append_printf(buf, "\\section{Section %d} This is paragraph %d.\n", i, i);
+    g_string_append(buf, "\\textbf{target} \\end{document}\n");
+    const char *hay = buf->str;
+
+    g_test_timer_start();
+    for (int i = 0; i < ITERS; i++) {
+        gboolean r = utils_subinstr("TARGET", hay, TRUE);
+        (void)r;
+    }
+    double elapsed = g_test_timer_elapsed();
+    PERF_REPORT(ITERS / elapsed, "subinstr/sec (hit, case-insensitive, 10 KB haystack)");
+
+    g_string_free(buf, TRUE);
+}
+
 static void bench_g_substr(void)
 {
     char *src = "\\begin{document}\\section{Introduction}\\end{document}";
@@ -235,6 +276,19 @@ static void bench_slist_find_tail(void)
     free_slist_nodes(list);
 }
 
+static void bench_slist_build_free(void)
+{
+    /* Allocation churn: build and fully free a 1 000-node list repeatedly.
+     * Exercises g_new0/g_free and g_strdup under G_SLICE=always-malloc. */
+    g_test_timer_start();
+    for (int i = 0; i < 500; i++) {
+        slist *list = build_slist(1000);
+        free_slist_nodes(list);
+    }
+    double elapsed = g_test_timer_elapsed();
+    PERF_REPORT(500 / elapsed, "slist build+free 1000-node list /sec");
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  snippets.c
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -294,6 +348,51 @@ static void bench_config_set_string(void)
     PERF_REPORT(ITERS / elapsed, "config_set_string/sec (in-memory)");
 }
 
+static void bench_config_many_unique_keys(void)
+{
+    /* Populate 100 keys across 10 groups, then read them all back.
+     * Reflects the real startup pattern: many distinct config keys read once. */
+    config_init();
+    for (int g = 0; g < 10; g++) {
+        for (int k = 0; k < 10; k++) {
+            g_autofree char *group = g_strdup_printf("BenchGroup%d", g);
+            g_autofree char *key   = g_strdup_printf("key_%d", k);
+            config_set_integer(group, key, g * 10 + k);
+        }
+    }
+
+    g_test_timer_start();
+    for (int i = 0; i < 5000; i++) {
+        int g = i % 10, k = (i / 10) % 10;
+        g_autofree char *group = g_strdup_printf("BenchGroup%d", g);
+        g_autofree char *key   = g_strdup_printf("key_%d", k);
+        int v = config_get_integer(group, key);
+        (void)v;
+    }
+    double elapsed = g_test_timer_elapsed();
+    PERF_REPORT(5000 / elapsed, "config_get_integer/sec (100 unique keys, 10 groups)");
+}
+
+static void bench_g_substr_large(void)
+{
+    /* 1 KB string — exercises the allocator for larger substrings */
+    GString *buf = g_string_sized_new(1024);
+    for (int i = 0; i < 64; i++)
+        g_string_append(buf, "abcdefghijklmnop");
+    char *src = buf->str;
+    int   len = buf->len;
+
+    g_test_timer_start();
+    for (int i = 0; i < ITERS; i++) {
+        char *s = g_substr(src, 0, len);
+        g_free(s);
+    }
+    double elapsed = g_test_timer_elapsed();
+    PERF_REPORT(ITERS / elapsed, "g_substr/sec (1 KB string)");
+
+    g_string_free(buf, TRUE);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  main
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -310,16 +409,20 @@ int main(int argc, char *argv[])
     g_test_add_func("/bench/latex/image",                bench_generate_image);
 
     /* utils */
-    g_test_add_func("/bench/utils/subinstr/hit",         bench_subinstr_hit);
-    g_test_add_func("/bench/utils/subinstr/miss",        bench_subinstr_miss);
-    g_test_add_func("/bench/utils/subinstr/icase",       bench_subinstr_icase);
-    g_test_add_func("/bench/utils/g_substr",             bench_g_substr);
+    g_test_add_func("/bench/utils/subinstr/hit",                bench_subinstr_hit);
+    g_test_add_func("/bench/utils/subinstr/miss",               bench_subinstr_miss);
+    g_test_add_func("/bench/utils/subinstr/icase",              bench_subinstr_icase);
+    g_test_add_func("/bench/utils/subinstr/long_haystack",      bench_subinstr_long_haystack);
+    g_test_add_func("/bench/utils/subinstr/long_haystack_icase",bench_subinstr_long_haystack_icase);
+    g_test_add_func("/bench/utils/g_substr",                    bench_g_substr);
+    g_test_add_func("/bench/utils/g_substr/large",              bench_g_substr_large);
     g_test_add_func("/bench/utils/path_exists/hit",      bench_utils_path_exists_true);
     g_test_add_func("/bench/utils/path_exists/miss",     bench_utils_path_exists_false);
 
     /* slist */
     g_test_add_func("/bench/slist/find_head",            bench_slist_find_head);
     g_test_add_func("/bench/slist/find_tail",            bench_slist_find_tail);
+    g_test_add_func("/bench/slist/build_free",           bench_slist_build_free);
 
     /* snippets */
     g_test_add_func("/bench/snippets/new_unref",         bench_snippets_new_unref);
@@ -328,6 +431,7 @@ int main(int argc, char *argv[])
     /* config */
     g_test_add_func("/bench/config/get_string",          bench_config_get_string);
     g_test_add_func("/bench/config/set_string",          bench_config_set_string);
+    g_test_add_func("/bench/config/many_unique_keys",    bench_config_many_unique_keys);
 
     return g_test_run();
 }
