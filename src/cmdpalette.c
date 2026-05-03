@@ -9,7 +9,9 @@
 typedef struct {
     const char *label;
     const char *action;
-    const char *shortcut; /* display string, NULL if none */
+    const char *shortcut; /* display string on right, NULL if none */
+    const char *param;    /* if non-NULL, passed as "s" variant to action */
+    const char *hint;     /* extra search terms, NULL if none */
 } CmdEntry;
 
 /* clang-format off */
@@ -58,6 +60,101 @@ static const CmdEntry CMD_ENTRIES[] = {
     {N_("Insert equation"),        "win.insert-equation",  NULL},
     {N_("Insert quote"),           "win.insert-quote",     NULL},
 };
+
+/* LaTeX symbol entries — label is the LaTeX command, param is what gets inserted. */
+static const CmdEntry SYMBOL_ENTRIES[] = {
+    /* Greek lowercase */
+    {"\\alpha",          "win.insert-latex", "α",  "\\alpha",          NULL},
+    {"\\beta",           "win.insert-latex", "β",  "\\beta",           NULL},
+    {"\\gamma",          "win.insert-latex", "γ",  "\\gamma",          NULL},
+    {"\\delta",          "win.insert-latex", "δ",  "\\delta",          NULL},
+    {"\\epsilon",        "win.insert-latex", "ε",  "\\epsilon",        NULL},
+    {"\\varepsilon",     "win.insert-latex", "ε",  "\\varepsilon",     "epsilon"},
+    {"\\zeta",           "win.insert-latex", "ζ",  "\\zeta",           NULL},
+    {"\\eta",            "win.insert-latex", "η",  "\\eta",            NULL},
+    {"\\theta",          "win.insert-latex", "θ",  "\\theta",          NULL},
+    {"\\iota",           "win.insert-latex", "ι",  "\\iota",           NULL},
+    {"\\kappa",          "win.insert-latex", "κ",  "\\kappa",          NULL},
+    {"\\lambda",         "win.insert-latex", "λ",  "\\lambda",         NULL},
+    {"\\mu",             "win.insert-latex", "μ",  "\\mu",             NULL},
+    {"\\nu",             "win.insert-latex", "ν",  "\\nu",             NULL},
+    {"\\xi",             "win.insert-latex", "ξ",  "\\xi",             NULL},
+    {"\\pi",             "win.insert-latex", "π",  "\\pi",             NULL},
+    {"\\rho",            "win.insert-latex", "ρ",  "\\rho",            NULL},
+    {"\\sigma",          "win.insert-latex", "σ",  "\\sigma",          NULL},
+    {"\\tau",            "win.insert-latex", "τ",  "\\tau",            NULL},
+    {"\\phi",            "win.insert-latex", "φ",  "\\phi",            NULL},
+    {"\\varphi",         "win.insert-latex", "φ",  "\\varphi",         "phi"},
+    {"\\chi",            "win.insert-latex", "χ",  "\\chi",            NULL},
+    {"\\psi",            "win.insert-latex", "ψ",  "\\psi",            NULL},
+    {"\\omega",          "win.insert-latex", "ω",  "\\omega",          NULL},
+    /* Greek uppercase */
+    {"\\Gamma",          "win.insert-latex", "Γ",  "\\Gamma",          NULL},
+    {"\\Delta",          "win.insert-latex", "Δ",  "\\Delta",          NULL},
+    {"\\Theta",          "win.insert-latex", "Θ",  "\\Theta",          NULL},
+    {"\\Lambda",         "win.insert-latex", "Λ",  "\\Lambda",         NULL},
+    {"\\Xi",             "win.insert-latex", "Ξ",  "\\Xi",             NULL},
+    {"\\Pi",             "win.insert-latex", "Π",  "\\Pi",             NULL},
+    {"\\Sigma",          "win.insert-latex", "Σ",  "\\Sigma",          NULL},
+    {"\\Phi",            "win.insert-latex", "Φ",  "\\Phi",            NULL},
+    {"\\Psi",            "win.insert-latex", "Ψ",  "\\Psi",            NULL},
+    {"\\Omega",          "win.insert-latex", "Ω",  "\\Omega",          NULL},
+    /* Math structures */
+    {"\\frac{}{}",       "win.insert-latex", NULL, "\\frac{}{}",       "fraction"},
+    {"\\sqrt{}",         "win.insert-latex", "√",  "\\sqrt{}",         "square root"},
+    {"\\sum",            "win.insert-latex", "∑",  "\\sum",            "summation"},
+    {"\\int",            "win.insert-latex", "∫",  "\\int",            "integral"},
+    {"\\prod",           "win.insert-latex", "∏",  "\\prod",           "product"},
+    {"\\lim",            "win.insert-latex", NULL, "\\lim",            "limit"},
+    {"\\infty",          "win.insert-latex", "∞",  "\\infty",          "infinity"},
+    {"\\partial",        "win.insert-latex", "∂",  "\\partial",        "derivative"},
+    {"\\nabla",          "win.insert-latex", "∇",  "\\nabla",          "gradient del"},
+    /* Operators */
+    {"\\pm",             "win.insert-latex", "±",  "\\pm",             "plus minus"},
+    {"\\times",          "win.insert-latex", "×",  "\\times",          "multiply"},
+    {"\\div",            "win.insert-latex", "÷",  "\\div",            "divide"},
+    {"\\cdot",           "win.insert-latex", "·",  "\\cdot",           "dot"},
+    /* Relations */
+    {"\\leq",            "win.insert-latex", "≤",  "\\leq",            "less equal"},
+    {"\\geq",            "win.insert-latex", "≥",  "\\geq",            "greater equal"},
+    {"\\neq",            "win.insert-latex", "≠",  "\\neq",            "not equal"},
+    {"\\approx",         "win.insert-latex", "≈",  "\\approx",         "approximately"},
+    {"\\equiv",          "win.insert-latex", "≡",  "\\equiv",          "equivalent"},
+    {"\\sim",            "win.insert-latex", "∼",  "\\sim",            "similar"},
+    /* Sets */
+    {"\\in",             "win.insert-latex", "∈",  "\\in",             "element set"},
+    {"\\notin",          "win.insert-latex", "∉",  "\\notin",          "not element"},
+    {"\\subset",         "win.insert-latex", "⊂",  "\\subset",         NULL},
+    {"\\subseteq",       "win.insert-latex", "⊆",  "\\subseteq",       "subset equal"},
+    {"\\cup",            "win.insert-latex", "∪",  "\\cup",            "union"},
+    {"\\cap",            "win.insert-latex", "∩",  "\\cap",            "intersection"},
+    {"\\emptyset",       "win.insert-latex", "∅",  "\\emptyset",       "empty set"},
+    {"\\setminus",       "win.insert-latex", "∖",  "\\setminus",       "set difference"},
+    /* Logic */
+    {"\\forall",         "win.insert-latex", "∀",  "\\forall",         "for all"},
+    {"\\exists",         "win.insert-latex", "∃",  "\\exists",         "there exists"},
+    {"\\neg",            "win.insert-latex", "¬",  "\\neg",            "not negation"},
+    {"\\wedge",          "win.insert-latex", "∧",  "\\wedge",          "and logical"},
+    {"\\vee",            "win.insert-latex", "∨",  "\\vee",            "or logical"},
+    /* Arrows */
+    {"\\rightarrow",     "win.insert-latex", "→",  "\\rightarrow",     "arrow right to"},
+    {"\\leftarrow",      "win.insert-latex", "←",  "\\leftarrow",      "arrow left from"},
+    {"\\leftrightarrow", "win.insert-latex", "↔",  "\\leftrightarrow", "arrow both ways"},
+    {"\\Rightarrow",     "win.insert-latex", "⇒",  "\\Rightarrow",     "implies double arrow"},
+    {"\\Leftarrow",      "win.insert-latex", "⇐",  "\\Leftarrow",      "double arrow left"},
+    {"\\Leftrightarrow", "win.insert-latex", "⇔",  "\\Leftrightarrow", "iff double arrow"},
+    /* Accents and font commands */
+    {"\\hat{}",          "win.insert-latex", NULL, "\\hat{}",          "hat circumflex"},
+    {"\\vec{}",          "win.insert-latex", NULL, "\\vec{}",          "vector arrow"},
+    {"\\bar{}",          "win.insert-latex", NULL, "\\bar{}",          "bar overline"},
+    {"\\tilde{}",        "win.insert-latex", "~",  "\\tilde{}",        "tilde"},
+    {"\\dot{}",          "win.insert-latex", NULL, "\\dot{}",          "dot derivative"},
+    {"\\ddot{}",         "win.insert-latex", NULL, "\\ddot{}",         "double dot"},
+    {"\\mathbf{}",       "win.insert-latex", NULL, "\\mathbf{}",       "bold"},
+    {"\\mathbb{}",       "win.insert-latex", NULL, "\\mathbb{}",       "blackboard bold"},
+    {"\\mathcal{}",      "win.insert-latex", NULL, "\\mathcal{}",      "calligraphic"},
+    {"\\text{}",         "win.insert-latex", NULL, "\\text{}",         "text mode"},
+};
 /* clang-format on */
 
 static const char *search_text = NULL;
@@ -66,11 +163,25 @@ static gboolean filter_row(GtkListBoxRow *row, gpointer ud)
 {
     (void)ud;
     if (!search_text || !*search_text) return TRUE;
-    const char *label = g_object_get_data(G_OBJECT(row), "cmd-label");
-    if (!label) return FALSE;
-    g_autofree char *lower_label = g_utf8_casefold(label, -1);
+
     g_autofree char *lower_query = g_utf8_casefold(search_text, -1);
-    return strstr(lower_label, lower_query) != NULL;
+
+    const char *label = g_object_get_data(G_OBJECT(row), "cmd-label");
+    if (label) {
+        g_autofree char *lower = g_utf8_casefold(label, -1);
+        if (strstr(lower, lower_query)) return TRUE;
+    }
+    const char *shortcut = g_object_get_data(G_OBJECT(row), "cmd-shortcut");
+    if (shortcut) {
+        g_autofree char *lower = g_utf8_casefold(shortcut, -1);
+        if (strstr(lower, lower_query)) return TRUE;
+    }
+    const char *hint = g_object_get_data(G_OBJECT(row), "cmd-hint");
+    if (hint) {
+        g_autofree char *lower = g_utf8_casefold(hint, -1);
+        if (strstr(lower, lower_query)) return TRUE;
+    }
+    return FALSE;
 }
 
 static void on_search_changed(GtkEditable *e, gpointer ud)
@@ -95,9 +206,13 @@ static void activate_selected(GtkListBox *list, GtkWidget *window, AdwDialog *di
     GtkListBoxRow *row = gtk_list_box_get_selected_row(list);
     if (!row) return;
     const char *action = g_object_get_data(G_OBJECT(row), "cmd-action");
+    const char *param  = g_object_get_data(G_OBJECT(row), "cmd-param");
     if (!action) return;
     adw_dialog_close(dialog);
-    gtk_widget_activate_action(window, action, NULL);
+    if (param)
+        gtk_widget_activate_action(window, action, "s", param);
+    else
+        gtk_widget_activate_action(window, action, NULL);
 }
 
 static void on_row_activated(GtkListBox *list, GtkListBoxRow *row, gpointer ud)
@@ -160,6 +275,36 @@ static void free_ctx_notify(gpointer data, GClosure *closure)
     g_free(data);
 }
 
+static GtkWidget *build_row(const CmdEntry *e)
+{
+    GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_margin_top(row_box, 4);
+    gtk_widget_set_margin_bottom(row_box, 4);
+    gtk_widget_set_margin_start(row_box, 8);
+    gtk_widget_set_margin_end(row_box, 8);
+
+    GtkWidget *lbl = gtk_label_new(e->label);
+    gtk_label_set_xalign(GTK_LABEL(lbl), 0.0f);
+    gtk_widget_set_hexpand(lbl, TRUE);
+    gtk_box_append(GTK_BOX(row_box), lbl);
+
+    if (e->shortcut) {
+        GtkWidget *sc_lbl = gtk_label_new(e->shortcut);
+        gtk_widget_add_css_class(sc_lbl, "dim-label");
+        gtk_widget_add_css_class(sc_lbl, "caption");
+        gtk_box_append(GTK_BOX(row_box), sc_lbl);
+    }
+
+    GtkWidget *row = gtk_list_box_row_new();
+    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), row_box);
+    g_object_set_data(G_OBJECT(row), "cmd-label",    (gpointer)e->label);
+    g_object_set_data(G_OBJECT(row), "cmd-action",   (gpointer)e->action);
+    g_object_set_data(G_OBJECT(row), "cmd-shortcut", (gpointer)e->shortcut);
+    g_object_set_data(G_OBJECT(row), "cmd-param",    (gpointer)e->param);
+    g_object_set_data(G_OBJECT(row), "cmd-hint",     (gpointer)e->hint);
+    return row;
+}
+
 void silktex_cmd_palette_show(GtkWidget *window)
 {
     search_text = NULL;
@@ -176,7 +321,8 @@ void silktex_cmd_palette_show(GtkWidget *window)
     gtk_widget_set_margin_bottom(search, 8);
     gtk_widget_set_margin_start(search, 8);
     gtk_widget_set_margin_end(search, 8);
-    gtk_search_entry_set_placeholder_text(GTK_SEARCH_ENTRY(search), _("Search commands…"));
+    gtk_search_entry_set_placeholder_text(GTK_SEARCH_ENTRY(search),
+                                          _("Search commands and symbols…"));
 
     GtkWidget *scroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER,
@@ -188,33 +334,11 @@ void silktex_cmd_palette_show(GtkWidget *window)
     gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(list), TRUE);
     gtk_widget_add_css_class(list, "navigation-sidebar");
 
-    for (gsize i = 0; i < G_N_ELEMENTS(CMD_ENTRIES); i++) {
-        const CmdEntry *e = &CMD_ENTRIES[i];
+    for (gsize i = 0; i < G_N_ELEMENTS(CMD_ENTRIES); i++)
+        gtk_list_box_append(GTK_LIST_BOX(list), build_row(&CMD_ENTRIES[i]));
 
-        GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-        gtk_widget_set_margin_top(row_box, 4);
-        gtk_widget_set_margin_bottom(row_box, 4);
-        gtk_widget_set_margin_start(row_box, 8);
-        gtk_widget_set_margin_end(row_box, 8);
-
-        GtkWidget *lbl = gtk_label_new(_(e->label));
-        gtk_label_set_xalign(GTK_LABEL(lbl), 0.0f);
-        gtk_widget_set_hexpand(lbl, TRUE);
-        gtk_box_append(GTK_BOX(row_box), lbl);
-
-        if (e->shortcut) {
-            GtkWidget *sc_lbl = gtk_label_new(e->shortcut);
-            gtk_widget_add_css_class(sc_lbl, "dim-label");
-            gtk_widget_add_css_class(sc_lbl, "caption");
-            gtk_box_append(GTK_BOX(row_box), sc_lbl);
-        }
-
-        GtkWidget *row = gtk_list_box_row_new();
-        gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), row_box);
-        g_object_set_data(G_OBJECT(row), "cmd-label", (gpointer)_(e->label));
-        g_object_set_data(G_OBJECT(row), "cmd-action", (gpointer)e->action);
-        gtk_list_box_append(GTK_LIST_BOX(list), row);
-    }
+    for (gsize i = 0; i < G_N_ELEMENTS(SYMBOL_ENTRIES); i++)
+        gtk_list_box_append(GTK_LIST_BOX(list), build_row(&SYMBOL_ENTRIES[i]));
 
     /* Select first row by default. */
     GtkListBoxRow *first = gtk_list_box_get_row_at_index(GTK_LIST_BOX(list), 0);

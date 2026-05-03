@@ -5,6 +5,7 @@
  */
 
 #include "window-private.h"
+#include "cmdpalette.h"
 #include "configfile.h"
 #include "i18n.h"
 
@@ -178,112 +179,10 @@ static void action_show_recent(GSimpleAction *a, GVariant *p, gpointer ud)
     adw_dialog_present(dlg, GTK_WIDGET(self));
 }
 
-/* GtkShortcutsWindow is deprecated in GTK 4.18 but has no in-tree replacement yet. */
-static GtkWidget *make_shortcut(const char *accel, const char *title)
-{
-    return g_object_new(GTK_TYPE_SHORTCUTS_SHORTCUT, "accelerator", accel, "title", title, NULL);
-}
-
-static GtkWidget *make_group(const char *title)
-{
-    return g_object_new(GTK_TYPE_SHORTCUTS_GROUP, "title", title, NULL);
-}
-
 static void action_shortcuts(GSimpleAction *a, GVariant *p, gpointer ud)
 {
-    (void)a;
-    (void)p;
-    SilktexWindow *self = SILKTEX_WINDOW(ud);
-
-    G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-    GtkWidget *win = g_object_new(GTK_TYPE_SHORTCUTS_WINDOW, "modal", TRUE, "transient-for", self,
-                                  "destroy-with-parent", TRUE, NULL);
-
-    GtkWidget *section =
-        g_object_new(GTK_TYPE_SHORTCUTS_SECTION, "section-name", "main", "visible", TRUE, NULL);
-
-    GtkWidget *g_files = make_group(_("Files"));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_files),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>n", _("New tab"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_files),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>o", _("Open"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_files),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>s", _("Save"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_files),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary><Shift>s", _("Save As"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_files),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>q", _("Quit"))));
-    gtk_shortcuts_section_add_group(GTK_SHORTCUTS_SECTION(section), GTK_SHORTCUTS_GROUP(g_files));
-
-    GtkWidget *g_edit = make_group(_("Editing"));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_edit),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>z", _("Undo"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_edit),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary><Shift>z", _("Redo"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_edit),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>b", _("Bold"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_edit),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>i", _("Italic"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_edit),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>u", _("Underline"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_edit),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>f", _("Find"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_edit),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>h", _("Find & Replace"))));
-    gtk_shortcuts_section_add_group(GTK_SHORTCUTS_SECTION(section), GTK_SHORTCUTS_GROUP(g_edit));
-
-    GtkWidget *g_doc = make_group(_("Document"));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_doc),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>Return", _("Compile"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_doc),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary><Shift>f", _("Forward SyncTeX"))));
-    gtk_shortcuts_section_add_group(GTK_SHORTCUTS_SECTION(section), GTK_SHORTCUTS_GROUP(g_doc));
-
-    GtkWidget *g_view = make_group(_("View"));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_view),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>plus", _("Zoom in"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_view),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>minus", _("Zoom out"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_view),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>0", _("Fit width"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_view),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("F8", _("Toggle outline"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_view),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("F9", _("Toggle preview"))));
-    gtk_shortcuts_group_add_shortcut(GTK_SHORTCUTS_GROUP(g_view),
-                                     GTK_SHORTCUTS_SHORTCUT(make_shortcut("F10", _("Main menu"))));
-    gtk_shortcuts_group_add_shortcut(GTK_SHORTCUTS_GROUP(g_view),
-                                     GTK_SHORTCUTS_SHORTCUT(make_shortcut("F11", _("Fullscreen"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_view),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>question", _("Keyboard shortcuts"))));
-    gtk_shortcuts_group_add_shortcut(
-        GTK_SHORTCUTS_GROUP(g_view),
-        GTK_SHORTCUTS_SHORTCUT(make_shortcut("<Primary>comma", _("Preferences"))));
-    gtk_shortcuts_section_add_group(GTK_SHORTCUTS_SECTION(section), GTK_SHORTCUTS_GROUP(g_view));
-
-    gtk_shortcuts_window_add_section(GTK_SHORTCUTS_WINDOW(win), GTK_SHORTCUTS_SECTION(section));
-    gtk_window_present(GTK_WINDOW(win));
-    G_GNUC_END_IGNORE_DEPRECATIONS
+    (void)a; (void)p;
+    silktex_cmd_palette_show(GTK_WIDGET(ud));
 }
 
 /* Pop down first, then fire the action on an idle to avoid tearing-down state. */
