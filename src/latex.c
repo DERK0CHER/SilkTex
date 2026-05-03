@@ -11,6 +11,13 @@ static const char align_chars[][2] = {"l", "c", "r"};
 static const char bracket_names[][16] = {"matrix",  "pmatrix", "bmatrix",
                                          "Bmatrix", "vmatrix", "Vmatrix"};
 
+/* Append a 1-or-2-digit positive integer without printf overhead. */
+static void append_int2(GString *s, int n)
+{
+    if (n >= 10) g_string_append_c(s, (gchar)('0' + n / 10));
+    g_string_append_c(s, (gchar)('0' + n % 10));
+}
+
 char *silktex_latex_generate_table(int rows, int cols, int borders, int alignment)
 {
     if (rows < 1) rows = 1;
@@ -18,20 +25,24 @@ char *silktex_latex_generate_table(int rows, int cols, int borders, int alignmen
     if (alignment < 0 || alignment > 2) alignment = 1;
     if (borders < 0 || borders > 2) borders = 0;
 
-    GString *col_spec = g_string_new("{");
-    if (borders) g_string_append(col_spec, "|");
+    /* col_spec: "{" + optional "|" + cols*(1 char + optional "|") + "}" */
+    GString *col_spec = g_string_sized_new(cols * 2 + 4);
+    g_string_append_c(col_spec, '{');
+    if (borders) g_string_append_c(col_spec, '|');
     for (int j = 0; j < cols; j++) {
         g_string_append(col_spec, align_chars[alignment]);
-        if (borders == 2 || (borders == 1 && j == cols - 1)) g_string_append(col_spec, "|");
+        if (borders == 2 || (borders == 1 && j == cols - 1)) g_string_append_c(col_spec, '|');
     }
-    g_string_append(col_spec, "}");
+    g_string_append_c(col_spec, '}');
 
-    GString *body = g_string_new(NULL);
+    /* body: rows × (3 + cols×6) bytes is a safe upper bound */
+    GString *body = g_string_sized_new((gsize)rows * (cols * 6 + 3) + 16);
     if (borders) g_string_append(body, "\n\\hline");
     for (int i = 0; i < rows; i++) {
         g_string_append(body, "\n\t");
         for (int j = 0; j < cols; j++) {
-            g_string_append_printf(body, "%d%d", i + 1, j + 1);
+            append_int2(body, i + 1);
+            append_int2(body, j + 1);
             g_string_append(body, j != cols - 1 ? " & " : "\\\\");
         }
         if (borders == 2 || (borders == 1 && i == rows - 1)) g_string_append(body, "\n\\hline");
@@ -49,12 +60,13 @@ char *silktex_latex_generate_matrix(int bracket, int rows, int cols)
     if (rows < 1) rows = 1;
     if (cols < 1) cols = 1;
 
-    GString *s = g_string_new(NULL);
+    GString *s = g_string_sized_new((gsize)rows * (cols * 6 + 3) + 32);
     g_string_append_printf(s, "$\\begin{%s}", bracket_names[bracket]);
     for (int i = 0; i < rows; i++) {
         g_string_append(s, "\n\t");
         for (int j = 0; j < cols; j++) {
-            g_string_append_printf(s, "%d%d", i + 1, j + 1);
+            append_int2(s, i + 1);
+            append_int2(s, j + 1);
             g_string_append(s, j != cols - 1 ? " & " : "\\\\");
         }
     }
