@@ -680,6 +680,185 @@ void silktex_prefs_set_apply_callback(SilktexPrefs *self, SilktexPrefsApplyFunc 
     self->apply_data = user_data;
 }
 
+/* ── Import helpers ─────────────────────────────────────────────────────── */
+
+/* Convert TeXstudio %<name%> / %| placeholders to $N / $0. */
+static char *texstudio_tab_stops_to_vscode(const char *body)
+{
+    GString *out = g_string_new(NULL);
+    GHashTable *seen = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    int next_n = 1;
+    const char *p = body;
+
+    while (*p) {
+        if (p[0] == '%' && p[1] == '|') {
+            g_string_append(out, "$0");
+            p += 2;
+        } else if (p[0] == '%' && p[1] == '<') {
+            const char *end = strstr(p + 2, "%>");
+            if (!end) { g_string_append_c(out, *p++); continue; }
+            /* Extract placeholder name (strip optional :flags after first ':') */
+            gsize name_len = (gsize)(end - (p + 2));
+            g_autofree char *raw = g_strndup(p + 2, name_len);
+            char *colon = strchr(raw, ':');
+            if (colon) *colon = '\0';
+            g_autofree char *name = g_strdup(raw);
+
+            gpointer stored = g_hash_table_lookup(seen, name);
+            int n;
+            if (stored) {
+                n = GPOINTER_TO_INT(stored);
+            } else {
+                n = next_n++;
+                g_hash_table_insert(seen, g_strdup(name), GINT_TO_POINTER(n));
+            }
+            g_string_append_printf(out, "${%d:%s}", n, name);
+            p = end + 2;
+        } else {
+            g_string_append_c(out, *p++);
+        }
+    }
+    g_hash_table_destroy(seen);
+    return g_string_free(out, FALSE);
+}
+
+static void import_texstudio_macro(SilktexPrefs *self, const char *filename)
+{
+    if (!self->snippet_entries) return;
+
+    g_autoptr(JsonParser) parser = json_parser_new();
+    GError *err = NULL;
+    if (!json_parser_load_from_file(parser, filename, &err)) {
+        g_warning("Import: failed to parse %s: %s", filename, err ? err->message : "?");
+        g_clear_error(&err);
+        return;
+    }
+    JsonNode *root = json_parser_get_root(parser);
+    if (!JSON_NODE_HOLDS_OBJECT(root)) return;
+    JsonObject *obj = json_node_get_object(root);
+
+    const char *name   = json_object_has_member(obj, "name")   ? json_object_get_string_member(obj, "name")   : NULL;
+    const char *abbrev = json_object_has_member(obj, "abbrev") ? json_object_get_string_member(obj, "abbrev") : NULL;
+
+    const char *raw_body = NULL;
+    if (json_object_has_member(obj, "tag")) {
+        JsonNode *tag_node = json_object_get_member(obj, "tag");
+        if (JSON_NODE_HOLDS_ARRAY(tag_node)) {
+            JsonArray *arr = json_node_get_array(tag_node);
+            if (json_array_get_length(arr) > 1)
+                raw_body = json_array_get_string_element(arr, 1);
+        }
+    }
+    if (!raw_body || !*raw_body) return;
+
+    SnippetEntry *e = g_new0(SnippetEntry, 1);
+    e->name  = g_strdup((name && *name) ? name : (abbrev && *abbrev ? abbrev : "Imported"));
+    e->key   = g_strdup((abbrev && *abbrev) ? abbrev : "");
+    e->accel = g_strdup("");
+    e->body  = texstudio_tab_stops_to_vscode(raw_body);
+    g_ptr_array_add(self->snippet_entries, e);
+}
+
+static void import_gummi_snippets(SilktexPrefs *self, const char *filename)
+{
+    if (!self->snippet_entries) return;
+
+    g_autofree char *contents = NULL;
+    GError *err = NULL;
+    if (!g_file_get_contents(filename, &contents, NULL, &err)) {
+        g_warning("Import: cannot read %s: %s", filename, err ? err->message : "?");
+        g_clear_error(&err);
+        return;
+    }
+
+    gchar **lines = g_strsplit(contents, "\n", -1);
+    int i = 0;
+    while (lines[i]) {
+        /* "snippet trigger,,description" or "snippet trigger" */
+        if (g_str_has_prefix(lines[i], "snippet ")) {
+            const char *rest = lines[i] + 8;
+            const char *sep  = strstr(rest, ",,");
+            g_autofree char *trigger = sep ? g_strndup(rest, (gsize)(sep - rest)) : g_strdup(rest);
+            const char *description  = sep ? sep + 2 : trigger;
+            g_strstrip(trigger);
+
+            GString *body = g_string_new(NULL);
+            i++;
+            while (lines[i] && (lines[i][0] == '\t' || lines[i][0] == ' ')) {
+                const char *line = lines[i];
+                if (line[0] == '\t') line++;  /* strip one leading tab */
+                if (body->len > 0) g_string_append_c(body, '\n');
+                g_string_append(body, line);
+                i++;
+            }
+
+            if (body->len > 0) {
+                SnippetEntry *e = g_new0(SnippetEntry, 1);
+                e->name  = g_strdup(description && *description ? description : trigger);
+                e->key   = g_strdup(trigger);
+                e->accel = g_strdup("");
+                e->body  = g_string_free(body, FALSE);
+                g_ptr_array_add(self->snippet_entries, e);
+            } else {
+                g_string_free(body, TRUE);
+            }
+        } else {
+            i++;
+        }
+    }
+    g_strfreev(lines);
+}
+
+static void on_import_file_chosen(GObject *src, GAsyncResult *res, gpointer ud)
+{
+    SilktexPrefs *self = SILKTEX_PREFS(ud);
+    GError *err = NULL;
+    GFile *file = gtk_file_dialog_open_finish(GTK_FILE_DIALOG(src), res, &err);
+    if (!file) { g_clear_error(&err); return; }
+
+    g_autofree char *path = g_file_get_path(file);
+    g_object_unref(file);
+    if (!path) return;
+
+    if (g_str_has_suffix(path, ".txsMacro"))
+        import_texstudio_macro(self, path);
+    else  /* .cfg or anything else → try Gummi */
+        import_gummi_snippets(self, path);
+
+    snippets_rebuild_pills(self);
+}
+
+static void on_snippet_import(GtkButton *btn, gpointer ud)
+{
+    (void)btn;
+    SilktexPrefs *self = SILKTEX_PREFS(ud);
+    GtkRoot *root = gtk_widget_get_root(GTK_WIDGET(self));
+
+    GtkFileDialog *dlg = gtk_file_dialog_new();
+    gtk_file_dialog_set_title(dlg, _("Import Snippets"));
+
+    GListStore *filters = g_list_store_new(GTK_TYPE_FILE_FILTER);
+    GtkFileFilter *f_gummi = gtk_file_filter_new();
+    gtk_file_filter_set_name(f_gummi, _("Gummi snippets (*.cfg)"));
+    gtk_file_filter_add_pattern(f_gummi, "*.cfg");
+    g_list_store_append(filters, f_gummi);
+    g_object_unref(f_gummi);
+
+    GtkFileFilter *f_txs = gtk_file_filter_new();
+    gtk_file_filter_set_name(f_txs, _("TeXstudio macro (*.txsMacro)"));
+    gtk_file_filter_add_pattern(f_txs, "*.txsMacro");
+    g_list_store_append(filters, f_txs);
+    g_object_unref(f_txs);
+
+    gtk_file_dialog_set_filters(dlg, G_LIST_MODEL(filters));
+    g_object_unref(filters);
+
+    gtk_file_dialog_open(dlg, GTK_WINDOW(root), NULL, on_import_file_chosen, self);
+    g_object_unref(dlg);
+}
+
+/* ── End import helpers ─────────────────────────────────────────────────── */
+
 static void on_snippet_save(GtkButton *btn, gpointer ud)
 {
     (void)btn;
@@ -1462,16 +1641,19 @@ void silktex_prefs_set_snippets(SilktexPrefs *self, SilktexSnippets *snippets)
     gtk_widget_set_margin_top(toolbar, 4);
     gtk_widget_set_margin_bottom(toolbar, 4);
 
-    GtkWidget *btn_save = gtk_button_new_with_label(_("Save"));
-    GtkWidget *btn_reset = gtk_button_new_with_label(_("Reset"));
-    GtkWidget *btn_new = gtk_button_new_with_label(_("New"));
+    GtkWidget *btn_save   = gtk_button_new_with_label(_("Save"));
+    GtkWidget *btn_reset  = gtk_button_new_with_label(_("Reset"));
+    GtkWidget *btn_new    = gtk_button_new_with_label(_("New"));
+    GtkWidget *btn_import = gtk_button_new_with_label(_("Import…"));
     gtk_widget_add_css_class(btn_save, "suggested-action");
     gtk_widget_set_hexpand(btn_save, FALSE);
-    g_signal_connect(btn_save, "clicked", G_CALLBACK(on_snippet_save), self);
-    g_signal_connect(btn_reset, "clicked", G_CALLBACK(on_snippet_reset), self);
-    g_signal_connect(btn_new, "clicked", G_CALLBACK(on_snippet_new), self);
+    g_signal_connect(btn_save,   "clicked", G_CALLBACK(on_snippet_save),   self);
+    g_signal_connect(btn_reset,  "clicked", G_CALLBACK(on_snippet_reset),  self);
+    g_signal_connect(btn_new,    "clicked", G_CALLBACK(on_snippet_new),    self);
+    g_signal_connect(btn_import, "clicked", G_CALLBACK(on_snippet_import), self);
 
     gtk_box_append(GTK_BOX(toolbar), btn_new);
+    gtk_box_append(GTK_BOX(toolbar), btn_import);
     gtk_box_append(GTK_BOX(toolbar), btn_save);
     gtk_box_append(GTK_BOX(toolbar), btn_reset);
 
