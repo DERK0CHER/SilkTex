@@ -270,45 +270,26 @@ template $SilktexWindow : Adw.ApplicationWindow {
           }
         };
 
-        content: Gtk.Paned editor_paned {
-          orientation: horizontal;
-          shrink-start-child: false;
-          shrink-end-child: false;
-          // Keep the editor anchored on the left; let preview absorb resize.
-          resize-start-child: false;
-          resize-end-child: true;
-          wide-handle: false;
+        content: Adw.OverlaySplitView editor_split {
+          sidebar-position: end;
           vexpand: true;
 
-          styles ["silktex-editor-paned"]
+          content: Adw.ToolbarView editor_toolbar_view {
+            content: Gtk.Paned log_paned {
+              orientation: vertical;
+              shrink-start-child: false;
+              shrink-end-child: false;
+              resize-start-child: true;
+              resize-end-child: false;
 
-          // ------------------------------------------------------------------
-          // Pane 2 - editor.  Tabs are in the window toolbar (root_toolbar).
-          // The bottom toolbar holds the code tools + compile log (widgets
-          // injected from window.c).
-          // ------------------------------------------------------------------
+              start-child: Adw.TabView tab_view {
+                vexpand: true;
+                hexpand: false;
+              };
+            };
+          };
 
-Adw.ToolbarView editor_toolbar_view {
-  content: Gtk.Paned log_paned {
-    orientation: vertical;
-    shrink-start-child: false;
-    shrink-end-child: false;
-    resize-start-child: true;
-    resize-end-child: false;
-    
-    start-child: Adw.TabView tab_view {
-      vexpand: true;
-      hexpand: false;
-    };
-  };
-}
-
-          // ------------------------------------------------------------------
-          // Pane 3 - preview.  View tools (zoom / page / sync / export) live
-          // in the preview pane's bottom toolbar, matching pane 2.
-          // ------------------------------------------------------------------
-          [end]
-          Adw.ToolbarView preview_toolbar_view {
+          sidebar: Adw.ToolbarView preview_toolbar_view {
             [bottom]
             Gtk.CenterBox {
               margin-start: 6;
@@ -370,7 +351,7 @@ Adw.ToolbarView editor_toolbar_view {
               hexpand: true;
               vexpand: true;
             };
-          }
+          };
         };
       };
     };

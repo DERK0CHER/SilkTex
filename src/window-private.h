@@ -40,7 +40,7 @@ struct _SilktexWindow {
     AdwTabView *tab_view;
     AdwTabBar *tab_bar;
     AdwOverlaySplitView *split_view;
-    GtkPaned *editor_paned;
+    AdwOverlaySplitView *editor_split;
     GtkPaned *log_paned;
     AdwToolbarView *editor_toolbar_view;
     GtkBox *editor_bottom_bar;
@@ -90,19 +90,6 @@ struct _SilktexWindow {
     gboolean is_fullscreen;
     gboolean preview_narrow;
     gboolean preview_auto_collapsed;
-
-    /*
-     * Horizontal split between editor (start) and PDF preview (end).
-     * preview_pane_silence: skip notify::position handler while moving the
-     *   grip programmatically to avoid feedback loops.
-     * preview_split_seeded: ignore Gtk's default position until we apply 50%
-     *   or a restored value (otherwise user drag is overwritten).
-     */
-    gint preview_pane_pos;
-    gdouble preview_pane_ratio;
-    gboolean preview_pane_restorable;
-    gboolean preview_pane_silence;
-    gboolean preview_split_seeded;
 
     /* Single high-priority toast; dismiss before showing another */
 
