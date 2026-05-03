@@ -270,11 +270,16 @@ template $SilktexWindow : Adw.ApplicationWindow {
           }
         };
 
-        content: Adw.OverlaySplitView editor_split {
-          sidebar-position: end;
+        content: Gtk.Paned editor_paned {
+          orientation: horizontal;
+          shrink-start-child: false;
+          shrink-end-child: false;
+          resize-start-child: false;
+          resize-end-child: true;
+          wide-handle: false;
           vexpand: true;
 
-          content: Adw.ToolbarView editor_toolbar_view {
+          start-child: Adw.ToolbarView editor_toolbar_view {
             content: Gtk.Paned log_paned {
               orientation: vertical;
               shrink-start-child: false;
@@ -289,7 +294,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
             };
           };
 
-          sidebar: Adw.ToolbarView preview_toolbar_view {
+          end-child: Adw.ToolbarView preview_toolbar_view {
             [bottom]
             Gtk.CenterBox {
               margin-start: 6;
@@ -357,6 +362,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
     };
   };
 }
+
 
 menu insert_menu {
   section {

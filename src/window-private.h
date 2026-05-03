@@ -40,7 +40,7 @@ struct _SilktexWindow {
     AdwTabView *tab_view;
     AdwTabBar *tab_bar;
     AdwOverlaySplitView *split_view;
-    AdwOverlaySplitView *editor_split;
+    GtkPaned *editor_paned;
     GtkPaned *log_paned;
     AdwToolbarView *editor_toolbar_view;
     GtkBox *editor_bottom_bar;

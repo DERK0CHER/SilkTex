@@ -1056,9 +1056,10 @@ void silktex_window_on_prefs_apply(gpointer user_data)
 
 void silktex_window_apply_editor_paned_half_split(SilktexWindow *self)
 {
-    if (!self->editor_split) return;
-    adw_overlay_split_view_set_sidebar_width_fraction(self->editor_split, 0.5);
-    adw_overlay_split_view_set_show_sidebar(self->editor_split, TRUE);
+    if (!self->editor_paned) return;
+    int w = gtk_widget_get_width(GTK_WIDGET(self->editor_paned));
+    gtk_paned_set_position(self->editor_paned, w > 0 ? w / 2 : 400);
+    gtk_widget_set_visible(GTK_WIDGET(self->preview_toolbar_view), TRUE);
     if (self->btn_preview)
         gtk_toggle_button_set_active(self->btn_preview, TRUE);
 }
@@ -1068,8 +1069,12 @@ static void on_preview_toggled(GtkToggleButton *button, gpointer user_data)
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     gboolean visible = gtk_toggle_button_get_active(button);
 
-    if (self->editor_split)
-        adw_overlay_split_view_set_show_sidebar(self->editor_split, visible);
+    gtk_widget_set_visible(GTK_WIDGET(self->preview_toolbar_view), visible);
+    if (visible && self->editor_paned) {
+        int w = gtk_widget_get_width(GTK_WIDGET(self->editor_paned));
+        if (w > 0 && gtk_paned_get_position(self->editor_paned) >= w - 1)
+            gtk_paned_set_position(self->editor_paned, w / 2);
+    }
 
     gtk_button_set_icon_name(GTK_BUTTON(button),
                              visible ? "view-dual-symbolic" : "view-continuous-symbolic");
@@ -1086,25 +1091,14 @@ static void on_window_width_changed(GObject *object, GParamSpec *pspec, gpointer
     if (narrow == self->preview_narrow) return;
     self->preview_narrow = narrow;
 
-    if (!self->editor_split) return;
+    if (!self->editor_paned || !self->btn_preview) return;
 
     if (narrow) {
-        self->preview_auto_collapsed =
-            adw_overlay_split_view_get_show_sidebar(self->editor_split);
-        adw_overlay_split_view_set_collapsed(self->editor_split, TRUE);
-        adw_overlay_split_view_set_show_sidebar(self->editor_split, FALSE);
-        if (self->btn_preview)
-            gtk_toggle_button_set_active(self->btn_preview, FALSE);
-    } else {
-        adw_overlay_split_view_set_collapsed(self->editor_split, FALSE);
-        /* Always restore 50/50 when coming back from narrow mode. */
-        adw_overlay_split_view_set_sidebar_width_fraction(self->editor_split, 0.5);
-        if (self->preview_auto_collapsed) {
-            self->preview_auto_collapsed = FALSE;
-            adw_overlay_split_view_set_show_sidebar(self->editor_split, TRUE);
-            if (self->btn_preview)
-                gtk_toggle_button_set_active(self->btn_preview, TRUE);
-        }
+        self->preview_auto_collapsed = gtk_toggle_button_get_active(self->btn_preview);
+        gtk_toggle_button_set_active(self->btn_preview, FALSE);
+    } else if (self->preview_auto_collapsed) {
+        self->preview_auto_collapsed = FALSE;
+        gtk_toggle_button_set_active(self->btn_preview, TRUE);
     }
 }
 
@@ -1310,7 +1304,7 @@ static void silktex_window_class_init(SilktexWindowClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, tab_view);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, tab_bar);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, split_view);
-    gtk_widget_class_bind_template_child(widget_class, SilktexWindow, editor_split);
+    gtk_widget_class_bind_template_child(widget_class, SilktexWindow, editor_paned);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, log_paned);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, editor_toolbar_view);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, editor_bottom_bar);
@@ -1476,10 +1470,8 @@ static void silktex_window_init(SilktexWindow *self)
     gtk_box_append(self->preview_box, GTK_WIDGET(self->preview));
     silktex_window_apply_preview_theme(self);
 
-    if (self->editor_split) {
-        adw_overlay_split_view_set_min_sidebar_width(self->editor_split, 200);
-        adw_overlay_split_view_set_sidebar_width_fraction(self->editor_split, 0.5);
-    }
+    if (self->editor_paned)
+        gtk_paned_set_position(self->editor_paned, 400);
 
     g_signal_connect(self->preview, "notify::page", G_CALLBACK(on_preview_page_changed), self);
     g_signal_connect(self->preview, "notify::n-pages", G_CALLBACK(on_preview_page_changed), self);
