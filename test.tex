@@ -1,0 +1,238 @@
+\documentclass{article}
+
+% upkg — Use Package
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{lipsum}
+
+\title{SilkTex Feature Test}
+\author{Test Author}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+% ── sec / sub / subs / par / subp ────────────────────────────────────────────
+
+\section{Introduction}
+\label{sec:intro}
+
+This document exercises every snippet and SilkTex feature.
+See Section~\ref{sec:math} for mathematics and Table~\ref{tab:data} for tabular data.
+% section intro (end)
+
+\subsection{Motivation}
+\label{sub:motivation}
+
+\lipsum[1]
+% subsection motivation (end)
+
+\subsubsection{Background}
+\label{ssub:background}
+
+\lipsum[2]
+% subsubsection background (end)
+
+\paragraph{A named paragraph}
+\label{par:named}
+
+\lipsum[3]
+% paragraph named (end)
+
+\subparagraph{Even finer detail}
+\label{subp:detail}
+
+\lipsum[4]
+% subparagraph detail (end)
+
+% ── Equations: eq / ueq / aeq / aneq / ali / gat / spl / cas ────────────────
+
+\section{Mathematics}
+\label{sec:math}
+
+% eq — numbered equation
+\begin{equation}
+    E = mc^2
+    \label{eq:einstein}
+\end{equation}
+
+% ueq — unnumbered display
+\[
+    \int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi}
+\]
+
+% aeq — align*
+\begin{align*}
+    (a+b)^2 &= a^2 + 2ab + b^2 \\
+    (a-b)^2 &= a^2 - 2ab + b^2
+\end{align*}
+
+% aneq — align (numbered)
+\begin{align}
+    \nabla \cdot \mathbf{E} &= \frac{\rho}{\varepsilon_0} \label{eq:gauss} \\
+    \nabla \times \mathbf{B} &= \mu_0 \mathbf{J} + \mu_0\varepsilon_0 \frac{\partial \mathbf{E}}{\partial t} \label{eq:ampere}
+\end{align}
+
+% ali — aligned (with variant suffix)
+\begin{aligned}
+    f(x) &= x^2 + 3x - 4 \\
+    f'(x) &= 2x + 3
+\end{aligned}
+
+% gat — gather (numbered)
+\begin{gather}
+    \sin^2\theta + \cos^2\theta = 1 \\
+    \tan\theta = \frac{\sin\theta}{\cos\theta}
+\end{gather}
+
+% spl — split inside equation
+\begin{equation}
+    \begin{split}
+        (x+y)^3 &= x^3 + 3x^2y \\
+                &\quad + 3xy^2 + y^3
+    \end{split}
+\end{equation}
+
+% frac — fraction
+The quadratic formula is $x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}$.
+
+% cbrace — curly braces
+The set $S = \left \{ x \in \mathbb{R} \mid x > 0 \right \}$ contains all positive reals.
+
+% cas — cases
+\begin{equation}
+    |x| =
+    \begin{cases}
+        x,  &\text{ if } x \geq 0 \\
+        -x, &\text{ if } x < 0
+    \end{cases}
+\end{equation}
+
+% mat — matrix
+\[
+    A = \begin{pmatrix}
+        1 & 2 & 3 \\
+        4 & 5 & 6 \\
+        7 & 8 & 9
+    \end{pmatrix}
+    \quad
+    B = \begin{bmatrix}
+        a & b \\
+        c & d
+    \end{bmatrix}
+\]
+
+% ── Lists: enum / item / desc / itd ──────────────────────────────────────────
+
+\section{Lists}
+\label{sec:lists}
+
+% enum — enumerate
+\begin{enumerate}
+    \item First item
+    \item Second item
+    \item Third item
+\end{enumerate}
+
+% item — itemize
+\begin{itemize}
+    \item Bullet one
+    \item Bullet two
+    \item Bullet three
+\end{itemize}
+
+% desc — description
+\begin{description}
+    \item[Compiler] Runs \texttt{pdflatex} asynchronously
+    \item[Preview] Poppler-based PDF viewer with SyncTeX
+    \item[Snippets] VS Code-style JSON snippet engine
+\end{description}
+
+% itd — item with description (inside description env)
+\begin{description}
+    \item[Alpha] First letter of the Greek alphabet
+    \item[Beta] Second letter of the Greek alphabet
+\end{description}
+
+% ── Tabular / tab ────────────────────────────────────────────────────────────
+
+\section{Tables}
+\label{sec:tables}
+
+% tab — tabular inside table float
+\begin{table}[htp]
+    \centering
+    \caption{Benchmark results}
+    \label{tab:data}
+    \begin{tabular}{lrr}
+        \toprule
+        Method    & Time (ms) & Memory (MB) \\
+        \midrule
+        Baseline  & 142       & 48          \\
+        Optimised & 89        & 31          \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+See Table~\ref{tab:data} for the numbers.
+
+% ── Image / figure reference ──────────────────────────────────────────────────
+
+\section{Figures}
+\label{sec:figures}
+
+% img — figure environment (placeholder filename — won't exist, tests parser)
+\begin{figure}[htp]
+    \centering
+    % \includegraphics[scale=1.0]{example-image}
+    \fbox{\rule{0pt}{4cm}\rule{8cm}{0pt}}
+    \caption{A placeholder figure}
+    \label{fig:placeholder}
+\end{figure}
+
+See Figure~\ref{fig:placeholder} above.
+
+% ── Cross-references: figure / table / section / page ────────────────────────
+
+\section{Cross-References}
+\label{sec:refs}
+
+Figure~\ref{fig:placeholder} appears on page~\pageref{fig:placeholder}.\\
+Table~\ref{tab:data} appears in Section~\ref{sec:tables}.\\
+Equation~(\ref{eq:einstein}) is in Section~\ref{sec:math}.
+
+% ── Generic environment (begin) ───────────────────────────────────────────────
+
+\section{Generic Environment}
+\label{sec:env}
+
+\begin{quote}
+    The \texttt{begin} snippet inserts any arbitrary environment.
+    This \texttt{quote} environment was created with it.
+\end{quote}
+
+% ── Bibliography (tests bibtex pipeline) ─────────────────────────────────────
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+\lipsum[5]
+
+\begin{thebibliography}{9}
+    \bibitem{knuth84}
+        Donald E.\ Knuth,
+        \textit{The \TeX{}book},
+        Addison-Wesley, 1984.
+    \bibitem{lamport94}
+        Leslie Lamport,
+        \textit{\LaTeX: A Document Preparation System},
+        Addison-Wesley, 1994.
+\end{thebibliography}
+
+\end{document}
