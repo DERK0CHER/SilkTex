@@ -44,6 +44,10 @@ impl Ticket {
     }
 
     fn decode(s: &str) -> Result<Self> {
+        // Reject huge raw inputs before allocating to prevent memory exhaustion.
+        if s.len() > MAX_TICKET_BYTES * 2 {
+            anyhow::bail!("ticket too large");
+        }
         // Strip whitespace and non-base32 chars (handles copy-paste noise).
         let cleaned: String = s
             .chars()
@@ -449,6 +453,120 @@ async fn joiner_run(
     let _ = update_tx.send(("__peer_count__".into(), 0u64.to_be_bytes().to_vec())).await;
     endpoint.close().await;
     tracing::info!("joiner stopped");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{inject_peer_id, read_msg, write_msg, Ticket, MAX_TICKET_BYTES, MAX_WIRE_PAYLOAD, TAG_OP};
+    use tokio::io::AsyncWriteExt;
+
+    // ---- Ticket::decode security ----------------------------------------
+
+    #[test]
+    fn ticket_decode_rejects_oversized_raw_input() {
+        // Pre-filter guard: huge input rejected before allocation.
+        let huge = "a".repeat(MAX_TICKET_BYTES * 2 + 1);
+        let err = Ticket::decode(&huge).unwrap_err();
+        assert!(err.to_string().contains("ticket too large"), "got: {err}");
+    }
+
+    #[test]
+    fn ticket_decode_rejects_at_post_filter_limit() {
+        // Input fits the pre-filter but cleaned string exceeds MAX_TICKET_BYTES.
+        let just_over = "a".repeat(MAX_TICKET_BYTES + 1);
+        let err = Ticket::decode(&just_over).unwrap_err();
+        assert!(err.to_string().contains("ticket too large"), "got: {err}");
+    }
+
+    #[test]
+    fn ticket_decode_empty_input_errors() {
+        // Empty input: empty cleaned string → postcard decode fails (not a panic).
+        let err = Ticket::decode("").unwrap_err();
+        assert!(!err.to_string().is_empty());
+    }
+
+    // ---- inject_peer_id -------------------------------------------------
+
+    #[test]
+    fn inject_peer_id_inserts_field() {
+        let payload = br#"{"type":"cursor","offset":5}"#;
+        let result = inject_peer_id(payload, "peer42");
+        let val: serde_json::Value = serde_json::from_slice(&result).unwrap();
+        assert_eq!(val["peer_id"], "peer42");
+        assert_eq!(val["type"], "cursor");
+        assert_eq!(val["offset"], 5);
+    }
+
+    #[test]
+    fn inject_peer_id_preserves_existing_fields() {
+        let payload = br#"{"a":1,"b":2}"#;
+        let result = inject_peer_id(payload, "p");
+        let val: serde_json::Value = serde_json::from_slice(&result).unwrap();
+        assert_eq!(val["a"], 1);
+        assert_eq!(val["b"], 2);
+        assert_eq!(val["peer_id"], "p");
+    }
+
+    #[test]
+    fn inject_peer_id_overwrites_existing_peer_id() {
+        let payload = br#"{"peer_id":"old"}"#;
+        let result = inject_peer_id(payload, "new");
+        let val: serde_json::Value = serde_json::from_slice(&result).unwrap();
+        assert_eq!(val["peer_id"], "new");
+    }
+
+    #[test]
+    fn inject_peer_id_passthrough_invalid_json() {
+        let payload = b"not json at all";
+        let result = inject_peer_id(payload, "p");
+        assert_eq!(result, payload);
+    }
+
+    #[test]
+    fn inject_peer_id_passthrough_non_object() {
+        let payload = b"[1,2,3]";
+        let result = inject_peer_id(payload, "p");
+        let val: serde_json::Value = serde_json::from_slice(&result).unwrap();
+        assert!(val.is_array());
+    }
+
+    // ---- Wire framing ---------------------------------------------------
+
+    #[tokio::test]
+    async fn wire_roundtrip_op_tag() {
+        let (mut w, mut r) = tokio::io::duplex(256);
+        write_msg(&mut w, TAG_OP, b"hello world").await.unwrap();
+        let (tag, payload) = read_msg(&mut r).await.unwrap();
+        assert_eq!(tag, TAG_OP);
+        assert_eq!(payload, b"hello world");
+    }
+
+    #[tokio::test]
+    async fn wire_roundtrip_empty_payload() {
+        let (mut w, mut r) = tokio::io::duplex(64);
+        write_msg(&mut w, TAG_OP, &[]).await.unwrap();
+        let (tag, payload) = read_msg(&mut r).await.unwrap();
+        assert_eq!(tag, TAG_OP);
+        assert!(payload.is_empty());
+    }
+
+    #[tokio::test]
+    async fn read_msg_rejects_oversized_len_header() {
+        let (mut w, mut r) = tokio::io::duplex(64);
+        w.write_u8(TAG_OP).await.unwrap();
+        w.write_u32((MAX_WIRE_PAYLOAD + 1) as u32).await.unwrap();
+        drop(w);
+        let err = read_msg(&mut r).await.unwrap_err();
+        assert!(err.to_string().contains("too large"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn write_msg_rejects_oversized_payload() {
+        let (mut w, _r) = tokio::io::duplex(64);
+        let large = vec![0u8; MAX_WIRE_PAYLOAD + 1];
+        let err = write_msg(&mut w, TAG_OP, &large).await.unwrap_err();
+        assert!(err.to_string().contains("too large"), "got: {err}");
+    }
 }
 
 async fn connect_with_retry(endpoint: &Endpoint, host_addr: &EndpointAddr) -> Result<Connection> {

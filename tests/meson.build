@@ -14,5 +14,7 @@ bench_exe = executable(
     c_args:       build_args,
 )
 
-test('pure functions', test_exe)
-benchmark('speed',    bench_exe)
+test('pure functions', test_exe,
+     env: ['G_SLICE=always-malloc', 'G_DEBUG=gc-friendly'])
+
+benchmark('speed', bench_exe)

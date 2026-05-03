@@ -120,6 +120,29 @@ static void test_utils_subinstr_null(void)
     g_assert_false(utils_subinstr("hello", NULL, FALSE));
 }
 
+static void test_utils_subinstr_empty_needle(void)
+{
+    /* strstr(haystack, "") is always non-NULL by C standard */
+    g_assert_true(utils_subinstr("", "hello", FALSE));
+}
+
+static void test_utils_subinstr_exact_match(void)
+{
+    g_assert_true(utils_subinstr("hello", "hello", FALSE));
+}
+
+static void test_utils_subinstr_empty_haystack(void)
+{
+    g_assert_false(utils_subinstr("hello", "", FALSE));
+}
+
+static void test_utils_subinstr_single_char(void)
+{
+    g_assert_true(utils_subinstr("H", "Hello", FALSE));
+    g_assert_false(utils_subinstr("h", "Hello", FALSE));
+    g_assert_true(utils_subinstr("h", "Hello", TRUE));
+}
+
 static void test_g_substr_basic(void)
 {
     char *src = "Hello World";
@@ -134,63 +157,124 @@ static void test_g_substr_middle(void)
     g_assert_cmpstr(s, ==, "World");
 }
 
-static void test_slist_append_find_remove(void)
+static void test_g_substr_empty_range(void)
 {
-    slist *head = g_new0(slist, 1);
-    head->first  = g_strdup("alpha");
-    head->second = g_strdup("1");
-    head->next   = NULL;
+    /* start == end: zero chars copied → empty string */
+    g_autofree char *s = g_substr("Hello", 2, 2);
+    g_assert_nonnull(s);
+    g_assert_cmpstr(s, ==, "");
+}
 
-    /* slist_find — exact match */
+static void test_g_substr_full_string(void)
+{
+    char *src = "Hi";
+    g_autofree char *s = g_substr(src, 0, 2);
+    g_assert_cmpstr(s, ==, "Hi");
+}
+
+static slist *make_node(const char *first, const char *second)
+{
+    slist *n = g_new0(slist, 1);
+    n->first  = g_strdup(first);
+    n->second = g_strdup(second);
+    return n;
+}
+
+static void free_slist(slist *head)
+{
+    while (head) {
+        slist *next = head->next;
+        g_free(head->first);
+        g_free(head->second);
+        g_free(head);
+        head = next;
+    }
+}
+
+static void test_slist_find_exact(void)
+{
+    slist *head = make_node("alpha", "1");
     slist *found = slist_find(head, "alpha", FALSE, FALSE);
     g_assert_nonnull(found);
     g_assert_cmpstr(found->first, ==, "alpha");
-
-    /* slist_find — no match, no create */
     g_assert_null(slist_find(head, "beta", FALSE, FALSE));
+    free_slist(head);
+}
 
-    /* slist_find — create */
+static void test_slist_find_prefix(void)
+{
+    slist *head = make_node("gamma", "1");
+    slist *found = slist_find(head, "gam", TRUE, FALSE);
+    g_assert_nonnull(found);
+    g_assert_cmpstr(found->first, ==, "gamma");
+    g_assert_null(slist_find(head, "xyz", TRUE, FALSE));
+    free_slist(head);
+}
+
+static void test_slist_find_create(void)
+{
+    slist *head = make_node("alpha", "1");
     slist *created = slist_find(head, "beta", FALSE, TRUE);
     g_assert_nonnull(created);
     g_assert_cmpstr(created->first, ==, "beta");
+    /* must be findable now */
+    g_assert_nonnull(slist_find(head, "beta", FALSE, FALSE));
+    free_slist(head);
+}
 
-    /* slist_append */
-    slist *extra = g_new0(slist, 1);
-    extra->first  = g_strdup("gamma");
-    extra->second = g_strdup("3");
-    extra->next   = NULL;
-    head = slist_append(head, extra);
-    g_assert_nonnull(slist_find(head, "gamma", FALSE, FALSE));
+static void test_slist_find_null_list(void)
+{
+    g_assert_null(slist_find(NULL, "term", FALSE, FALSE));
+    /* create=TRUE on NULL list: prev stays NULL, nothing created */
+    g_assert_null(slist_find(NULL, "term", FALSE, TRUE));
+}
 
-    /* slist_find — prefix match */
-    slist *pfound = slist_find(head, "gam", TRUE, FALSE);
-    g_assert_nonnull(pfound);
-    g_assert_cmpstr(pfound->first, ==, "gamma");
+static void test_slist_append_and_find(void)
+{
+    slist *head = make_node("a", "");
+    slist *tail = make_node("b", "");
+    head = slist_append(head, tail);
+    g_assert_nonnull(slist_find(head, "b", FALSE, FALSE));
+    free_slist(head);
+}
 
-    /* slist_remove — non-head node */
-    head = slist_remove(head, extra);
-    g_assert_null(slist_find(head, "gamma", FALSE, FALSE));
+static void test_slist_remove_head(void)
+{
+    slist *n1 = make_node("a", "");
+    slist *n2 = make_node("b", "");
+    n1->next = n2;
+    slist *head = slist_remove(n1, n1);
+    g_assert_true(head == n2);
+    g_assert_null(slist_find(head, "a", FALSE, FALSE));
+    free_slist(head);
+    /* n1 was unlinked but not freed by slist_remove */
+    g_free(n1->first); g_free(n1->second); g_free(n1);
+}
 
-    /* slist_remove — head node */
-    slist *old_head = head;
-    head = slist_remove(head, old_head);
-    /* head is now the "beta" node (or NULL if only one remained) */
+static void test_slist_remove_tail(void)
+{
+    slist *n1 = make_node("a", "");
+    slist *n2 = make_node("b", "");
+    n1->next = n2;
+    slist *head = slist_remove(n1, n2);
+    g_assert_true(head == n1);
+    g_assert_null(n1->next);
+    free_slist(head);
+    g_free(n2->first); g_free(n2->second); g_free(n2);
+}
 
-    /* cleanup */
-    slist *cur = head;
-    while (cur) {
-        slist *next = cur->next;
-        g_free(cur->first);
-        g_free(cur->second);
-        g_free(cur);
-        cur = next;
-    }
-    g_free(old_head->first);
-    g_free(old_head->second);
-    g_free(old_head);
-    g_free(extra->first);
-    g_free(extra->second);
-    g_free(extra);
+static void test_slist_remove_single_node(void)
+{
+    slist *node = make_node("only", "1");
+    slist *result = slist_remove(node, node);
+    g_assert_null(result);
+    g_free(node->first); g_free(node->second); g_free(node);
+}
+
+static void test_slist_remove_null_list(void)
+{
+    slist dummy = {0};
+    g_assert_null(slist_remove(NULL, &dummy));
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -433,6 +517,59 @@ static void test_config_missing_key_defaults(void)
     g_assert_cmpint(config_get_integer("Test", "no_such_int_xyz"), ==, 0);
 }
 
+static void test_config_overwrite(void)
+{
+    config_init();
+    config_set_string("TestOvr", "k", "first");
+    config_set_string("TestOvr", "k", "second");
+    g_assert_cmpstr(config_get_string("TestOvr", "k"), ==, "second");
+}
+
+static void test_config_isolation_across_groups(void)
+{
+    config_init();
+    config_set_string("GroupA", "shared", "valueA");
+    config_set_string("GroupB", "shared", "valueB");
+    g_assert_cmpstr(config_get_string("GroupA", "shared"), ==, "valueA");
+    g_assert_cmpstr(config_get_string("GroupB", "shared"), ==, "valueB");
+}
+
+static void test_config_many_keys(void)
+{
+    /* Write 64 integer keys, read them all back */
+    config_init();
+    for (int i = 0; i < 64; i++) {
+        g_autofree char *k = g_strdup_printf("key_%d", i);
+        config_set_integer("StressGroup", k, i * 7);
+    }
+    for (int i = 0; i < 64; i++) {
+        g_autofree char *k = g_strdup_printf("key_%d", i);
+        g_assert_cmpint(config_get_integer("StressGroup", k), ==, i * 7);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ *  memory / lifecycle stress
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static void test_snippets_lifecycle_stress(void)
+{
+    /* 20 create/unref cycles — detects leaks and use-after-free under
+     * G_SLICE=always-malloc + G_DEBUG=gc-friendly */
+    for (int i = 0; i < 20; i++) {
+        SilktexSnippets *s = silktex_snippets_new();
+        g_assert_nonnull(s);
+        silktex_snippets_set_modifiers(s, "Shift", "Alt");
+        g_object_unref(s);
+    }
+}
+
+static void test_git_status_free_null(void)
+{
+    /* NULL guard must hold — silktex_git_status_free has an explicit check */
+    silktex_git_status_free(NULL);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
  *  main
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -455,9 +592,23 @@ int main(int argc, char *argv[])
     g_test_add_func("/utils/subinstr/case_insensitive",      test_utils_subinstr_case_insensitive);
     g_test_add_func("/utils/subinstr/case_sensitive_fail",   test_utils_subinstr_case_sensitive_fail);
     g_test_add_func("/utils/subinstr/null",                  test_utils_subinstr_null);
+    g_test_add_func("/utils/subinstr/empty_needle",          test_utils_subinstr_empty_needle);
+    g_test_add_func("/utils/subinstr/exact_match",           test_utils_subinstr_exact_match);
+    g_test_add_func("/utils/subinstr/empty_haystack",        test_utils_subinstr_empty_haystack);
+    g_test_add_func("/utils/subinstr/single_char",           test_utils_subinstr_single_char);
     g_test_add_func("/utils/g_substr/basic",                 test_g_substr_basic);
     g_test_add_func("/utils/g_substr/middle",                test_g_substr_middle);
-    g_test_add_func("/utils/slist/append_find_remove",       test_slist_append_find_remove);
+    g_test_add_func("/utils/g_substr/empty_range",           test_g_substr_empty_range);
+    g_test_add_func("/utils/g_substr/full_string",           test_g_substr_full_string);
+    g_test_add_func("/utils/slist/find_exact",               test_slist_find_exact);
+    g_test_add_func("/utils/slist/find_prefix",              test_slist_find_prefix);
+    g_test_add_func("/utils/slist/find_create",              test_slist_find_create);
+    g_test_add_func("/utils/slist/find_null_list",           test_slist_find_null_list);
+    g_test_add_func("/utils/slist/append_and_find",          test_slist_append_and_find);
+    g_test_add_func("/utils/slist/remove_head",              test_slist_remove_head);
+    g_test_add_func("/utils/slist/remove_tail",              test_slist_remove_tail);
+    g_test_add_func("/utils/slist/remove_single_node",       test_slist_remove_single_node);
+    g_test_add_func("/utils/slist/remove_null_list",         test_slist_remove_null_list);
 
     /* latex.c — generate_table */
     g_test_add_func("/latex/table/basic",                    test_generate_table_basic);
@@ -495,6 +646,13 @@ int main(int argc, char *argv[])
     g_test_add_func("/config/boolean_roundtrip",             test_config_boolean_roundtrip);
     g_test_add_func("/config/integer_roundtrip",             test_config_integer_roundtrip);
     g_test_add_func("/config/missing_key_defaults",          test_config_missing_key_defaults);
+    g_test_add_func("/config/overwrite",                     test_config_overwrite);
+    g_test_add_func("/config/isolation_across_groups",       test_config_isolation_across_groups);
+    g_test_add_func("/config/many_keys",                     test_config_many_keys);
+
+    /* memory / lifecycle */
+    g_test_add_func("/memory/snippets_lifecycle_stress",     test_snippets_lifecycle_stress);
+    g_test_add_func("/memory/git_status_free_null",          test_git_status_free_null);
 
     return g_test_run();
 }
