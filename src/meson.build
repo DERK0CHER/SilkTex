@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Bela Georg Barthelmes
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-silktex_sources = files(
+silktex_lib_sources = files(
     'collab.c',
     'collab.h',
     'application.c',
@@ -34,7 +34,6 @@ silktex_sources = files(
     'structure.h',
     'latex.c',
     'latex.h',
-    'main.c',
     'configfile.c',
     'configfile.h',
     'style-schemes.c',
@@ -44,10 +43,18 @@ silktex_sources = files(
     'utils.h',
 )
 
+silktex_lib = static_library(
+    'silktex_core',
+    silktex_lib_sources,
+    silktex_resources,
+    dependencies: project_dependencies,
+    c_args:       build_args,
+)
+
 executable(
     'silktex',
-    silktex_sources,
-    silktex_resources,
+    'main.c',
+    link_with:    silktex_lib,
     dependencies: project_dependencies,
     c_args:       build_args,
     install:      true,

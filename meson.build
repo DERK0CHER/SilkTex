@@ -88,6 +88,7 @@ install_data(
 
 subdir('data')
 subdir('src')
+subdir('tests')
 subdir('po')
 
 meson.add_install_script('meson-post-install.py')
