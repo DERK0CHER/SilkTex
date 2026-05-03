@@ -281,9 +281,9 @@ static void update_preview(GtkListBoxRow *row, PaletteCtx *ctx)
         gtk_label_set_text(ctx->preview_glyph, shortcut);
         /* Large style for Unicode glyphs, smaller for keyboard shortcuts */
         if (cat == CAT_LATEX)
-            gtk_widget_add_css_class(GTK_WIDGET(ctx->preview_glyph), "title-1");
+            gtk_widget_add_css_class(GTK_WIDGET(ctx->preview_glyph), "title-2");
         else
-            gtk_widget_remove_css_class(GTK_WIDGET(ctx->preview_glyph), "title-1");
+            gtk_widget_remove_css_class(GTK_WIDGET(ctx->preview_glyph), "title-2");
     }
 
     /* Title */
