@@ -316,3 +316,145 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Command, Event, TextOp};
+
+    // ---- Command deserialization ----------------------------------------
+
+    #[test]
+    fn parse_create_session() {
+        let json = r#"{"cmd":"create_session","doc_id":"doc1","content":"hello"}"#;
+        let cmd: Command = serde_json::from_str(json).unwrap();
+        assert!(matches!(cmd, Command::CreateSession { ref doc_id, ref content }
+            if doc_id == "doc1" && content == "hello"));
+    }
+
+    #[test]
+    fn parse_join_session() {
+        let json = r#"{"cmd":"join_session","doc_id":"d","session_id":"code"}"#;
+        let cmd: Command = serde_json::from_str(json).unwrap();
+        assert!(matches!(cmd, Command::JoinSession { .. }));
+    }
+
+    #[test]
+    fn parse_op_insert_only() {
+        let json = r#"{"cmd":"op","doc_id":"d","retain":3,"insert":"hi"}"#;
+        let cmd: Command = serde_json::from_str(json).unwrap();
+        assert!(matches!(cmd, Command::Op { retain: 3, ref insert, delete: None, .. }
+            if insert.as_deref() == Some("hi")));
+    }
+
+    #[test]
+    fn parse_op_delete_only() {
+        let json = r#"{"cmd":"op","doc_id":"d","retain":0,"delete":5}"#;
+        let cmd: Command = serde_json::from_str(json).unwrap();
+        assert!(matches!(cmd, Command::Op { delete: Some(5), insert: None, .. }));
+    }
+
+    #[test]
+    fn parse_set_name() {
+        let json = r#"{"cmd":"set_name","name":"Alice"}"#;
+        let cmd: Command = serde_json::from_str(json).unwrap();
+        assert!(matches!(cmd, Command::SetName { ref name } if name == "Alice"));
+    }
+
+    #[test]
+    fn parse_cursor() {
+        let json = r#"{"cmd":"cursor","doc_id":"d","offset":42}"#;
+        let cmd: Command = serde_json::from_str(json).unwrap();
+        assert!(matches!(cmd, Command::Cursor { offset: 42, .. }));
+    }
+
+    #[test]
+    fn parse_shutdown() {
+        let json = r#"{"cmd":"shutdown"}"#;
+        let cmd: Command = serde_json::from_str(json).unwrap();
+        assert!(matches!(cmd, Command::Shutdown));
+    }
+
+    #[test]
+    fn parse_unknown_command_errors() {
+        let json = r#"{"cmd":"launch_missiles","doc_id":"x"}"#;
+        let result: Result<Command, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_unknown_field_errors() {
+        // deny_unknown_fields rejects extra keys on struct variants.
+        let json = r#"{"cmd":"set_name","name":"Alice","extra":"injected"}"#;
+        let result: Result<Command, _> = serde_json::from_str(json);
+        assert!(result.is_err(), "expected error for unknown field");
+    }
+
+    #[test]
+    fn parse_malformed_json_errors() {
+        let result: Result<Command, _> = serde_json::from_str("{bad json");
+        assert!(result.is_err());
+    }
+
+    // ---- TextOp serialization ------------------------------------------
+
+    #[test]
+    fn text_op_skips_none_fields_in_json() {
+        let op = TextOp { retain: 0, insert: None, delete: None };
+        let s = serde_json::to_string(&op).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert!(val.get("insert").is_none(), "insert should be absent");
+        assert!(val.get("delete").is_none(), "delete should be absent");
+    }
+
+    #[test]
+    fn text_op_roundtrip() {
+        let op = TextOp { retain: 5, insert: Some("hello".into()), delete: Some(3) };
+        let s = serde_json::to_string(&op).unwrap();
+        let op2: TextOp = serde_json::from_str(&s).unwrap();
+        assert_eq!(op2.retain, 5);
+        assert_eq!(op2.insert.as_deref(), Some("hello"));
+        assert_eq!(op2.delete, Some(3));
+    }
+
+    // ---- Event serialization -------------------------------------------
+
+    #[test]
+    fn event_session_ready_format() {
+        let ev = Event::SessionReady { doc_id: "doc1", session_id: "code123" };
+        let s = serde_json::to_string(&ev).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(val["event"], "session_ready");
+        assert_eq!(val["doc_id"], "doc1");
+        assert_eq!(val["session_id"], "code123");
+    }
+
+    #[test]
+    fn event_remote_op_flattens_text_op() {
+        let op = TextOp { retain: 3, insert: Some("hi".into()), delete: None };
+        let ev = Event::RemoteOp { doc_id: "d".into(), op };
+        let s = serde_json::to_string(&ev).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(val["event"], "remote_op");
+        assert_eq!(val["retain"], 3);
+        assert_eq!(val["insert"], "hi");
+        assert!(val.get("delete").is_none());
+    }
+
+    #[test]
+    fn event_error_format() {
+        let ev = Event::Error { msg: "something broke".into() };
+        let s = serde_json::to_string(&ev).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(val["event"], "error");
+        assert_eq!(val["msg"], "something broke");
+    }
+
+    #[test]
+    fn event_peer_count_format() {
+        let ev = Event::PeerCount { doc_id: "d", count: 3 };
+        let s = serde_json::to_string(&ev).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(val["event"], "peer_count");
+        assert_eq!(val["count"], 3);
+    }
+}

@@ -66,6 +66,150 @@ impl Document {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{diff, Document};
+    use crate::TextOp;
+
+    // ---- Document basic ops --------------------------------------------
+
+    #[test]
+    fn new_doc_is_empty() {
+        assert_eq!(Document::new().get_content(), "");
+    }
+
+    #[test]
+    fn set_content_stores_text() {
+        let mut doc = Document::new();
+        doc.set_content("hello").unwrap();
+        assert_eq!(doc.get_content(), "hello");
+    }
+
+    #[test]
+    fn set_content_overwrites_previous() {
+        let mut doc = Document::new();
+        doc.set_content("first").unwrap();
+        doc.set_content("second").unwrap();
+        assert_eq!(doc.get_content(), "second");
+    }
+
+    #[test]
+    fn set_content_to_empty_clears() {
+        let mut doc = Document::new();
+        doc.set_content("hello").unwrap();
+        doc.set_content("").unwrap();
+        assert_eq!(doc.get_content(), "");
+    }
+
+    #[test]
+    fn apply_op_insert_appends() {
+        let mut doc = Document::new();
+        doc.set_content("hello").unwrap();
+        let op = TextOp { retain: 5, insert: Some(" world".into()), delete: None };
+        doc.apply_op(&op).unwrap();
+        assert_eq!(doc.get_content(), "hello world");
+    }
+
+    #[test]
+    fn apply_op_delete_removes_chars() {
+        let mut doc = Document::new();
+        doc.set_content("hello world").unwrap();
+        let op = TextOp { retain: 5, insert: None, delete: Some(6) };
+        doc.apply_op(&op).unwrap();
+        assert_eq!(doc.get_content(), "hello");
+    }
+
+    #[test]
+    fn apply_op_returns_nonempty_update_bytes() {
+        let mut doc = Document::new();
+        let op = TextOp { retain: 0, insert: Some("hi".into()), delete: None };
+        let bytes = doc.apply_op(&op).unwrap();
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn apply_update_syncs_to_peer() {
+        let mut doc1 = Document::new();
+        let mut doc2 = Document::new();
+        // Both start empty; apply op to doc1, then propagate update to doc2.
+        let op = TextOp { retain: 0, insert: Some("hello".into()), delete: None };
+        let update = doc1.apply_op(&op).unwrap();
+        let result = doc2.apply_update(&update).unwrap();
+        assert_eq!(doc2.get_content(), "hello");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn snapshot_roundtrip() {
+        let mut doc1 = Document::new();
+        doc1.set_content("snapshot content").unwrap();
+        let snap = doc1.export_snapshot();
+        assert!(!snap.is_empty());
+        let mut doc2 = Document::new();
+        doc2.apply_snapshot(&snap).unwrap();
+        assert_eq!(doc2.get_content(), "snapshot content");
+    }
+
+    // ---- diff() --------------------------------------------------------
+
+    #[test]
+    fn diff_insert_at_end() {
+        let op = diff("hello", "hello world");
+        assert_eq!(op.retain, 5);
+        assert_eq!(op.insert.as_deref(), Some(" world"));
+        assert_eq!(op.delete, None);
+    }
+
+    #[test]
+    fn diff_delete_from_end() {
+        let op = diff("hello world", "hello");
+        assert_eq!(op.retain, 5);
+        assert_eq!(op.insert, None);
+        assert_eq!(op.delete, Some(6));
+    }
+
+    #[test]
+    fn diff_empty_to_nonempty() {
+        let op = diff("", "hello");
+        assert_eq!(op.retain, 0);
+        assert_eq!(op.insert.as_deref(), Some("hello"));
+        assert_eq!(op.delete, None);
+    }
+
+    #[test]
+    fn diff_nonempty_to_empty() {
+        let op = diff("hello", "");
+        assert_eq!(op.retain, 0);
+        assert_eq!(op.insert, None);
+        assert_eq!(op.delete, Some(5));
+    }
+
+    #[test]
+    fn diff_identical_strings_is_noop() {
+        let op = diff("hello", "hello");
+        assert_eq!(op.retain, 5);
+        assert_eq!(op.insert, None);
+        assert_eq!(op.delete, None);
+    }
+
+    #[test]
+    fn diff_middle_replacement() {
+        let op = diff("abc", "axc");
+        assert_eq!(op.retain, 1);
+        assert_eq!(op.insert.as_deref(), Some("x"));
+        assert_eq!(op.delete, Some(1));
+    }
+
+    #[test]
+    fn diff_unicode_counts_chars_not_bytes() {
+        // 'é' is 2 UTF-8 bytes but 1 char; retain should count chars.
+        let op = diff("héllo", "héllo!");
+        assert_eq!(op.retain, 5);
+        assert_eq!(op.insert.as_deref(), Some("!"));
+        assert_eq!(op.delete, None);
+    }
+}
+
 /// Compute the minimal retain/insert/delete op that transforms `before` into `after`.
 fn diff(before: &str, after: &str) -> TextOp {
     let bc: Vec<char> = before.chars().collect();
