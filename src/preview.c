@@ -49,7 +49,6 @@ struct _SilktexPreview {
     SilktexPreviewLayout layout;
     gboolean scrolling_programmatically;
     gboolean inverted;
-    gulong scale_factor_handler;
     guint fit_tick_id;
     guint rerender_debounce_id;
 
@@ -78,11 +77,10 @@ static void silktex_preview_invalidate_cache(SilktexPreview *self)
     self->total_height = 0;
 }
 
-static void on_scale_factor_changed(GObject *obj, GParamSpec *pspec, gpointer user_data)
+static void on_scale_factor_changed(SilktexPreview *self, GParamSpec *pspec, GObject *obj)
 {
     (void)obj;
     (void)pspec;
-    SilktexPreview *self = SILKTEX_PREVIEW(user_data);
     silktex_preview_invalidate_cache(self);
     gtk_widget_queue_draw(self->drawing_area);
 }
@@ -139,7 +137,7 @@ static void silktex_preview_render_pages(SilktexPreview *self)
     if (self->n_pages <= 0) return;
 
     const int page_gap = PAGE_GAP_BETWEEN;
-    int scale = gtk_widget_get_scale_factor(GTK_WIDGET(self));
+    int scale = gtk_widget_get_scale_factor(self->drawing_area);
     if (scale < 1) scale = 1;
 
     if (self->layout == SILKTEX_PREVIEW_LAYOUT_SINGLE_PAGE) {
@@ -738,12 +736,12 @@ static void silktex_preview_init(SilktexPreview *self)
         gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(self->scrolled_window));
     g_signal_connect(vadj, "value-changed", G_CALLBACK(on_vadj_value_changed), self);
 
-    self->scale_factor_handler =
-        g_signal_connect(self, "notify::scale-factor", G_CALLBACK(on_scale_factor_changed), self);
+    g_signal_connect_object(self->drawing_area, "notify::scale-factor",
+                            G_CALLBACK(on_scale_factor_changed), self, G_CONNECT_SWAPPED);
 
     AdwStyleManager *sm = adw_style_manager_get_default();
     g_signal_connect_object(sm, "notify::dark", G_CALLBACK(on_scale_factor_changed), self,
-                            G_CONNECT_DEFAULT);
+                            G_CONNECT_SWAPPED);
 }
 
 SilktexPreview *silktex_preview_new(void)
