@@ -505,7 +505,7 @@ void silktex_cmd_palette_show(GtkWidget *window)
     GtkWidget *glyph_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_set_halign(glyph_box, GTK_ALIGN_CENTER);
     gtk_widget_add_css_class(glyph_box, "card");
-    gtk_widget_set_size_request(glyph_box, 80, 64);
+    gtk_widget_set_size_request(glyph_box, 52, 40);
     gtk_widget_set_margin_bottom(glyph_box, 4);
     gtk_box_append(GTK_BOX(preview_content), glyph_box);
 
@@ -513,7 +513,7 @@ void silktex_cmd_palette_show(GtkWidget *window)
     gtk_widget_set_halign(preview_glyph, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(preview_glyph, GTK_ALIGN_CENTER);
     gtk_widget_set_vexpand(GTK_WIDGET(preview_glyph), TRUE);
-    gtk_widget_add_css_class(preview_glyph, "title-1");
+    gtk_widget_add_css_class(preview_glyph, "title-2");
     gtk_box_append(GTK_BOX(glyph_box), preview_glyph);
 
     /* Title label */
