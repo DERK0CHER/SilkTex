@@ -708,6 +708,15 @@ static void action_insert_biblio(GSimpleAction *a, GVariant *p, gpointer ud)
     if (e) silktex_latex_insert_biblio_dialog(GTK_WINDOW(self), e);
 }
 
+static void action_insert_latex(GSimpleAction *a, GVariant *p, gpointer ud)
+{
+    (void)a;
+    SilktexWindow *self = SILKTEX_WINDOW(ud);
+    SilktexEditor *e = silktex_window_get_active_editor(self);
+    if (!e) return;
+    silktex_latex_insert_at_cursor(e, g_variant_get_string(p, NULL), NULL);
+}
+
 static void action_zoom_in(GSimpleAction *a, GVariant *p, gpointer ud)
 {
     silktex_preview_zoom_in(SILKTEX_WINDOW(ud)->preview);
@@ -1203,6 +1212,7 @@ static const GActionEntry win_actions[] = {
     {"insert-table", action_insert_table},
     {"insert-matrix", action_insert_matrix},
     {"insert-biblio", action_insert_biblio},
+    {"insert-latex", action_insert_latex, "s"},
     {"zoom-in", action_zoom_in},
     {"zoom-out", action_zoom_out},
     {"zoom-fit", action_zoom_fit, NULL, "false", NULL},
