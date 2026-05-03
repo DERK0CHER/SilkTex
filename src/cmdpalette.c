@@ -304,6 +304,21 @@ static void update_preview(GtkListBoxRow *row, PaletteCtx *ctx)
 
 /* ── Activation ──────────────────────────────────────────────────────────── */
 
+typedef struct { GtkWidget *window; char *action; char *param; } DeferredAction;
+
+static gboolean fire_deferred_action(gpointer user_data)
+{
+    DeferredAction *d = user_data;
+    if (d->param)
+        gtk_widget_activate_action(d->window, d->action, "s", d->param);
+    else
+        gtk_widget_activate_action(d->window, d->action, NULL);
+    g_free(d->action);
+    g_free(d->param);
+    g_free(d);
+    return G_SOURCE_REMOVE;
+}
+
 static void activate_selected(PaletteCtx *ctx)
 {
     GtkListBoxRow *row = gtk_list_box_get_selected_row(ctx->list);
@@ -311,11 +326,19 @@ static void activate_selected(PaletteCtx *ctx)
     const char *action = g_object_get_data(G_OBJECT(row), "cmd-action");
     const char *param  = g_object_get_data(G_OBJECT(row), "cmd-param");
     if (!action) return;
+
+    /* Copy strings before closing — the row (and its data) is owned by the
+     * dialog and may be freed during the close animation. */
+    DeferredAction *d = g_new(DeferredAction, 1);
+    d->window = ctx->window;
+    d->action = g_strdup(action);
+    d->param  = g_strdup(param); /* g_strdup(NULL) → NULL */
+
     adw_dialog_close(ctx->dialog);
-    if (param)
-        gtk_widget_activate_action(ctx->window, action, "s", param);
-    else
-        gtk_widget_activate_action(ctx->window, action, NULL);
+    /* Defer activation to the next idle iteration so the dialog finishes
+     * releasing focus before the action returns it to the editor — prevents
+     * GTK active-state accounting warnings up the widget tree. */
+    g_idle_add(fire_deferred_action, d);
 }
 
 /* ── Callbacks ───────────────────────────────────────────────────────────── */
