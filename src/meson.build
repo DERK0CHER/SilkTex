@@ -46,14 +46,16 @@ silktex_lib_sources = files(
 silktex_lib = static_library(
     'silktex_core',
     silktex_lib_sources,
-    silktex_resources,
     dependencies: project_dependencies,
     c_args:       build_args,
 )
 
+# silktex_resources is linked directly into the executable (not the static lib)
+# so macOS's dead-code stripper doesn't discard the GResource constructor.
 executable(
     'silktex',
     'main.c',
+    silktex_resources,
     link_with:    silktex_lib,
     dependencies: project_dependencies,
     c_args:       build_args,
