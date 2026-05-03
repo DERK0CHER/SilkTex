@@ -60,6 +60,10 @@ void silktex_editor_replace(SilktexEditor *self, const char *term, const char *r
 void silktex_editor_replace_all(SilktexEditor *self, const char *term, const char *replacement,
                                 gboolean whole_word, gboolean match_case);
 
+void silktex_editor_zoom_in(SilktexEditor *self);
+void silktex_editor_zoom_out(SilktexEditor *self);
+void silktex_editor_zoom_reset(SilktexEditor *self);
+
 const char *silktex_editor_get_workfile(SilktexEditor *self);
 const char *silktex_editor_get_pdffile(SilktexEditor *self);
 char *silktex_editor_get_source_dir(SilktexEditor *self);

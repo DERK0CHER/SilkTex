@@ -52,6 +52,10 @@ struct _SilktexPreview {
     gulong scale_factor_handler;
     guint fit_tick_id;
     guint rerender_debounce_id;
+
+    gboolean magnifier_active;
+    double magnifier_x;
+    double magnifier_y;
 };
 
 G_DEFINE_FINAL_TYPE (SilktexPreview, silktex_preview, GTK_TYPE_WIDGET)
@@ -332,6 +336,80 @@ static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, 
 
         y += dh + PAGE_GAP_BETWEEN;
     }
+
+    /* ── Magnifier overlay ────────────────────────────────────── */
+    if (self->magnifier_active) {
+        const double R   = 88.0;  /* radius in logical pixels */
+        const double MAG = 3.5;   /* magnification factor     */
+        double mx = self->magnifier_x;
+        double my = self->magnifier_y;
+
+        /* Drop shadow. */
+        cairo_save(cr);
+        cairo_arc(cr, mx + 4, my + 4, R, 0, 2 * M_PI);
+        cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.22);
+        cairo_fill(cr);
+        cairo_restore(cr);
+
+        /* Clip to circle, fill background, then magnify. */
+        cairo_save(cr);
+        cairo_arc(cr, mx, my, R, 0, 2 * M_PI);
+        cairo_clip(cr);
+
+        cairo_set_source_rgb(cr, bg_r, bg_g, bg_b);
+        cairo_paint(cr);
+
+        /* Magnification: scale around cursor point. */
+        cairo_translate(cr, mx * (1.0 - MAG), my * (1.0 - MAG));
+        cairo_scale(cr, MAG, MAG);
+
+        /* Redraw page surfaces at their original positions. */
+        if (self->layout == SILKTEX_PREVIEW_LAYOUT_SINGLE_PAGE) {
+            if (self->cached_surface != NULL) {
+                int lw = surface_logical_width(self->cached_surface);
+                int lh = surface_logical_height(self->cached_surface);
+                int dw = (int)round(lw * scale_ratio);
+                int dh = (int)round(lh * scale_ratio);
+                double px = (width - dw) / 2.0;
+                if (px < 0) px = PAGE_PADDING;
+                double py = MAX((double)PAGE_PADDING, (height - dh) / 2.0);
+                cairo_save(cr);
+                cairo_translate(cr, px, py);
+                cairo_scale(cr, scale_ratio, scale_ratio);
+                draw_surface_with_optional_invert(cr, self->cached_surface, 0, 0, lw, lh,
+                                                  self->inverted);
+                cairo_restore(cr);
+            }
+        } else {
+            double py = PAGE_PADDING;
+            for (guint i = 0; i < self->page_surfaces->len; i++) {
+                cairo_surface_t *mag_surface = g_ptr_array_index(self->page_surfaces, i);
+                if (mag_surface == NULL) continue;
+                int lw = surface_logical_width(mag_surface);
+                int lh = surface_logical_height(mag_surface);
+                int dw = (int)round(lw * scale_ratio);
+                int dh = (int)round(lh * scale_ratio);
+                double px = (width - dw) / 2.0;
+                if (px < 0) px = PAGE_PADDING;
+                cairo_save(cr);
+                cairo_translate(cr, px, py);
+                cairo_scale(cr, scale_ratio, scale_ratio);
+                draw_surface_with_optional_invert(cr, mag_surface, 0, 0, lw, lh, self->inverted);
+                cairo_restore(cr);
+                py += dh + PAGE_GAP_BETWEEN;
+            }
+        }
+
+        cairo_restore(cr);
+
+        /* Border ring. */
+        cairo_save(cr);
+        cairo_arc(cr, mx, my, R, 0, 2 * M_PI);
+        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.85);
+        cairo_set_line_width(cr, 2.5);
+        cairo_stroke(cr);
+        cairo_restore(cr);
+    }
 }
 
 static void silktex_preview_dispose(GObject *object)
@@ -562,6 +640,35 @@ grab_focus:
     gtk_widget_grab_focus(self->scrolled_window);
 }
 
+static void on_magnifier_begin(GtkGestureDrag *g, double x, double y, gpointer ud)
+{
+    SilktexPreview *self = SILKTEX_PREVIEW(ud);
+    self->magnifier_active = TRUE;
+    self->magnifier_x = x;
+    self->magnifier_y = y;
+    gtk_widget_set_cursor_from_name(self->drawing_area, "zoom-in");
+    gtk_widget_queue_draw(self->drawing_area);
+}
+
+static void on_magnifier_update(GtkGestureDrag *g, double dx, double dy, gpointer ud)
+{
+    SilktexPreview *self = SILKTEX_PREVIEW(ud);
+    double sx, sy;
+    gtk_gesture_drag_get_start_point(g, &sx, &sy);
+    self->magnifier_x = sx + dx;
+    self->magnifier_y = sy + dy;
+    gtk_widget_queue_draw(self->drawing_area);
+}
+
+static void on_magnifier_end(GtkGestureDrag *g, double dx, double dy, gpointer ud)
+{
+    (void)g; (void)dx; (void)dy;
+    SilktexPreview *self = SILKTEX_PREVIEW(ud);
+    self->magnifier_active = FALSE;
+    gtk_widget_set_cursor_from_name(self->drawing_area, NULL);
+    gtk_widget_queue_draw(self->drawing_area);
+}
+
 static gboolean on_preview_scroll_zoom(GtkEventControllerScroll *controller, double dx, double dy,
                                        gpointer user_data)
 {
@@ -609,8 +716,16 @@ static void silktex_preview_init(SilktexPreview *self)
     gtk_widget_set_vexpand(self->drawing_area, TRUE);
 
     GtkGesture *click = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), 1);
     gtk_widget_add_controller(self->drawing_area, GTK_EVENT_CONTROLLER(click));
     g_signal_connect(click, "pressed", G_CALLBACK(on_preview_pressed), self);
+
+    GtkGesture *mag_drag = gtk_gesture_drag_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(mag_drag), 3);
+    gtk_widget_add_controller(self->drawing_area, GTK_EVENT_CONTROLLER(mag_drag));
+    g_signal_connect(mag_drag, "drag-begin",  G_CALLBACK(on_magnifier_begin),  self);
+    g_signal_connect(mag_drag, "drag-update", G_CALLBACK(on_magnifier_update), self);
+    g_signal_connect(mag_drag, "drag-end",    G_CALLBACK(on_magnifier_end),    self);
 
     GtkEventController *scroll =
         gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL);

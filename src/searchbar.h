@@ -14,6 +14,7 @@ G_DECLARE_FINAL_TYPE(SilktexSearchbar, silktex_searchbar, SILKTEX, SEARCHBAR, Gt
 
 SilktexSearchbar *silktex_searchbar_new(void);
 
+gboolean silktex_searchbar_is_open(SilktexSearchbar *self);
 void silktex_searchbar_open(SilktexSearchbar *self, gboolean replace_mode);
 void silktex_searchbar_close(SilktexSearchbar *self);
 void silktex_searchbar_set_editor(SilktexSearchbar *self, SilktexEditor *editor);

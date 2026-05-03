@@ -34,7 +34,13 @@ struct _SilktexEditor {
     gboolean search_backwards;
     gboolean search_whole_word;
     gboolean search_match_case;
+
+    char  *font_family;
+    double base_font_size_pt;
 };
+
+/* Shared zoom delta across all editor instances — zooming is always global. */
+static int font_zoom_delta = 0;
 
 G_DEFINE_FINAL_TYPE (SilktexEditor, silktex_editor, G_TYPE_OBJECT)
 
@@ -112,6 +118,7 @@ static void silktex_editor_dispose(GObject *object)
     g_clear_object(&self->css_provider);
     g_clear_pointer(&self->filename, g_free);
     g_clear_pointer(&self->search_term, g_free);
+    g_clear_pointer(&self->font_family, g_free);
 
     silktex_editor_cleanup_workfile(self);
 
@@ -148,6 +155,23 @@ static void silktex_editor_class_init(SilktexEditorClass *klass)
                                            0, NULL, NULL, NULL, G_TYPE_NONE, 0);
 }
 
+static gboolean on_scroll(GtkEventControllerScroll *ctrl, double dx, double dy, gpointer ud)
+{
+    SilktexEditor *self = SILKTEX_EDITOR(ud);
+    GdkModifierType state = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(ctrl));
+    if (!(state & GDK_SHIFT_MASK)) return GDK_EVENT_PROPAGATE;
+
+    GtkAdjustment *hadj = gtk_scrollable_get_hadjustment(GTK_SCROLLABLE(self->view));
+    if (!hadj) return GDK_EVENT_PROPAGATE;
+
+    double step  = gtk_adjustment_get_step_increment(hadj);
+    double upper = gtk_adjustment_get_upper(hadj);
+    double page  = gtk_adjustment_get_page_size(hadj);
+    double val   = CLAMP(gtk_adjustment_get_value(hadj) + dy * step * 3, 0.0, upper - page);
+    gtk_adjustment_set_value(hadj, val);
+    return GDK_EVENT_STOP;
+}
+
 static void silktex_editor_init(SilktexEditor *self)
 {
     self->workfd = -1;
@@ -172,6 +196,12 @@ static void silktex_editor_init(SilktexEditor *self)
 
     self->css_provider = gtk_css_provider_new();
     gtk_widget_add_css_class(GTK_WIDGET(self->view), "silktex-editor");
+
+    GtkEventControllerScroll *scroll_ctrl = GTK_EVENT_CONTROLLER_SCROLL(
+        gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL));
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(scroll_ctrl), GTK_PHASE_CAPTURE);
+    gtk_widget_add_controller(GTK_WIDGET(self->view), GTK_EVENT_CONTROLLER(scroll_ctrl));
+    g_signal_connect(scroll_ctrl, "scroll", G_CALLBACK(on_scroll), self);
 
     GtkSourceStyleScheme *scheme =
         gtk_source_style_scheme_manager_get_scheme(self->style_manager, "Adwaita");
@@ -364,42 +394,62 @@ void silktex_editor_set_style_scheme(SilktexEditor *self, const char *scheme_id)
     if (scheme != NULL) gtk_source_buffer_set_style_scheme(self->buffer, scheme);
 }
 
-void silktex_editor_set_font(SilktexEditor *self, const char *font_desc)
+static void editor_apply_font_css(SilktexEditor *self)
 {
-    g_return_if_fail(SILKTEX_IS_EDITOR(self));
-
-    /* GTK4 CSS doesn't accept Pango font-description strings in the `font`
-     * shorthand — emit font-family / font-size separately. */
-    g_autofree char *css = NULL;
-    if (font_desc != NULL && *font_desc != '\0') {
-        PangoFontDescription *pfd = pango_font_description_from_string(font_desc);
-        const char *family = pango_font_description_get_family(pfd);
-        int size_pango = pango_font_description_get_size(pfd);
-        gboolean size_absolute = pango_font_description_get_size_is_absolute(pfd);
-
-        GString *s = g_string_new(".silktex-editor {");
-        if (family != NULL && *family != '\0') {
-            g_string_append_printf(s, " font-family: \"%s\";", family);
-        }
-        if (size_pango > 0) {
-            double size_pt = (double)size_pango / PANGO_SCALE;
-            if (size_absolute) {
-                g_string_append_printf(s, " font-size: %.2fpx;", size_pt);
-            } else {
-                g_string_append_printf(s, " font-size: %.2fpt;", size_pt);
-            }
-        }
-        g_string_append(s, " }");
-        css = g_string_free(s, FALSE);
-        pango_font_description_free(pfd);
-    } else {
-        css = g_strdup(".silktex-editor { }");
+    double base = self->base_font_size_pt > 0 ? self->base_font_size_pt
+                                              : (font_zoom_delta != 0 ? 11.0 : 0.0);
+    GString *s = g_string_new(".silktex-editor {");
+    if (self->font_family && *self->font_family)
+        g_string_append_printf(s, " font-family: \"%s\";", self->font_family);
+    if (base > 0) {
+        double size = MAX(6.0, base + font_zoom_delta);
+        g_string_append_printf(s, " font-size: %.2fpt;", size);
     }
-
+    g_string_append(s, " }");
+    g_autofree char *css = g_string_free(s, FALSE);
     gtk_css_provider_load_from_string(self->css_provider, css);
     gtk_style_context_add_provider_for_display(gdk_display_get_default(),
                                                GTK_STYLE_PROVIDER(self->css_provider),
                                                GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+}
+
+void silktex_editor_set_font(SilktexEditor *self, const char *font_desc)
+{
+    g_return_if_fail(SILKTEX_IS_EDITOR(self));
+    g_clear_pointer(&self->font_family, g_free);
+    self->base_font_size_pt = 0;
+
+    if (font_desc && *font_desc) {
+        PangoFontDescription *pfd = pango_font_description_from_string(font_desc);
+        const char *family = pango_font_description_get_family(pfd);
+        if (family) self->font_family = g_strdup(family);
+        int size_pango = pango_font_description_get_size(pfd);
+        if (size_pango > 0)
+            self->base_font_size_pt = (double)size_pango / PANGO_SCALE;
+        pango_font_description_free(pfd);
+    }
+    editor_apply_font_css(self);
+}
+
+void silktex_editor_zoom_in(SilktexEditor *self)
+{
+    g_return_if_fail(SILKTEX_IS_EDITOR(self));
+    font_zoom_delta++;
+    editor_apply_font_css(self);
+}
+
+void silktex_editor_zoom_out(SilktexEditor *self)
+{
+    g_return_if_fail(SILKTEX_IS_EDITOR(self));
+    font_zoom_delta--;
+    editor_apply_font_css(self);
+}
+
+void silktex_editor_zoom_reset(SilktexEditor *self)
+{
+    g_return_if_fail(SILKTEX_IS_EDITOR(self));
+    font_zoom_delta = 0;
+    editor_apply_font_css(self);
 }
 
 void silktex_editor_scroll_to_line(SilktexEditor *self, int line)

@@ -15,7 +15,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
       [start]
       Gtk.ToggleButton btn_sidebar {
         icon-name: "sidebar-show-symbolic";
-        tooltip-text: _("Toggle document outline");
+        tooltip-text: _("Toggle Document Outline");
         active: false;
       }
 
@@ -80,7 +80,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
       [end]
       Gtk.ToggleButton btn_preview {
         icon-name: "view-dual-symbolic";
-        tooltip-text: _("Toggle preview");
+        tooltip-text: _("Toggle Preview");
         active: true;
       }
 
@@ -122,7 +122,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
           }
           Gtk.MenuButton {
             icon-name: "pan-down-symbolic";
-            tooltip-text: _("Document tools");
+            tooltip-text: _("Document Tools");
             menu-model: document_menu;
             styles ["flat"]
           }
@@ -130,7 +130,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
 
         Gtk.ToggleButton btn_tools_toggle {
           icon-name: "go-next-symbolic";
-          tooltip-text: _("Show tools");
+          tooltip-text: _("Show Tools");
           styles ["flat"]
         }
 
@@ -160,14 +160,21 @@ template $SilktexWindow : Adw.ApplicationWindow {
 
             Gtk.Button btn_find_replace {
               icon-name: "edit-find-replace-symbolic";
-              tooltip-text: _("Find and replace");
+              tooltip-text: _("Find and Replace");
               action-name: "win.find-replace";
+              styles ["flat"]
+            }
+
+            Gtk.Button btn_command_palette {
+              icon-name: "system-search-symbolic";
+              tooltip-text: _("Command Palette");
+              action-name: "win.command-palette";
               styles ["flat"]
             }
 
             Gtk.ToggleButton btn_log {
               icon-name: "utilities-terminal-symbolic";
-              tooltip-text: _("Show compile log");
+              tooltip-text: _("Show Compile Log");
               action-name: "win.toggle-log";
               styles ["flat"]
             }
@@ -207,7 +214,7 @@ template $SilktexWindow : Adw.ApplicationWindow {
         }
         Gtk.MenuButton {
           icon-name: "pan-down-symbolic";
-          tooltip-text: _("Save and export");
+          tooltip-text: _("Save and Export");
           menu-model: save_menu;
           styles ["flat"]
         }
@@ -344,13 +351,13 @@ Adw.ToolbarView editor_toolbar_view {
                   }
                   Gtk.MenuButton btn_zoom_menu {
                     icon-name: "document-properties-symbolic";
-                    tooltip-text: _("View options");
+                    tooltip-text: _("View Options");
                     menu-model: zoom_menu;
                     styles ["flat"]
                   }
                   Gtk.Button btn_external_open {
                     icon-name: "document-send-symbolic";
-                    tooltip-text: _("Open PDF externally");
+                    tooltip-text: _("Open PDF Externally");
                     action-name: "win.open-pdf-external";
                     styles ["flat"]
                   }
@@ -587,11 +594,13 @@ menu save_menu {
     item {
       label: _("_Save As…");
       action: "win.save-as";
+      verb-icon: "document-save-as-symbolic";
     }
 
     item {
       label: _("_Export PDF…");
       action: "win.export-pdf";
+      verb-icon: "arrow-into-box-symbolic";
     }
   }
 }

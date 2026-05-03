@@ -6,6 +6,7 @@
 
 #include "window-private.h"
 #include "collab.h"
+#include "cmdpalette.h"
 #include "prefs.h"
 #include "searchbar.h"
 #include "snippets.h"
@@ -256,6 +257,7 @@ static gboolean on_editor_scroll_zoom(GtkEventControllerScroll *ctrl, double dx,
 GtkWidget *silktex_window_create_editor_page(SilktexWindow *self, SilktexEditor *editor)
 {
     GtkWidget *scrolled = gtk_scrolled_window_new();
+    gtk_widget_add_css_class(scrolled, "silktex-editor-scroller");
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled), GTK_POLICY_NEVER,
                                    GTK_POLICY_AUTOMATIC);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), silktex_editor_get_view(editor));
@@ -282,6 +284,21 @@ GtkWidget *silktex_window_create_editor_page(SilktexWindow *self, SilktexEditor 
 
 static gboolean on_editor_scroll_zoom(GtkEventControllerScroll *ctrl, double dx, double dy,
                                       gpointer user_data)
+{
+    (void)dx;
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+    GdkModifierType state =
+        gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(ctrl));
+    if ((state & GDK_CONTROL_MASK) == 0) return GDK_EVENT_PROPAGATE;
+    if (dy < 0)
+        gtk_widget_activate_action(GTK_WIDGET(self), "win.editor-zoom-in", NULL);
+    else if (dy > 0)
+        gtk_widget_activate_action(GTK_WIDGET(self), "win.editor-zoom-out", NULL);
+    return GDK_EVENT_STOP;
+}
+
+static gboolean on_preview_scroll_zoom(GtkEventControllerScroll *ctrl, double dx, double dy,
+                                       gpointer user_data)
 {
     (void)dx;
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
@@ -731,6 +748,25 @@ static void action_zoom_reset(GSimpleAction *a, GVariant *p, gpointer ud)
 {
     silktex_preview_set_zoom(SILKTEX_WINDOW(ud)->preview, 1.0);
 }
+static void action_editor_zoom_in(GSimpleAction *a, GVariant *p, gpointer ud)
+{
+    SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
+    if (e) silktex_editor_zoom_in(e);
+}
+static void action_editor_zoom_out(GSimpleAction *a, GVariant *p, gpointer ud)
+{
+    SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
+    if (e) silktex_editor_zoom_out(e);
+}
+static void action_editor_zoom_reset(GSimpleAction *a, GVariant *p, gpointer ud)
+{
+    SilktexEditor *e = silktex_window_get_active_editor(SILKTEX_WINDOW(ud));
+    if (e) silktex_editor_zoom_reset(e);
+}
+static void action_command_palette(GSimpleAction *a, GVariant *p, gpointer ud)
+{
+    silktex_cmd_palette_show(GTK_WIDGET(ud));
+}
 static void action_prev_page(GSimpleAction *a, GVariant *p, gpointer ud)
 {
     silktex_preview_prev_page(SILKTEX_WINDOW(ud)->preview);
@@ -753,6 +789,10 @@ static void change_preview_layout(GSimpleAction *action, GVariant *value, gpoint
 static void action_find(GSimpleAction *a, GVariant *p, gpointer ud)
 {
     SilktexWindow *self = SILKTEX_WINDOW(ud);
+    if (silktex_searchbar_is_open(self->searchbar)) {
+        silktex_searchbar_close(self->searchbar);
+        return;
+    }
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (e) silktex_searchbar_set_editor(self->searchbar, e);
     silktex_searchbar_open(self->searchbar, FALSE);
@@ -760,6 +800,10 @@ static void action_find(GSimpleAction *a, GVariant *p, gpointer ud)
 static void action_find_replace(GSimpleAction *a, GVariant *p, gpointer ud)
 {
     SilktexWindow *self = SILKTEX_WINDOW(ud);
+    if (silktex_searchbar_is_open(self->searchbar)) {
+        silktex_searchbar_close(self->searchbar);
+        return;
+    }
     SilktexEditor *e = silktex_window_get_active_editor(self);
     if (e) silktex_searchbar_set_editor(self->searchbar, e);
     silktex_searchbar_open(self->searchbar, TRUE);
@@ -853,7 +897,12 @@ static void on_log_scroll_visible_changed(GtkWidget *widget, GParamSpec *pspec, 
     (void)pspec;
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     if (gtk_widget_get_visible(widget)) {
-        if (self->log_text_view) gtk_widget_grab_focus(self->log_text_view);
+        if (self->log_text_view) {
+            gtk_widget_grab_focus(self->log_text_view);
+            GtkTextIter end;
+            gtk_text_buffer_get_end_iter(self->log_buf, &end);
+            gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(self->log_text_view), &end, 0.0, FALSE, 0.0, 1.0);
+        }
     } else {
         silktex_window_focus_active_editor(self);
     }
@@ -1159,6 +1208,29 @@ static void on_window_width_changed(GObject *object, GParamSpec *pspec, gpointer
     }
 }
 
+static void on_editor_paned_width_changed(GObject *object, GParamSpec *pspec, gpointer user_data)
+{
+    (void)object;
+    (void)pspec;
+    SilktexWindow *self = SILKTEX_WINDOW(user_data);
+
+    if (!self->preview_split_seeded || !self->preview_pane_restorable) return;
+    if (!self->editor_paned || !self->preview_toolbar_view) return;
+    if (!gtk_widget_get_visible(GTK_WIDGET(self->preview_toolbar_view))) return;
+
+    int w = gtk_widget_get_width(GTK_WIDGET(self->editor_paned));
+    if (w < 1 || self->preview_pane_ratio <= 0.0) return;
+
+    int target = (int)(self->preview_pane_ratio * (double)w);
+    int pos    = clamp_editor_pane_start(self, w, target);
+    if (pos == gtk_paned_get_position(self->editor_paned)) return;
+
+    self->preview_pane_silence = TRUE;
+    gtk_paned_set_position(self->editor_paned, pos);
+    self->preview_pane_silence = FALSE;
+    self->preview_pane_pos = pos;
+}
+
 static void on_editor_paned_position_changed(GObject *object, GParamSpec *pspec, gpointer user_data)
 {
     (void)object;
@@ -1288,6 +1360,10 @@ static const GActionEntry win_actions[] = {
     {"zoom-fit", action_zoom_fit, NULL, "false", NULL},
     {"zoom-fit-page", action_zoom_fit_page, NULL, "false", NULL},
     {"zoom-reset", action_zoom_reset},
+    {"editor-zoom-in", action_editor_zoom_in},
+    {"editor-zoom-out", action_editor_zoom_out},
+    {"editor-zoom-reset", action_editor_zoom_reset},
+    {"command-palette", action_command_palette},
     {"prev-page", action_prev_page},
     {"next-page", action_next_page},
     {"preview-layout", NULL, "s", "'continuous'", change_preview_layout},
@@ -1437,11 +1513,23 @@ void silktex_window_install_chrome_css(void)
         "togglebutton.error {"
         "  color: @error_color;"
         "}"
+        /* Remove top/bottom undershoot and overshoot shadows from the editor scroll pane. */
+        ".silktex-editor-scroller undershoot.top,"
+        ".silktex-editor-scroller undershoot.bottom,"
+        ".silktex-editor-scroller overshoot.top,"
+        ".silktex-editor-scroller overshoot.bottom {"
+        "  box-shadow: none;"
+        "  background: none;"
+        "}"
+        /* Push toasts above the bottom action bar so they don't cover the Log button. */
+        "toastoverlay .toast {"
+        "  margin-bottom: 52px;"
+        "}"
         ".silktex-preview-scroller scrollbar slider {"
-        "  background-color: alpha(currentColor, 0.45);"
+        "  background-color: rgba(40, 40, 40, 0.55);"
         "}"
         ".silktex-preview-scroller scrollbar {"
-        "  background-color: alpha(currentColor, 0.15);"
+        "  background-color: rgba(40, 40, 40, 0.15);"
         "}"
         /* Collab: online icon gets accent colour */
         ".collab-online-icon {"
@@ -1542,6 +1630,13 @@ static void silktex_window_init(SilktexWindow *self)
     g_signal_connect(self->preview, "inverse-sync-requested",
                      G_CALLBACK(on_preview_inverse_sync_requested), self);
 
+    {
+        GtkEventController *preview_scroll =
+            gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL);
+        g_signal_connect(preview_scroll, "scroll", G_CALLBACK(on_preview_scroll_zoom), self);
+        gtk_widget_add_controller(GTK_WIDGET(self->preview), preview_scroll);
+    }
+
     self->structure = silktex_structure_new();
     gtk_widget_set_vexpand(GTK_WIDGET(self->structure), TRUE);
     gtk_box_append(self->structure_container, GTK_WIDGET(self->structure));
@@ -1566,6 +1661,8 @@ static void silktex_window_init(SilktexWindow *self)
     g_signal_connect(self, "notify::width", G_CALLBACK(on_window_width_changed), self);
     g_signal_connect(self->editor_paned, "notify::position",
                      G_CALLBACK(on_editor_paned_position_changed), self);
+    g_signal_connect(self->editor_paned, "notify::width",
+                     G_CALLBACK(on_editor_paned_width_changed), self);
     g_signal_connect(self->tab_view, "notify::selected-page", G_CALLBACK(on_tab_changed), self);
     g_signal_connect(self->tab_view, "close-page", G_CALLBACK(on_close_page), self);
 
@@ -1578,6 +1675,10 @@ static void silktex_window_init(SilktexWindow *self)
         gtk_text_view_set_editable(GTK_TEXT_VIEW(log_tv), FALSE);
         gtk_text_view_set_monospace(GTK_TEXT_VIEW(log_tv), TRUE);
         gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(log_tv), FALSE);
+        gtk_text_view_set_left_margin(GTK_TEXT_VIEW(log_tv), 6);
+        gtk_text_view_set_right_margin(GTK_TEXT_VIEW(log_tv), 6);
+        gtk_text_view_set_top_margin(GTK_TEXT_VIEW(log_tv), 4);
+        gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(log_tv), 4);
         gtk_widget_set_vexpand(log_tv, TRUE);
         gtk_widget_set_focusable(log_tv, TRUE);
         self->log_text_view = log_tv;
@@ -1622,9 +1723,11 @@ static void silktex_window_init(SilktexWindow *self)
         {"win.bold", "<Control>b"},
         {"win.italic", "<Control>i"},
         {"win.underline", "<Control>u"},
-        {"win.zoom-in", "<Control>plus"},
-        {"win.zoom-out", "<Control>minus"},
+        {"win.editor-zoom-in", "<Control>plus"},
+        {"win.editor-zoom-out", "<Control>minus"},
+        {"win.editor-zoom-reset", "<Control><Shift>0"},
         {"win.zoom-fit", "<Control>0"},
+        {"win.command-palette", "<Control><Shift>p"},
         {"win.find", "<Control><Shift>f"},
         {"win.find-replace", "<Control>f"},
         {"win.forward-sync", "<Control><Alt>f"},
@@ -1634,8 +1737,8 @@ static void silktex_window_init(SilktexWindow *self)
         {"win.open-menu", "F10"},
         {"win.preferences", "<Control>comma"},
         {"win.shortcuts", "<Control>question"},
-        {"win.next-page", "<Control>Page_Down"},
-        {"win.prev-page", "<Control>Page_Up"},
+        {"win.next-page", "Page_Down"},
+        {"win.prev-page", "Page_Up"},
         {"app.quit", "<Control>q"},
     };
 
@@ -1644,6 +1747,14 @@ static void silktex_window_init(SilktexWindow *self)
         const char *accel_list[] = {accels[i][1], NULL};
         gtk_application_set_accels_for_action(app, accels[i][0], accel_list);
     }
+    /* Also accept Ctrl+PgUp/PgDown for page navigation. */
+    const char *next_page_accels[] = {"Page_Down", "<Control>Page_Down", NULL};
+    const char *prev_page_accels[] = {"Page_Up",   "<Control>Page_Up",   NULL};
+    gtk_application_set_accels_for_action(app, "win.next-page", next_page_accels);
+    gtk_application_set_accels_for_action(app, "win.prev-page", prev_page_accels);
+    /* Accept Ctrl+= as alias for Ctrl++ (= and + share the same key). */
+    const char *zoom_in_accels[] = {"<Control>plus", "<Control>equal", NULL};
+    gtk_application_set_accels_for_action(app, "win.editor-zoom-in", zoom_in_accels);
 
     silktex_window_update_page_label(self);
 }

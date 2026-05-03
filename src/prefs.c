@@ -38,20 +38,13 @@ struct _SilktexPrefs {
     AdwSpinRow *row_autosave_timer;
 
     SilktexSnippets *snippets;
-    GtkTextBuffer *snippet_buf;
-    AdwComboRow *row_snippet_pick;
-    AdwEntryRow *row_snippet_name;
-    AdwEntryRow *row_snippet_key;
-    AdwEntryRow *row_snippet_accel;
-    GtkLabel *lbl_snippet_accel_preview;
     AdwComboRow *row_snippet_mod1;
     AdwComboRow *row_snippet_mod2;
-    GtkButton *btn_snippet_save;
     GPtrArray *snippet_entries;
-    guint current_snippet_index;
-    gboolean snippets_updating_ui; /* guard against feedback loops while re-populating widgets */
+    GtkFlowBox *snippet_flow_box;
 
-    GtkStringList *scheme_ids;
+    GtkStringList *scheme_ids_light;
+    GtkStringList *scheme_ids_dark;
 };
 
 typedef struct {
@@ -85,8 +78,10 @@ typedef struct {
 } SnippetWizard;
 
 static char *extract_accel_letter(const char *accel);
-static void snippet_update_accel_subtitle(SilktexPrefs *self);
 static void snippets_apply_modifiers(SilktexPrefs *self);
+static void snippets_rebuild_pills(SilktexPrefs *self);
+static char *display_to_body(const char *display);
+static GtkWidget *make_tab_stop_bar(GtkTextBuffer *buf);
 
 G_DEFINE_FINAL_TYPE (SilktexPrefs, silktex_prefs, ADW_TYPE_PREFERENCES_DIALOG)
 
@@ -141,12 +136,6 @@ static void setup_snippet_source_buffer(GtkSourceBuffer *buffer)
     gtk_source_buffer_set_highlight_syntax(buffer, TRUE);
 }
 
-static void refresh_snippet_theme(SilktexPrefs *self)
-{
-    if (!self || !self->snippet_buf) return;
-    setup_snippet_source_buffer(GTK_SOURCE_BUFFER(self->snippet_buf));
-}
-
 static void setup_snippet_source_view(GtkWidget *view)
 {
     if (!view) return;
@@ -185,14 +174,26 @@ static void on_snippet_editor_text_changed(GtkTextBuffer *buf, gpointer user_dat
     snippet_editor_update_height(buf, scroller);
 }
 
-static void on_style_manager_changed(GObject *obj, GParamSpec *pspec, gpointer user_data)
+static gboolean scheme_is_dark(GtkSourceStyleScheme *scheme)
 {
-    (void)obj;
-    (void)pspec;
-    refresh_snippet_theme(SILKTEX_PREFS(user_data));
+    GtkSourceStyle *style = gtk_source_style_scheme_get_style(scheme, "text");
+    if (!style) return FALSE;
+
+    char *bg = NULL;
+    gboolean bg_set = FALSE;
+    g_object_get(style, "background", &bg, "background-set", &bg_set, NULL);
+    if (!bg_set || !bg) { g_free(bg); return FALSE; }
+
+    GdkRGBA rgba;
+    gboolean parsed = gdk_rgba_parse(&rgba, bg);
+    g_free(bg);
+    if (!parsed) return FALSE;
+
+    double lum = 0.2126 * rgba.red + 0.7152 * rgba.green + 0.0722 * rgba.blue;
+    return lum < 0.5;
 }
 
-static GtkStringList *build_scheme_model(SilktexPrefs *self)
+static GtkStringList *build_scheme_model(SilktexPrefs *self, gboolean dark)
 {
     silktex_init_style_scheme_paths();
 
@@ -200,21 +201,24 @@ static GtkStringList *build_scheme_model(SilktexPrefs *self)
     const char *const *ids = gtk_source_style_scheme_manager_get_scheme_ids(mgr);
 
     GtkStringList *names = gtk_string_list_new(NULL);
-    self->scheme_ids = gtk_string_list_new(NULL);
+    GtkStringList **ids_out = dark ? &self->scheme_ids_dark : &self->scheme_ids_light;
+    g_clear_object(ids_out);
+    *ids_out = gtk_string_list_new(NULL);
 
     for (int i = 0; ids && ids[i]; i++) {
         GtkSourceStyleScheme *s = gtk_source_style_scheme_manager_get_scheme(mgr, ids[i]);
+        if (scheme_is_dark(s) != dark) continue;
         gtk_string_list_append(names, gtk_source_style_scheme_get_name(s));
-        gtk_string_list_append(self->scheme_ids, ids[i]);
+        gtk_string_list_append(*ids_out, ids[i]);
     }
     return names;
 }
 
-static int scheme_index_for_id(SilktexPrefs *self, const char *id)
+static int scheme_index_for_id(GtkStringList *list, const char *id)
 {
-    guint n = g_list_model_get_n_items(G_LIST_MODEL(self->scheme_ids));
+    guint n = g_list_model_get_n_items(G_LIST_MODEL(list));
     for (guint i = 0; i < n; i++) {
-        GtkStringObject *obj = g_list_model_get_item(G_LIST_MODEL(self->scheme_ids), i);
+        GtkStringObject *obj = g_list_model_get_item(G_LIST_MODEL(list), i);
         if (g_strcmp0(gtk_string_object_get_string(obj), id) == 0) {
             g_object_unref(obj);
             return (int)i;
@@ -233,68 +237,6 @@ static void snippet_entry_free(gpointer data)
     g_free(e->accel);
     g_free(e->body);
     g_free(e);
-}
-
-static gboolean snippet_sync_current(SilktexPrefs *self)
-{
-    if (!self->snippet_entries || self->snippet_entries->len == 0) return FALSE;
-    if (self->current_snippet_index >= self->snippet_entries->len) return FALSE;
-
-    SnippetEntry *e = g_ptr_array_index(self->snippet_entries, self->current_snippet_index);
-    if (!e) return FALSE;
-
-    g_free(e->key);
-    g_free(e->accel);
-    g_free(e->body);
-    e->key = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->row_snippet_key)));
-    e->accel = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->row_snippet_accel)));
-
-    GtkTextIter s, t;
-    gtk_text_buffer_get_bounds(self->snippet_buf, &s, &t);
-    e->body = gtk_text_buffer_get_text(self->snippet_buf, &s, &t, FALSE);
-    return TRUE;
-}
-
-static void snippet_load_current_into_ui(SilktexPrefs *self)
-{
-    self->snippets_updating_ui = TRUE;
-    if (!self->snippet_entries || self->snippet_entries->len == 0) {
-        gtk_editable_set_text(GTK_EDITABLE(self->row_snippet_name), "");
-        gtk_editable_set_text(GTK_EDITABLE(self->row_snippet_key), "");
-        gtk_editable_set_text(GTK_EDITABLE(self->row_snippet_accel), "");
-        gtk_text_buffer_set_text(self->snippet_buf, "", -1);
-        self->snippets_updating_ui = FALSE;
-        return;
-    }
-    if (self->current_snippet_index >= self->snippet_entries->len) self->current_snippet_index = 0;
-
-    SnippetEntry *e = g_ptr_array_index(self->snippet_entries, self->current_snippet_index);
-    gtk_editable_set_text(GTK_EDITABLE(self->row_snippet_name), e->name ? e->name : "");
-    gtk_editable_set_text(GTK_EDITABLE(self->row_snippet_key), e->key ? e->key : "");
-    /* Strip modifier prefix — only the letter is editable here; modifiers are global. */
-    g_autofree char *letter = extract_accel_letter(e->accel);
-    gtk_editable_set_text(GTK_EDITABLE(self->row_snippet_accel), letter);
-    gtk_text_buffer_set_text(self->snippet_buf, e->body ? e->body : "", -1);
-    self->snippets_updating_ui = FALSE;
-    snippet_update_accel_subtitle(self);
-}
-
-static void snippets_rebuild_combo(SilktexPrefs *self)
-{
-    self->snippets_updating_ui = TRUE;
-    GtkStringList *model = gtk_string_list_new(NULL);
-    for (guint i = 0; self->snippet_entries && i < self->snippet_entries->len; i++) {
-        SnippetEntry *e = g_ptr_array_index(self->snippet_entries, i);
-        gtk_string_list_append(model, (e->name && *e->name) ? e->name : _("Unnamed"));
-    }
-    adw_combo_row_set_model(self->row_snippet_pick, G_LIST_MODEL(model));
-    g_object_unref(model);
-
-    if (self->snippet_entries && self->snippet_entries->len > 0)
-        adw_combo_row_set_selected(self->row_snippet_pick, self->current_snippet_index);
-    else
-        adw_combo_row_set_selected(self->row_snippet_pick, GTK_INVALID_LIST_POSITION);
-    self->snippets_updating_ui = FALSE;
 }
 
 static void snippets_parse_file(SilktexPrefs *self)
@@ -462,7 +404,7 @@ static void on_scheme_light(AdwComboRow *r, GParamSpec *p, gpointer ud)
     SilktexPrefs *self = SILKTEX_PREFS(ud);
     guint idx = adw_combo_row_get_selected(r);
     if (idx == GTK_INVALID_LIST_POSITION) return;
-    GtkStringObject *obj = g_list_model_get_item(G_LIST_MODEL(self->scheme_ids), idx);
+    GtkStringObject *obj = g_list_model_get_item(G_LIST_MODEL(self->scheme_ids_light), idx);
     if (!obj) return;
     config_set_string("Editor", "style_scheme_light", gtk_string_object_get_string(obj));
     g_object_unref(obj);
@@ -474,7 +416,7 @@ static void on_scheme_dark(AdwComboRow *r, GParamSpec *p, gpointer ud)
     SilktexPrefs *self = SILKTEX_PREFS(ud);
     guint idx = adw_combo_row_get_selected(r);
     if (idx == GTK_INVALID_LIST_POSITION) return;
-    GtkStringObject *obj = g_list_model_get_item(G_LIST_MODEL(self->scheme_ids), idx);
+    GtkStringObject *obj = g_list_model_get_item(G_LIST_MODEL(self->scheme_ids_dark), idx);
     if (!obj) return;
     config_set_string("Editor", "style_scheme_dark", gtk_string_object_get_string(obj));
     g_object_unref(obj);
@@ -586,20 +528,23 @@ static void silktex_prefs_init(SilktexPrefs *self)
     AdwPreferencesGroup *grp_scheme = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
     adw_preferences_group_set_title(grp_scheme, _("Color Scheme"));
 
-    GtkStringList *scheme_names = build_scheme_model(self);
+    GtkStringList *scheme_names_light = build_scheme_model(self, FALSE);
     self->row_scheme_light = ADW_COMBO_ROW(adw_combo_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_scheme_light),
                                   _("Light Theme Scheme"));
-    adw_combo_row_set_model(self->row_scheme_light, G_LIST_MODEL(scheme_names));
-    int si_light = scheme_index_for_id(self, config_get_string("Editor", "style_scheme_light"));
+    adw_combo_row_set_model(self->row_scheme_light, G_LIST_MODEL(scheme_names_light));
+    int si_light = scheme_index_for_id(self->scheme_ids_light,
+                                       config_get_string("Editor", "style_scheme_light"));
     adw_combo_row_set_selected(self->row_scheme_light, (guint)si_light);
     g_signal_connect(self->row_scheme_light, "notify::selected", G_CALLBACK(on_scheme_light), self);
 
+    GtkStringList *scheme_names_dark = build_scheme_model(self, TRUE);
     self->row_scheme_dark = ADW_COMBO_ROW(adw_combo_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_scheme_dark),
                                   _("Dark Theme Scheme"));
-    adw_combo_row_set_model(self->row_scheme_dark, G_LIST_MODEL(scheme_names));
-    int si_dark = scheme_index_for_id(self, config_get_string("Editor", "style_scheme_dark"));
+    adw_combo_row_set_model(self->row_scheme_dark, G_LIST_MODEL(scheme_names_dark));
+    int si_dark = scheme_index_for_id(self->scheme_ids_dark,
+                                      config_get_string("Editor", "style_scheme_dark"));
     adw_combo_row_set_selected(self->row_scheme_dark, (guint)si_dark);
     g_signal_connect(self->row_scheme_dark, "notify::selected", G_CALLBACK(on_scheme_dark), self);
 
@@ -710,7 +655,8 @@ static void silktex_prefs_dispose(GObject *obj)
 {
     SilktexPrefs *self = SILKTEX_PREFS(obj);
     g_clear_object(&self->snippets);
-    g_clear_object(&self->scheme_ids);
+    g_clear_object(&self->scheme_ids_light);
+    g_clear_object(&self->scheme_ids_dark);
     g_clear_pointer(&self->snippet_entries, g_ptr_array_unref);
     G_OBJECT_CLASS(silktex_prefs_parent_class)->dispose(obj);
 }
@@ -736,16 +682,15 @@ void silktex_prefs_set_apply_callback(SilktexPrefs *self, SilktexPrefsApplyFunc 
 
 static void on_snippet_save(GtkButton *btn, gpointer ud)
 {
+    (void)btn;
     SilktexPrefs *self = SILKTEX_PREFS(ud);
-    if (!self->snippets || !self->snippet_buf) return;
-    snippet_sync_current(self);
+    if (!self->snippets || !self->snippet_entries) return;
     GError *err = NULL;
     if (!snippets_write_file(self, &err)) {
         g_warning("Failed to save snippets: %s", err->message);
         g_error_free(err);
     } else {
         silktex_snippets_reload(self->snippets);
-        gtk_text_buffer_set_modified(self->snippet_buf, FALSE);
     }
 }
 
@@ -756,15 +701,14 @@ static void on_snippet_reset_response(AdwAlertDialog *dialog, const char *respon
     if (g_strcmp0(response, "reset") != 0) return;
     silktex_snippets_reset_to_default(self->snippets);
     snippets_parse_file(self);
-    self->current_snippet_index = 0;
-    snippets_rebuild_combo(self);
-    snippet_load_current_into_ui(self);
+    snippets_rebuild_pills(self);
 }
 
 static void on_snippet_reset(GtkButton *btn, gpointer ud)
 {
+    (void)btn;
     SilktexPrefs *self = SILKTEX_PREFS(ud);
-    if (!self->snippets || !self->snippet_buf) return;
+    if (!self->snippets) return;
     AdwAlertDialog *dlg = ADW_ALERT_DIALOG(adw_alert_dialog_new(
         _("Reset snippets?"), _("This replaces all custom snippets with defaults.")));
     adw_alert_dialog_add_response(dlg, "cancel", _("Cancel"));
@@ -791,7 +735,10 @@ static const struct {
     {"Super", "Super", GDK_SUPER_MASK},
 };
 
-static const char *wizard_step_names[] = {"body", "shortcut"};
+static const char *wizard_step_names[]   = {"identity", "command", "shortcut", "overview"};
+static const char *wizard_step_titles[]  = {
+    N_("Name and Trigger"), N_("Snippet"), N_("Shortcut"), N_("Save")
+};
 
 static char *build_accel_from_parts(guint mod1_idx, guint mod2_idx, const char *letter)
 {
@@ -827,6 +774,7 @@ static void snippet_wizard_set_step(SnippetWizard *w, int step)
 {
     w->step = CLAMP(step, 0, 3);
     gtk_stack_set_visible_child_name(w->stack, wizard_step_names[w->step]);
+    adw_dialog_set_title(w->dialog, _(wizard_step_titles[w->step]));
     gtk_widget_set_sensitive(GTK_WIDGET(w->btn_back), w->step > 0);
     gtk_widget_set_visible(GTK_WIDGET(w->btn_next), w->step < 3);
     gtk_widget_set_visible(GTK_WIDGET(w->btn_save), w->step == 3);
@@ -859,9 +807,9 @@ static void on_snippet_wizard_discard(GtkButton *btn, gpointer ud)
 
 static void on_snippet_wizard_save(GtkButton *btn, gpointer ud)
 {
+    (void)btn;
     SnippetWizard *w = ud;
     SilktexPrefs *self = w->prefs;
-    snippet_sync_current(self);
 
     SnippetEntry *e = g_new0(SnippetEntry, 1);
     e->name = g_strdup(gtk_editable_get_text(GTK_EDITABLE(w->ov_name_row)));
@@ -869,7 +817,8 @@ static void on_snippet_wizard_save(GtkButton *btn, gpointer ud)
     e->accel = g_strdup(gtk_editable_get_text(GTK_EDITABLE(w->ov_accel_row)));
     GtkTextIter s, t;
     gtk_text_buffer_get_bounds(w->ov_body_buf, &s, &t);
-    e->body = gtk_text_buffer_get_text(w->ov_body_buf, &s, &t, FALSE);
+    g_autofree char *body_disp = gtk_text_buffer_get_text(w->ov_body_buf, &s, &t, FALSE);
+    e->body = display_to_body(body_disp);
 
     if (!e->name || !*e->name) {
         g_free(e->name);
@@ -880,9 +829,7 @@ static void on_snippet_wizard_save(GtkButton *btn, gpointer ud)
     if (!e->body) e->body = g_strdup("");
 
     g_ptr_array_add(self->snippet_entries, e);
-    self->current_snippet_index = self->snippet_entries->len - 1;
-    snippets_rebuild_combo(self);
-    snippet_load_current_into_ui(self);
+    snippets_rebuild_pills(self);
     adw_dialog_close(w->dialog);
 }
 
@@ -932,72 +879,17 @@ static void snippets_apply_modifiers(SilktexPrefs *self)
     silktex_snippets_set_modifiers(self->snippets, m1, m2);
 }
 
-static void snippet_update_accel_subtitle(SilktexPrefs *self)
-{
-    if (!self->row_snippet_accel || !self->lbl_snippet_accel_preview) return;
-    const char *letter = gtk_editable_get_text(GTK_EDITABLE(self->row_snippet_accel));
-    const char *m1 = config_get_string("Snippets", "modifier1");
-    const char *m2 = config_get_string("Snippets", "modifier2");
-
-    GString *s = g_string_new(NULL);
-    if (letter && *letter) {
-        if (m1 && *m1) g_string_append_printf(s, "%s+", m1);
-        if (m2 && *m2) g_string_append_printf(s, "%s+", m2);
-        g_string_append(s, letter);
-    } else {
-        g_string_append(s, _("No shortcut"));
-    }
-    gtk_label_set_text(self->lbl_snippet_accel_preview, s->str);
-    g_string_free(s, TRUE);
-}
-
 static void on_snippet_modifier_changed(AdwComboRow *row, GParamSpec *p, gpointer ud)
 {
+    (void)row;
+    (void)p;
     SilktexPrefs *self = SILKTEX_PREFS(ud);
-    if (self->snippets_updating_ui) return;
-
     guint i1 = adw_combo_row_get_selected(self->row_snippet_mod1);
     guint i2 = adw_combo_row_get_selected(self->row_snippet_mod2);
     config_set_string("Snippets", "modifier1", modifier_choice_config(i1));
     config_set_string("Snippets", "modifier2", modifier_choice_config(i2));
-
     snippets_apply_modifiers(self);
-    snippet_update_accel_subtitle(self);
     fire_apply(self);
-}
-
-static void on_snippet_accel_changed(AdwEntryRow *row, GParamSpec *p, gpointer ud)
-{
-    SilktexPrefs *self = SILKTEX_PREFS(ud);
-    if (self->snippets_updating_ui) return;
-    if (!self->snippet_entries || self->current_snippet_index >= self->snippet_entries->len) return;
-    SnippetEntry *e = g_ptr_array_index(self->snippet_entries, self->current_snippet_index);
-    g_free(e->accel);
-    e->accel = g_strdup(gtk_editable_get_text(GTK_EDITABLE(row)));
-    snippet_update_accel_subtitle(self);
-}
-
-static void on_snippet_pick_changed(AdwComboRow *row, GParamSpec *pspec, gpointer ud)
-{
-    SilktexPrefs *self = SILKTEX_PREFS(ud);
-    if (self->snippets_updating_ui) return;
-    if (!self->snippet_entries || self->snippet_entries->len == 0) return;
-    snippet_sync_current(self);
-    guint idx = adw_combo_row_get_selected(row);
-    if (idx == GTK_INVALID_LIST_POSITION || idx >= self->snippet_entries->len) return;
-    self->current_snippet_index = idx;
-    snippet_load_current_into_ui(self);
-}
-
-static void on_snippet_name_changed(AdwEntryRow *row, GParamSpec *pspec, gpointer ud)
-{
-    SilktexPrefs *self = SILKTEX_PREFS(ud);
-    if (self->snippets_updating_ui) return;
-    if (!self->snippet_entries || self->current_snippet_index >= self->snippet_entries->len) return;
-    SnippetEntry *e = g_ptr_array_index(self->snippet_entries, self->current_snippet_index);
-    g_free(e->name);
-    e->name = g_strdup(gtk_editable_get_text(GTK_EDITABLE(row)));
-    snippets_rebuild_combo(self);
 }
 
 static void on_snippet_new(GtkButton *btn, gpointer ud)
@@ -1019,15 +911,23 @@ static void on_snippet_new(GtkButton *btn, gpointer ud)
     gtk_widget_set_vexpand(GTK_WIDGET(w->stack), TRUE);
     gtk_stack_set_transition_type(w->stack, GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT_RIGHT);
 
+    /* Step 0 — Name and Trigger */
     GtkWidget *p1 = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     w->name_row = ADW_ENTRY_ROW(adw_entry_row_new());
-    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(w->name_row), _("Name"));
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(w->name_row), _("Shortcut Name"));
     w->key_row = ADW_ENTRY_ROW(adw_entry_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(w->key_row), _("Tab Trigger"));
     gtk_box_append(GTK_BOX(p1), GTK_WIDGET(w->name_row));
     gtk_box_append(GTK_BOX(p1), GTK_WIDGET(w->key_row));
 
+    /* Step 1 — Snippet body */
     GtkWidget *p2 = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    GtkWidget *body_desc = gtk_label_new(
+        _("Write the snippet body. Use the • button to insert tab stops — "
+          "they will be visited in order when you expand the snippet."));
+    gtk_label_set_wrap(GTK_LABEL(body_desc), TRUE);
+    gtk_widget_set_halign(body_desc, GTK_ALIGN_START);
+    gtk_widget_add_css_class(body_desc, "dim-label");
     GtkSourceBuffer *body_buf = gtk_source_buffer_new(NULL);
     setup_snippet_source_buffer(body_buf);
     w->body_buf = GTK_TEXT_BUFFER(body_buf);
@@ -1037,29 +937,51 @@ static void on_snippet_new(GtkButton *btn, gpointer ud)
     GtkWidget *body_scrolled = gtk_scrolled_window_new();
     setup_snippet_scroller(body_scrolled);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(body_scrolled), body_view);
-    g_signal_connect(body_buf, "changed", G_CALLBACK(on_snippet_editor_text_changed),
-                     body_scrolled);
+    g_signal_connect(body_buf, "changed", G_CALLBACK(on_snippet_editor_text_changed), body_scrolled);
     snippet_editor_update_height(GTK_TEXT_BUFFER(body_buf), body_scrolled);
+    gtk_box_append(GTK_BOX(p2), body_desc);
+    gtk_box_append(GTK_BOX(p2), make_tab_stop_bar(GTK_TEXT_BUFFER(body_buf)));
     gtk_box_append(GTK_BOX(p2), body_scrolled);
 
+    /* Step 2 — Shortcut (modifiers + letter) using AdwComboRow for consistency */
     GtkWidget *p3 = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    GtkStringList *mods1 = build_modifier_model();
-    GtkStringList *mods2 = build_modifier_model();
-    w->mod1_dd = GTK_DROP_DOWN(gtk_drop_down_new(G_LIST_MODEL(mods1), NULL));
-    w->mod2_dd = GTK_DROP_DOWN(gtk_drop_down_new(G_LIST_MODEL(mods2), NULL));
-    gtk_drop_down_set_selected(
-        w->mod1_dd, modifier_choice_index_for(config_get_string("Snippets", "modifier1")));
-    gtk_drop_down_set_selected(
-        w->mod2_dd, modifier_choice_index_for(config_get_string("Snippets", "modifier2")));
+    AdwPreferencesGroup *grp_sc = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
+    adw_preferences_group_set_title(grp_sc, _("Modifiers"));
+    w->mod1_dd = GTK_DROP_DOWN(gtk_drop_down_new(G_LIST_MODEL(build_modifier_model()), NULL));
+    w->mod2_dd = GTK_DROP_DOWN(gtk_drop_down_new(G_LIST_MODEL(build_modifier_model()), NULL));
+    gtk_drop_down_set_selected(w->mod1_dd,
+        modifier_choice_index_for(config_get_string("Snippets", "modifier1")));
+    gtk_drop_down_set_selected(w->mod2_dd,
+        modifier_choice_index_for(config_get_string("Snippets", "modifier2")));
+    /* Wrap the two drop-downs in an AdwActionRow each for consistent look */
+    AdwActionRow *mod1_ar = ADW_ACTION_ROW(adw_action_row_new());
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(mod1_ar), _("Modifier 1"));
+    adw_action_row_add_suffix(mod1_ar, GTK_WIDGET(w->mod1_dd));
+    gtk_widget_set_valign(GTK_WIDGET(w->mod1_dd), GTK_ALIGN_CENTER);
+    AdwActionRow *mod2_ar = ADW_ACTION_ROW(adw_action_row_new());
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(mod2_ar), _("Modifier 2"));
+    adw_action_row_add_suffix(mod2_ar, GTK_WIDGET(w->mod2_dd));
+    gtk_widget_set_valign(GTK_WIDGET(w->mod2_dd), GTK_ALIGN_CENTER);
+    adw_preferences_group_add(grp_sc, GTK_WIDGET(mod1_ar));
+    adw_preferences_group_add(grp_sc, GTK_WIDGET(mod2_ar));
     w->letter_row = ADW_ENTRY_ROW(adw_entry_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(w->letter_row), _("Letter"));
-    gtk_box_append(GTK_BOX(p3), gtk_label_new(_("Modifier 1")));
-    gtk_box_append(GTK_BOX(p3), GTK_WIDGET(w->mod1_dd));
-    gtk_box_append(GTK_BOX(p3), gtk_label_new(_("Modifier 2")));
-    gtk_box_append(GTK_BOX(p3), GTK_WIDGET(w->mod2_dd));
+    gtk_box_append(GTK_BOX(p3), GTK_WIDGET(grp_sc));
     gtk_box_append(GTK_BOX(p3), GTK_WIDGET(w->letter_row));
 
+    /* Step 3 — Overview / Save */
     GtkWidget *p4 = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    /* Discard + Save at the top of this page */
+    GtkWidget *p4_top = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *p4_discard = gtk_button_new_with_label(_("Discard"));
+    gtk_widget_add_css_class(p4_discard, "destructive-action");
+    g_signal_connect(p4_discard, "clicked", G_CALLBACK(on_snippet_wizard_discard), w->dialog);
+    GtkWidget *p4_spacer = gtk_label_new(NULL);
+    gtk_widget_set_hexpand(p4_spacer, TRUE);
+    gtk_box_append(GTK_BOX(p4_top), p4_discard);
+    gtk_box_append(GTK_BOX(p4_top), p4_spacer);
+    gtk_box_append(GTK_BOX(p4), p4_top);
+
     w->ov_name_row = ADW_ENTRY_ROW(adw_entry_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(w->ov_name_row), _("Name"));
     w->ov_key_row = ADW_ENTRY_ROW(adw_entry_row_new());
@@ -1090,16 +1012,13 @@ static void on_snippet_new(GtkButton *btn, gpointer ud)
 
     GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_widget_set_halign(actions, GTK_ALIGN_END);
-    GtkWidget *discard = gtk_button_new_with_label(_("Discard"));
     w->btn_back = GTK_BUTTON(gtk_button_new_with_label(_("Back")));
     w->btn_next = GTK_BUTTON(gtk_button_new_with_label(_("Next")));
     w->btn_save = GTK_BUTTON(gtk_button_new_with_label(_("Save")));
     gtk_widget_add_css_class(GTK_WIDGET(w->btn_save), "suggested-action");
-    g_signal_connect(discard, "clicked", G_CALLBACK(on_snippet_wizard_discard), w->dialog);
     g_signal_connect(w->btn_back, "clicked", G_CALLBACK(on_snippet_wizard_back), w);
     g_signal_connect(w->btn_next, "clicked", G_CALLBACK(on_snippet_wizard_next), w);
     g_signal_connect(w->btn_save, "clicked", G_CALLBACK(on_snippet_wizard_save), w);
-    gtk_box_append(GTK_BOX(actions), discard);
     gtk_box_append(GTK_BOX(actions), GTK_WIDGET(w->btn_back));
     gtk_box_append(GTK_BOX(actions), GTK_WIDGET(w->btn_next));
     gtk_box_append(GTK_BOX(actions), GTK_WIDGET(w->btn_save));
@@ -1111,14 +1030,386 @@ static void on_snippet_new(GtkButton *btn, gpointer ud)
     adw_dialog_present(w->dialog, GTK_WIDGET(self));
 }
 
-static void on_snippet_remove(GtkButton *btn, gpointer ud)
+static void on_snippet_remove_at(SilktexPrefs *self, guint idx)
+{
+    if (!self->snippet_entries || idx >= self->snippet_entries->len) return;
+    g_ptr_array_remove_index(self->snippet_entries, idx);
+    snippets_rebuild_pills(self);
+}
+
+/* ------------------------------------------------------------------ */
+/* Edit-dialog for an existing snippet pill                            */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    SilktexPrefs *prefs;
+    AdwDialog    *dialog;
+    guint         idx;
+    char         *orig_name;
+    char         *orig_key;
+    char         *orig_body;
+    char         *orig_accel;
+} SnippetEditCtx;
+
+static void snippet_edit_ctx_free(gpointer data)
+{
+    SnippetEditCtx *ctx = data;
+    g_free(ctx->orig_name);
+    g_free(ctx->orig_key);
+    g_free(ctx->orig_body);
+    g_free(ctx->orig_accel);
+    g_free(ctx);
+}
+
+static void on_edit_name_changed(AdwEntryRow *row, GParamSpec *p, gpointer ud)
+{
+    (void)p;
+    SnippetEditCtx *ctx = ud;
+    if (!ctx->prefs->snippet_entries || ctx->idx >= ctx->prefs->snippet_entries->len) return;
+    SnippetEntry *e = g_ptr_array_index(ctx->prefs->snippet_entries, ctx->idx);
+    g_free(e->name);
+    e->name = g_strdup(gtk_editable_get_text(GTK_EDITABLE(row)));
+    adw_dialog_set_title(ctx->dialog, e->name && *e->name ? e->name : _("Snippet"));
+    snippets_rebuild_pills(ctx->prefs);
+}
+
+static void on_edit_key_changed(AdwEntryRow *row, GParamSpec *p, gpointer ud)
+{
+    (void)p;
+    SnippetEditCtx *ctx = ud;
+    if (!ctx->prefs->snippet_entries || ctx->idx >= ctx->prefs->snippet_entries->len) return;
+    SnippetEntry *e = g_ptr_array_index(ctx->prefs->snippet_entries, ctx->idx);
+    g_free(e->key);
+    e->key = g_strdup(gtk_editable_get_text(GTK_EDITABLE(row)));
+}
+
+static void on_edit_body_changed(GtkTextBuffer *buf, gpointer ud)
+{
+    SnippetEditCtx *ctx = ud;
+    if (!ctx->prefs->snippet_entries || ctx->idx >= ctx->prefs->snippet_entries->len) return;
+    SnippetEntry *e = g_ptr_array_index(ctx->prefs->snippet_entries, ctx->idx);
+    GtkTextIter s, t;
+    gtk_text_buffer_get_bounds(buf, &s, &t);
+    g_autofree char *disp = gtk_text_buffer_get_text(buf, &s, &t, FALSE);
+    g_free(e->body);
+    e->body = display_to_body(disp);
+}
+
+static void rebuild_edit_accel(SnippetEditCtx *ctx, GtkDropDown *mod1, GtkDropDown *mod2,
+                                AdwEntryRow *letter_row)
+{
+    if (!ctx->prefs->snippet_entries || ctx->idx >= ctx->prefs->snippet_entries->len) return;
+    SnippetEntry *e = g_ptr_array_index(ctx->prefs->snippet_entries, ctx->idx);
+    guint m1 = gtk_drop_down_get_selected(mod1);
+    guint m2 = gtk_drop_down_get_selected(mod2);
+    const char *letter = gtk_editable_get_text(GTK_EDITABLE(letter_row));
+    g_free(e->accel);
+    e->accel = build_accel_from_parts(m1, m2, letter);
+}
+
+static void on_edit_mod_changed(GtkDropDown *dd, GParamSpec *p, gpointer ud)
+{
+    (void)dd; (void)p;
+    gpointer *pack = ud;
+    rebuild_edit_accel(pack[0], pack[1], pack[2], pack[3]);
+}
+
+static void on_edit_letter_changed(AdwEntryRow *row, GParamSpec *p, gpointer ud)
+{
+    (void)row; (void)p;
+    gpointer *pack = ud;
+    rebuild_edit_accel(pack[0], pack[1], pack[2], pack[3]);
+}
+
+static void on_snippet_edit_delete_confirm(AdwAlertDialog *dlg, const char *response, gpointer ud)
+{
+    if (g_strcmp0(response, "delete") != 0) return;
+    gpointer *pack = ud;
+    SnippetEditCtx *ctx = pack[0];
+    on_snippet_remove_at(ctx->prefs, ctx->idx);
+    adw_dialog_close(ctx->dialog);
+}
+
+static void on_snippet_edit_delete(GtkButton *btn, gpointer ud)
+{
+    (void)btn;
+    SnippetEditCtx *ctx = ud;
+    if (!ctx->prefs->snippet_entries || ctx->idx >= ctx->prefs->snippet_entries->len) return;
+    SnippetEntry *e = g_ptr_array_index(ctx->prefs->snippet_entries, ctx->idx);
+
+    AdwAlertDialog *confirm = ADW_ALERT_DIALOG(adw_alert_dialog_new(
+        _("Delete Snippet?"),
+        e->name && *e->name ? e->name : _("This snippet")));
+    adw_alert_dialog_add_responses(confirm, "cancel", _("Cancel"), "delete", _("Delete"), NULL);
+    adw_alert_dialog_set_response_appearance(confirm, "delete", ADW_RESPONSE_DESTRUCTIVE);
+    adw_alert_dialog_set_default_response(confirm, "cancel");
+
+    /* Pack ctx as a single pointer — it stays alive as long as the edit dialog is open */
+    static gpointer pack[1];
+    pack[0] = ctx;
+    g_signal_connect(confirm, "response", G_CALLBACK(on_snippet_edit_delete_confirm), pack);
+    adw_dialog_present(ADW_DIALOG(confirm), GTK_WIDGET(ctx->dialog));
+}
+
+static void on_snippet_edit_discard(GtkButton *btn, gpointer ud)
+{
+    (void)btn;
+    SnippetEditCtx *ctx = ud;
+    if (!ctx->prefs->snippet_entries || ctx->idx >= ctx->prefs->snippet_entries->len) return;
+    SnippetEntry *e = g_ptr_array_index(ctx->prefs->snippet_entries, ctx->idx);
+    g_free(e->name);  e->name  = g_strdup(ctx->orig_name);
+    g_free(e->key);   e->key   = g_strdup(ctx->orig_key);
+    g_free(e->body);  e->body  = g_strdup(ctx->orig_body);
+    g_free(e->accel); e->accel = g_strdup(ctx->orig_accel);
+    snippets_rebuild_pills(ctx->prefs);
+    adw_dialog_close(ctx->dialog);
+}
+
+/* U+2022 BULLET used as a display stand-in for $N tab stops in the body editor. */
+#define TAB_STOP_BULLET "\xe2\x97\x8f"  /* U+25CF BLACK CIRCLE */
+
+/* Replace $0, $1, … with • for display in the body editor. */
+static char *body_to_display(const char *body)
+{
+    if (!body) return g_strdup("");
+    GString *out = g_string_new(NULL);
+    const char *p = body;
+    while (*p) {
+        if (*p == '$') {
+            const char *q = p + 1;
+            while (*q >= '0' && *q <= '9') q++;
+            if (q > p + 1) {
+                g_string_append(out, TAB_STOP_BULLET);
+                p = q;
+                continue;
+            }
+        }
+        const char *next = g_utf8_next_char(p);
+        g_string_append_len(out, p, next - p);
+        p = next;
+    }
+    return g_string_free(out, FALSE);
+}
+
+/* Replace each • with $1, $2, … in order for storage. */
+static char *display_to_body(const char *display)
+{
+    if (!display) return g_strdup("");
+    GString *out = g_string_new(NULL);
+    int n = 1;
+    const char *p = display;
+    while (*p) {
+        gunichar c = g_utf8_get_char(p);
+        if (c == 0x25CF) {
+            g_string_append_printf(out, "$%d", n++);
+            p = g_utf8_next_char(p);
+        } else {
+            const char *next = g_utf8_next_char(p);
+            g_string_append_len(out, p, next - p);
+            p = next;
+        }
+    }
+    return g_string_free(out, FALSE);
+}
+
+static void on_insert_bullet(GtkButton *btn, gpointer ud)
+{
+    (void)btn;
+    gtk_text_buffer_insert_at_cursor(GTK_TEXT_BUFFER(ud), TAB_STOP_BULLET, -1);
+}
+
+static GtkWidget *make_tab_stop_bar(GtkTextBuffer *buf)
+{
+    GtkWidget *bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_set_margin_top(bar, 4);
+    gtk_widget_set_margin_bottom(bar, 2);
+    GtkWidget *lbl = gtk_label_new(_("Tab stop:"));
+    gtk_widget_add_css_class(lbl, "dim-label");
+    GtkWidget *btn = gtk_button_new();
+    gtk_widget_add_css_class(btn, "flat");
+    gtk_widget_set_tooltip_text(btn, _("Insert a tab stop (●1, ●2, … in order)"));
+    GtkWidget *btn_lbl = gtk_label_new(TAB_STOP_BULLET);
+    gtk_widget_add_css_class(btn_lbl, "monospace");
+    gtk_button_set_child(GTK_BUTTON(btn), btn_lbl);
+    g_signal_connect(btn, "clicked", G_CALLBACK(on_insert_bullet), buf);
+    gtk_box_append(GTK_BOX(bar), lbl);
+    gtk_box_append(GTK_BOX(bar), btn);
+    return bar;
+}
+
+static void snippet_edit_dialog_show(SilktexPrefs *self, guint idx)
+{
+    if (!self->snippet_entries || idx >= self->snippet_entries->len) return;
+    SnippetEntry *e = g_ptr_array_index(self->snippet_entries, idx);
+
+    SnippetEditCtx *ctx = g_new0(SnippetEditCtx, 1);
+    ctx->prefs      = self;
+    ctx->idx        = idx;
+    ctx->orig_name  = g_strdup(e->name);
+    ctx->orig_key   = g_strdup(e->key);
+    ctx->orig_body  = g_strdup(e->body);
+    ctx->orig_accel = g_strdup(e->accel);
+
+    AdwDialog *dlg = adw_dialog_new();
+    ctx->dialog = dlg;
+    adw_dialog_set_title(dlg, e->name && *e->name ? e->name : _("Snippet"));
+    adw_dialog_set_content_width(dlg, 500);
+    adw_dialog_set_content_height(dlg, 580);
+    g_object_set_data_full(G_OBJECT(dlg), "edit-ctx", ctx, snippet_edit_ctx_free);
+
+    GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_set_margin_start(root, 12);
+    gtk_widget_set_margin_end(root, 12);
+    gtk_widget_set_margin_top(root, 8);
+    gtk_widget_set_margin_bottom(root, 12);
+
+    /* Fields */
+    AdwPreferencesGroup *grp = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
+
+    AdwEntryRow *name_row = ADW_ENTRY_ROW(adw_entry_row_new());
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(name_row), _("Name"));
+    gtk_editable_set_text(GTK_EDITABLE(name_row), e->name ? e->name : "");
+    g_signal_connect(name_row, "notify::text", G_CALLBACK(on_edit_name_changed), ctx);
+
+    AdwEntryRow *key_row = ADW_ENTRY_ROW(adw_entry_row_new());
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(key_row), _("Tab Trigger"));
+    gtk_editable_set_text(GTK_EDITABLE(key_row), e->key ? e->key : "");
+    g_signal_connect(key_row, "notify::text", G_CALLBACK(on_edit_key_changed), ctx);
+
+    /* Parse existing accel to pre-fill modifiers + letter */
+    g_autofree char *letter_str = extract_accel_letter(e->accel);
+    guint m1_idx = 0, m2_idx = 0;
+    if (e->accel) {
+        /* Find up to two <Mod> prefixes */
+        const char *p = e->accel;
+        guint *slots[] = {&m1_idx, &m2_idx};
+        int slot = 0;
+        while (*p == '<' && slot < 2) {
+            const char *close = strchr(p, '>');
+            if (!close) break;
+            char *mod = g_strndup(p + 1, close - p - 1);
+            for (guint i = 0; i < G_N_ELEMENTS(MODIFIER_CHOICES); i++) {
+                if (g_ascii_strcasecmp(mod, MODIFIER_CHOICES[i].config) == 0)
+                    *slots[slot] = i;
+            }
+            g_free(mod);
+            p = close + 1;
+            slot++;
+        }
+    }
+
+    GtkDropDown *mod1_dd = GTK_DROP_DOWN(gtk_drop_down_new(G_LIST_MODEL(build_modifier_model()), NULL));
+    GtkDropDown *mod2_dd = GTK_DROP_DOWN(gtk_drop_down_new(G_LIST_MODEL(build_modifier_model()), NULL));
+    gtk_drop_down_set_selected(mod1_dd, m1_idx);
+    gtk_drop_down_set_selected(mod2_dd, m2_idx);
+
+    AdwEntryRow *letter_row = ADW_ENTRY_ROW(adw_entry_row_new());
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(letter_row), _("Shortcut Letter"));
+    gtk_editable_set_text(GTK_EDITABLE(letter_row), letter_str);
+
+    /* Signal pack for mod+letter → accel rebuild */
+    gpointer *mod_pack = g_new(gpointer, 4);
+    mod_pack[0] = ctx;
+    mod_pack[1] = mod1_dd;
+    mod_pack[2] = mod2_dd;
+    mod_pack[3] = letter_row;
+    g_object_set_data_full(G_OBJECT(dlg), "mod-pack", mod_pack, g_free);
+    g_signal_connect(mod1_dd, "notify::selected", G_CALLBACK(on_edit_mod_changed), mod_pack);
+    g_signal_connect(mod2_dd, "notify::selected", G_CALLBACK(on_edit_mod_changed), mod_pack);
+    g_signal_connect(letter_row, "notify::text", G_CALLBACK(on_edit_letter_changed), mod_pack);
+
+    AdwActionRow *mod1_ar = ADW_ACTION_ROW(adw_action_row_new());
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(mod1_ar), _("Modifier 1"));
+    adw_action_row_add_suffix(mod1_ar, GTK_WIDGET(mod1_dd));
+    gtk_widget_set_valign(GTK_WIDGET(mod1_dd), GTK_ALIGN_CENTER);
+    AdwActionRow *mod2_ar = ADW_ACTION_ROW(adw_action_row_new());
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(mod2_ar), _("Modifier 2"));
+    adw_action_row_add_suffix(mod2_ar, GTK_WIDGET(mod2_dd));
+    gtk_widget_set_valign(GTK_WIDGET(mod2_dd), GTK_ALIGN_CENTER);
+
+    adw_preferences_group_add(grp, GTK_WIDGET(name_row));
+    adw_preferences_group_add(grp, GTK_WIDGET(key_row));
+    adw_preferences_group_add(grp, GTK_WIDGET(mod1_ar));
+    adw_preferences_group_add(grp, GTK_WIDGET(mod2_ar));
+    adw_preferences_group_add(grp, GTK_WIDGET(letter_row));
+    gtk_box_append(GTK_BOX(root), GTK_WIDGET(grp));
+
+    /* Body editor */
+    AdwPreferencesGroup *body_grp = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
+    adw_preferences_group_set_title(body_grp, _("Snippet Body"));
+    GtkSourceBuffer *sbuf = gtk_source_buffer_new(NULL);
+    setup_snippet_source_buffer(sbuf);
+    g_autofree char *body_disp = body_to_display(e->body ? e->body : "");
+    gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sbuf), body_disp, -1);
+    g_signal_connect(sbuf, "changed", G_CALLBACK(on_edit_body_changed), ctx);
+    GtkWidget *bview = gtk_source_view_new_with_buffer(sbuf);
+    setup_snippet_source_view(bview);
+    gtk_widget_set_vexpand(bview, TRUE);
+    GtkWidget *bscroll = gtk_scrolled_window_new();
+    setup_snippet_scroller(bscroll);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(bscroll), bview);
+    g_signal_connect(sbuf, "changed", G_CALLBACK(on_snippet_editor_text_changed), bscroll);
+    snippet_editor_update_height(GTK_TEXT_BUFFER(sbuf), bscroll);
+    adw_preferences_group_add(body_grp, make_tab_stop_bar(GTK_TEXT_BUFFER(sbuf)));
+    adw_preferences_group_add(body_grp, bscroll);
+    gtk_box_append(GTK_BOX(root), GTK_WIDGET(body_grp));
+
+    /* Bottom action bar: [Delete] ··· [Discard] [Done] */
+    GtkWidget *bottom_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *btn_del = gtk_button_new_with_label(_("Delete"));
+    gtk_widget_add_css_class(btn_del, "destructive-action");
+    g_signal_connect(btn_del, "clicked", G_CALLBACK(on_snippet_edit_delete), ctx);
+    GtkWidget *spacer = gtk_label_new(NULL);
+    gtk_widget_set_hexpand(spacer, TRUE);
+    GtkWidget *btn_discard = gtk_button_new_with_label(_("Discard"));
+    g_signal_connect(btn_discard, "clicked", G_CALLBACK(on_snippet_edit_discard), ctx);
+    GtkWidget *btn_done = gtk_button_new_with_label(_("Done"));
+    gtk_widget_add_css_class(btn_done, "suggested-action");
+    g_signal_connect_swapped(btn_done, "clicked", G_CALLBACK(adw_dialog_close), dlg);
+    gtk_box_append(GTK_BOX(bottom_bar), btn_del);
+    gtk_box_append(GTK_BOX(bottom_bar), spacer);
+    gtk_box_append(GTK_BOX(bottom_bar), btn_discard);
+    gtk_box_append(GTK_BOX(bottom_bar), btn_done);
+    gtk_box_append(GTK_BOX(root), bottom_bar);
+
+    adw_dialog_set_child(dlg, root);
+    adw_dialog_present(dlg, GTK_WIDGET(self));
+}
+
+/* ------------------------------------------------------------------ */
+/* Pill widget + flow box                                              */
+/* ------------------------------------------------------------------ */
+
+static void on_snippet_pill_clicked(GtkButton *btn, gpointer ud)
 {
     SilktexPrefs *self = SILKTEX_PREFS(ud);
-    if (!self->snippet_entries || self->snippet_entries->len == 0) return;
-    g_ptr_array_remove_index(self->snippet_entries, self->current_snippet_index);
-    if (self->current_snippet_index > 0) self->current_snippet_index--;
-    snippets_rebuild_combo(self);
-    snippet_load_current_into_ui(self);
+    guint idx = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(btn), "snippet-idx"));
+    snippet_edit_dialog_show(self, idx);
+}
+
+static void snippets_rebuild_pills(SilktexPrefs *self)
+{
+    if (!self->snippet_flow_box) return;
+
+    /* Clear all children */
+    GtkWidget *child = gtk_widget_get_first_child(GTK_WIDGET(self->snippet_flow_box));
+    while (child) {
+        GtkWidget *next = gtk_widget_get_next_sibling(child);
+        gtk_flow_box_remove(self->snippet_flow_box, child);
+        child = next;
+    }
+
+    if (!self->snippet_entries) return;
+
+    for (guint i = 0; i < self->snippet_entries->len; i++) {
+        SnippetEntry *e = g_ptr_array_index(self->snippet_entries, i);
+        GtkWidget *pill = gtk_button_new_with_label(
+            (e->name && *e->name) ? e->name : _("Unnamed"));
+        gtk_widget_add_css_class(pill, "pill");
+        g_object_set_data(G_OBJECT(pill), "snippet-idx", GUINT_TO_POINTER(i));
+        g_signal_connect(pill, "clicked", G_CALLBACK(on_snippet_pill_clicked), self);
+        gtk_flow_box_insert(self->snippet_flow_box, pill, -1);
+    }
 }
 
 void silktex_prefs_set_snippets(SilktexPrefs *self, SilktexSnippets *snippets)
@@ -1167,42 +1458,6 @@ void silktex_prefs_set_snippets(SilktexPrefs *self, SilktexSnippets *snippets)
         grp_list, _("Stored as VS Code-style JSON in snippets.json.  SilkTex adds "
                     "an optional \"accelerator\" field for global shortcut letters."));
 
-    self->row_snippet_pick = ADW_COMBO_ROW(adw_combo_row_new());
-    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_snippet_pick), _("Snippet"));
-    g_signal_connect(self->row_snippet_pick, "notify::selected",
-                     G_CALLBACK(on_snippet_pick_changed), self);
-
-    self->row_snippet_name = ADW_ENTRY_ROW(adw_entry_row_new());
-    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_snippet_name), _("Name"));
-    g_signal_connect(self->row_snippet_name, "notify::text", G_CALLBACK(on_snippet_name_changed),
-                     self);
-
-    self->row_snippet_key = ADW_ENTRY_ROW(adw_entry_row_new());
-    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_snippet_key), _("Tab Trigger"));
-
-    self->row_snippet_accel = ADW_ENTRY_ROW(adw_entry_row_new());
-    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_snippet_accel),
-                                  _("Shortcut Letter"));
-    g_signal_connect(self->row_snippet_accel, "notify::text", G_CALLBACK(on_snippet_accel_changed),
-                     self);
-
-    self->lbl_snippet_accel_preview = GTK_LABEL(gtk_label_new(""));
-    gtk_widget_add_css_class(GTK_WIDGET(self->lbl_snippet_accel_preview), "dim-label");
-    gtk_widget_add_css_class(GTK_WIDGET(self->lbl_snippet_accel_preview), "monospace");
-    adw_entry_row_add_suffix(self->row_snippet_accel, GTK_WIDGET(self->lbl_snippet_accel_preview));
-
-    adw_preferences_group_add(grp_list, GTK_WIDGET(self->row_snippet_pick));
-    adw_preferences_group_add(grp_list, GTK_WIDGET(self->row_snippet_name));
-    adw_preferences_group_add(grp_list, GTK_WIDGET(self->row_snippet_key));
-    adw_preferences_group_add(grp_list, GTK_WIDGET(self->row_snippet_accel));
-    adw_preferences_page_add(snip_page, grp_list);
-
-    AdwPreferencesGroup *grp_info = ADW_PREFERENCES_GROUP(adw_preferences_group_new());
-    adw_preferences_group_set_title(grp_info, _("Snippet Body"));
-    adw_preferences_group_set_description(
-        grp_info, _("Placeholders: $1  $2  …  $0 (final position)   ${N:default}\n"
-                    "Macros:  $FILENAME   $BASENAME   $SELECTED_TEXT"));
-
     GtkWidget *toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_widget_set_margin_top(toolbar, 4);
     gtk_widget_set_margin_bottom(toolbar, 4);
@@ -1210,56 +1465,35 @@ void silktex_prefs_set_snippets(SilktexPrefs *self, SilktexSnippets *snippets)
     GtkWidget *btn_save = gtk_button_new_with_label(_("Save"));
     GtkWidget *btn_reset = gtk_button_new_with_label(_("Reset"));
     GtkWidget *btn_new = gtk_button_new_with_label(_("New"));
-    GtkWidget *btn_remove = gtk_button_new_with_label(_("Remove"));
     gtk_widget_add_css_class(btn_save, "suggested-action");
     gtk_widget_set_hexpand(btn_save, FALSE);
     g_signal_connect(btn_save, "clicked", G_CALLBACK(on_snippet_save), self);
     g_signal_connect(btn_reset, "clicked", G_CALLBACK(on_snippet_reset), self);
     g_signal_connect(btn_new, "clicked", G_CALLBACK(on_snippet_new), self);
-    g_signal_connect(btn_remove, "clicked", G_CALLBACK(on_snippet_remove), self);
 
+    gtk_box_append(GTK_BOX(toolbar), btn_new);
     gtk_box_append(GTK_BOX(toolbar), btn_save);
     gtk_box_append(GTK_BOX(toolbar), btn_reset);
-    gtk_box_append(GTK_BOX(toolbar), btn_new);
-    gtk_box_append(GTK_BOX(toolbar), btn_remove);
 
-    GtkSourceBuffer *sbuf = gtk_source_buffer_new(NULL);
-    setup_snippet_source_buffer(sbuf);
-    self->snippet_buf = GTK_TEXT_BUFFER(sbuf);
+    self->snippet_flow_box = GTK_FLOW_BOX(gtk_flow_box_new());
+    gtk_flow_box_set_selection_mode(self->snippet_flow_box, GTK_SELECTION_NONE);
+    gtk_flow_box_set_max_children_per_line(self->snippet_flow_box, 4);
+    gtk_flow_box_set_min_children_per_line(self->snippet_flow_box, 1);
+    gtk_flow_box_set_row_spacing(self->snippet_flow_box, 8);
+    gtk_flow_box_set_column_spacing(self->snippet_flow_box, 8);
+    gtk_widget_set_margin_top(GTK_WIDGET(self->snippet_flow_box), 8);
+    gtk_widget_set_margin_bottom(GTK_WIDGET(self->snippet_flow_box), 8);
 
-    GtkWidget *view = gtk_source_view_new_with_buffer(sbuf);
-    gtk_source_view_set_show_line_numbers(GTK_SOURCE_VIEW(view), FALSE);
-    gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(view), 4);
-    gtk_source_view_set_auto_indent(GTK_SOURCE_VIEW(view), TRUE);
-    setup_snippet_source_view(view);
-    gtk_widget_set_vexpand(view, TRUE);
-
-    GtkWidget *scrolled = gtk_scrolled_window_new();
-    setup_snippet_scroller(scrolled);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), view);
-    g_signal_connect(sbuf, "changed", G_CALLBACK(on_snippet_editor_text_changed), scrolled);
-    snippet_editor_update_height(GTK_TEXT_BUFFER(sbuf), scrolled);
-
-    adw_preferences_group_add(grp_info, scrolled);
-    gtk_widget_set_margin_top(toolbar, 8);
-    gtk_widget_set_margin_bottom(toolbar, 8);
-    adw_preferences_group_add(grp_info, toolbar);
-    adw_preferences_page_add(snip_page, grp_info);
+    adw_preferences_group_add(grp_list, toolbar);
+    adw_preferences_group_add(grp_list, GTK_WIDGET(self->snippet_flow_box));
+    adw_preferences_page_add(snip_page, grp_list);
 
     snippets_parse_file(self);
-    self->current_snippet_index = 0;
-    snippets_rebuild_combo(self);
-    snippet_load_current_into_ui(self);
-    refresh_snippet_theme(self);
-
-    AdwStyleManager *style = adw_style_manager_get_default();
-    g_signal_connect(style, "notify::dark", G_CALLBACK(on_style_manager_changed), self);
-    g_signal_connect(style, "notify::color-scheme", G_CALLBACK(on_style_manager_changed), self);
+    snippets_rebuild_pills(self);
 }
 
 void silktex_prefs_present(SilktexPrefs *self, GtkWindow *parent)
 {
     g_return_if_fail(SILKTEX_IS_PREFS(self));
-    refresh_snippet_theme(self);
     adw_dialog_present(ADW_DIALOG(self), GTK_WIDGET(parent));
 }

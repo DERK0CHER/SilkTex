@@ -22,6 +22,8 @@ silktex_sources = files(
     'preview.h',
     'prefs.c',
     'prefs.h',
+    'cmdpalette.c',
+    'cmdpalette.h',
     'searchbar.c',
     'searchbar.h',
     'snippets.c',

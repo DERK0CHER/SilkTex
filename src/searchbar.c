@@ -9,6 +9,10 @@
 struct _SilktexSearchbar {
     GtkWidget parent_instance;
 
+    /* Logical open state — gtk_revealer_get_reveal_child can disagree briefly during
+     * transitions and embedding in toolbar views, which broke toolbar toggle-close. */
+    gboolean revealed;
+
     GtkWidget *revealer;
     GtkWidget *search_entry;
     GtkWidget *replace_entry;
@@ -44,11 +48,45 @@ static void on_search_changed(GtkEditable *e, gpointer ud)
     do_search(SILKTEX_SEARCHBAR(ud));
 }
 
+static void on_search_opt_changed(GObject *obj, GParamSpec *pspec, gpointer ud)
+{
+    (void)obj;
+    (void)pspec;
+    do_search(SILKTEX_SEARCHBAR(ud));
+}
+
 static void on_search_activate(GtkEntry *e, gpointer ud)
 {
     SilktexSearchbar *self = SILKTEX_SEARCHBAR(ud);
+    (void)e;
     if (!self->editor) return;
     silktex_editor_search_next(self->editor, gtk_check_button_get_active(self->chk_backwards));
+}
+
+static gboolean on_search_entry_key_capture(GtkEventControllerKey *ctrl, guint keyval,
+                                             guint keycode, GdkModifierType state, gpointer ud)
+{
+    (void)ctrl; (void)keycode; (void)state;
+    SilktexSearchbar *self = SILKTEX_SEARCHBAR(ud);
+    if (keyval == GDK_KEY_Escape) {
+        silktex_searchbar_close(self);
+        return GDK_EVENT_STOP;
+    }
+    return GDK_EVENT_PROPAGATE;
+}
+
+static gboolean on_replace_entry_key_capture(GtkEventControllerKey *ctrl, guint keyval,
+                                               guint keycode, GdkModifierType state, gpointer ud)
+{
+    (void)ctrl;
+    (void)keycode;
+    (void)state;
+    SilktexSearchbar *self = SILKTEX_SEARCHBAR(ud);
+    if (keyval == GDK_KEY_Escape) {
+        silktex_searchbar_close(self);
+        return GDK_EVENT_STOP;
+    }
+    return GDK_EVENT_PROPAGATE;
 }
 
 static void on_btn_prev(GtkButton *b, gpointer ud)
@@ -135,6 +173,11 @@ static void silktex_searchbar_init(SilktexSearchbar *self)
     g_signal_connect(self->search_entry, "changed", G_CALLBACK(on_search_changed), self);
     g_signal_connect(self->search_entry, "activate", G_CALLBACK(on_search_activate), self);
 
+    GtkEventControllerKey *entry_key_ctrl = GTK_EVENT_CONTROLLER_KEY(gtk_event_controller_key_new());
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(entry_key_ctrl), GTK_PHASE_CAPTURE);
+    gtk_widget_add_controller(self->search_entry, GTK_EVENT_CONTROLLER(entry_key_ctrl));
+    g_signal_connect(entry_key_ctrl, "key-pressed", G_CALLBACK(on_search_entry_key_capture), self);
+
     self->btn_prev = gtk_button_new_from_icon_name("go-up-symbolic");
     gtk_widget_set_tooltip_text(self->btn_prev, _("Previous match"));
     g_signal_connect(self->btn_prev, "clicked", G_CALLBACK(on_btn_prev), self);
@@ -144,7 +187,7 @@ static void silktex_searchbar_init(SilktexSearchbar *self)
     g_signal_connect(self->btn_next, "clicked", G_CALLBACK(on_btn_next), self);
 
     GtkWidget *btn_close = gtk_button_new_from_icon_name("window-close-symbolic");
-    gtk_widget_set_tooltip_text(btn_close, _("Close (Esc)"));
+    gtk_widget_set_tooltip_text(btn_close, _("Close"));
     g_signal_connect_swapped(btn_close, "clicked", G_CALLBACK(silktex_searchbar_close), self);
 
     gtk_box_append(GTK_BOX(search_row), self->search_entry);
@@ -169,11 +212,20 @@ static void silktex_searchbar_init(SilktexSearchbar *self)
     gtk_box_append(GTK_BOX(self->replace_row), self->btn_replace);
     gtk_box_append(GTK_BOX(self->replace_row), self->btn_replace_all);
 
+    GtkEventControllerKey *repl_key_ctrl = GTK_EVENT_CONTROLLER_KEY(gtk_event_controller_key_new());
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(repl_key_ctrl), GTK_PHASE_CAPTURE);
+    gtk_widget_add_controller(self->replace_entry, GTK_EVENT_CONTROLLER(repl_key_ctrl));
+    g_signal_connect(repl_key_ctrl, "key-pressed", G_CALLBACK(on_replace_entry_key_capture), self);
+
     GtkWidget *opts_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
 
     self->chk_case = GTK_CHECK_BUTTON(gtk_check_button_new_with_label(_("Match Case")));
     self->chk_whole = GTK_CHECK_BUTTON(gtk_check_button_new_with_label(_("Whole Word")));
     self->chk_backwards = GTK_CHECK_BUTTON(gtk_check_button_new_with_label(_("Backwards")));
+
+    g_signal_connect(self->chk_case, "notify::active", G_CALLBACK(on_search_opt_changed), self);
+    g_signal_connect(self->chk_whole, "notify::active", G_CALLBACK(on_search_opt_changed), self);
+    g_signal_connect(self->chk_backwards, "notify::active", G_CALLBACK(on_search_opt_changed), self);
 
     gtk_box_append(GTK_BOX(opts_row), GTK_WIDGET(self->chk_case));
     gtk_box_append(GTK_BOX(opts_row), GTK_WIDGET(self->chk_whole));
@@ -193,9 +245,16 @@ SilktexSearchbar *silktex_searchbar_new(void)
     return g_object_new(SILKTEX_TYPE_SEARCHBAR, NULL);
 }
 
+gboolean silktex_searchbar_is_open(SilktexSearchbar *self)
+{
+    g_return_val_if_fail(SILKTEX_IS_SEARCHBAR(self), FALSE);
+    return self->revealed;
+}
+
 void silktex_searchbar_open(SilktexSearchbar *self, gboolean replace_mode)
 {
     g_return_if_fail(SILKTEX_IS_SEARCHBAR(self));
+    self->revealed = TRUE;
     gtk_widget_set_visible(self->replace_row, replace_mode);
     gtk_revealer_set_reveal_child(GTK_REVEALER(self->revealer), TRUE);
     gtk_widget_grab_focus(self->search_entry);
@@ -204,6 +263,7 @@ void silktex_searchbar_open(SilktexSearchbar *self, gboolean replace_mode)
 void silktex_searchbar_close(SilktexSearchbar *self)
 {
     g_return_if_fail(SILKTEX_IS_SEARCHBAR(self));
+    self->revealed = FALSE;
     gtk_revealer_set_reveal_child(GTK_REVEALER(self->revealer), FALSE);
     if (self->editor) gtk_widget_grab_focus(silktex_editor_get_view(self->editor));
 }
