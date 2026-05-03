@@ -468,7 +468,7 @@ void silktex_cmd_palette_show(GtkWidget *window)
 
     GtkWidget *list = gtk_list_box_new();
     gtk_list_box_set_selection_mode(GTK_LIST_BOX(list), GTK_SELECTION_SINGLE);
-    gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(list), TRUE);
+    gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(list), FALSE);
     gtk_widget_add_css_class(list, "navigation-sidebar");
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), list);
     gtk_box_append(GTK_BOX(hbox), scroll);
