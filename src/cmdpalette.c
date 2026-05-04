@@ -351,9 +351,16 @@ static void on_search_changed(GtkEditable *e, gpointer user_data)
     gtk_list_box_invalidate_filter(ctx->list);
     gtk_list_box_invalidate_headers(ctx->list);
 
-    /* Auto-select the first visible row and refresh the preview pane.
-     * Re-selecting the already-selected row doesn't fire row-selected, so
-     * we update the preview directly here (and clear it when nothing matches). */
+    /* Preserve the user's selection across keystrokes: if the currently
+     * selected row is still visible after filtering, leave it alone so the
+     * user's arrow-key choice survives further typing. Otherwise fall back
+     * to auto-selecting the first match (and clear when nothing matches). */
+    GtkListBoxRow *current = gtk_list_box_get_selected_row(ctx->list);
+    if (current && gtk_widget_get_visible(GTK_WIDGET(current))) {
+        update_preview(current, ctx);
+        return;
+    }
+
     GtkListBoxRow *first_visible = NULL;
     for (int i = 0; ; i++) {
         GtkListBoxRow *row = gtk_list_box_get_row_at_index(ctx->list, i);
