@@ -1154,10 +1154,32 @@ static void on_close_dialog_response(AdwAlertDialog *dialog, const char *respons
     g_free(d);
 }
 
+static void on_leave_session_toast(AdwToast *toast, gpointer user_data)
+{
+    (void)toast; (void)user_data;
+    silktex_collab_leave_session();
+}
+
 static gboolean on_close_page(AdwTabView *view, AdwTabPage *page, gpointer user_data)
 {
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     SilktexEditor *editor = silktex_window_editor_for_page(page);
+
+    /* Refuse to close a tab that's bound to an active collab session.
+     * Surface a toast offering a one-click "Leave Session" action; the
+     * user can dismiss the toast (default) to keep the tab open. */
+    if (silktex_collab_is_bound_editor(editor)) {
+        AdwToast *toast = adw_toast_new(
+            _("Leave the collaboration session before closing this tab."));
+        adw_toast_set_button_label(toast, _("Leave Session"));
+        adw_toast_set_timeout(toast, 6);
+        adw_toast_set_priority(toast, ADW_TOAST_PRIORITY_HIGH);
+        g_signal_connect(toast, "button-clicked",
+                         G_CALLBACK(on_leave_session_toast), NULL);
+        adw_toast_overlay_add_toast(self->toast_overlay, toast);
+        adw_tab_view_close_page_finish(view, page, FALSE);
+        return GDK_EVENT_STOP;
+    }
 
     if (editor == NULL || !silktex_editor_get_modified(editor)) return GDK_EVENT_PROPAGATE;
 

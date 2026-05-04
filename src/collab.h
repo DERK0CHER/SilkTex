@@ -31,4 +31,12 @@ void silktex_collab_connect_editor (SilktexEditor *editor);
  * Called from SilktexWindow dispose so closing the window also leaves. */
 void silktex_collab_shutdown (void);
 
+/* TRUE if a session is active or pending and `editor` is the document
+ * bound to it. Used by the window to refuse closing a session-bound tab. */
+gboolean silktex_collab_is_bound_editor (SilktexEditor *editor);
+
+/* Leave the active session (no-op if none). Exposed so the window's
+ * "Leave Session" toast button can hang up without driving the popover. */
+void silktex_collab_leave_session (void);
+
 G_END_DECLS

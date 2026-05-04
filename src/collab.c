@@ -1118,6 +1118,16 @@ void silktex_collab_connect_editor(SilktexEditor *editor)
 /* leaves any active session and tears down the node subprocess.        */
 /* ------------------------------------------------------------------ */
 
+gboolean silktex_collab_is_bound_editor(SilktexEditor *editor)
+{
+    return editor != NULL && C.editor == editor && (C.in_session || C.session_pending);
+}
+
+void silktex_collab_leave_session(void)
+{
+    if (C.in_session || C.session_pending) do_leave_session();
+}
+
 void silktex_collab_shutdown(void)
 {
     if (C.in_session || C.session_pending || C.proc) {
