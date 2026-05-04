@@ -319,7 +319,7 @@ static gboolean fire_deferred_action(gpointer user_data)
     return G_SOURCE_REMOVE;
 }
 
-static void activate_selected(PaletteCtx *ctx)
+static void activate_selected(PaletteCtx *ctx, gboolean keep_open)
 {
     GtkListBoxRow *row = gtk_list_box_get_selected_row(ctx->list);
     if (!row) return;
@@ -327,14 +327,15 @@ static void activate_selected(PaletteCtx *ctx)
     const char *param  = g_object_get_data(G_OBJECT(row), "cmd-param");
     if (!action) return;
 
-    /* Copy strings before closing — the row (and its data) is owned by the
-     * dialog and may be freed during the close animation. */
+    /* Copy strings — the row (and its data) is owned by the dialog and
+     * may be freed during the close animation. */
     DeferredAction *d = g_new(DeferredAction, 1);
     d->window = ctx->window;
     d->action = g_strdup(action);
     d->param  = g_strdup(param); /* g_strdup(NULL) → NULL */
 
-    adw_dialog_close(ctx->dialog);
+    if (!keep_open)
+        adw_dialog_close(ctx->dialog);
     /* Defer activation to the next idle iteration so the dialog finishes
      * releasing focus before the action returns it to the editor — prevents
      * GTK active-state accounting warnings up the widget tree. */
@@ -350,21 +351,31 @@ static void on_search_changed(GtkEditable *e, gpointer user_data)
     gtk_list_box_invalidate_filter(ctx->list);
     gtk_list_box_invalidate_headers(ctx->list);
 
-    /* Auto-select the first visible row. */
+    /* Auto-select the first visible row and refresh the preview pane.
+     * Re-selecting the already-selected row doesn't fire row-selected, so
+     * we update the preview directly here (and clear it when nothing matches). */
+    GtkListBoxRow *first_visible = NULL;
     for (int i = 0; ; i++) {
         GtkListBoxRow *row = gtk_list_box_get_row_at_index(ctx->list, i);
         if (!row) break;
         if (gtk_widget_get_visible(GTK_WIDGET(row))) {
-            gtk_list_box_select_row(ctx->list, row);
+            first_visible = row;
             break;
         }
+    }
+    if (first_visible) {
+        gtk_list_box_select_row(ctx->list, first_visible);
+        update_preview(first_visible, ctx);
+    } else {
+        gtk_list_box_unselect_all(ctx->list);
+        update_preview(NULL, ctx);
     }
 }
 
 static void on_row_activated(GtkListBox *list, GtkListBoxRow *row, gpointer user_data)
 {
     (void)list; (void)row;
-    activate_selected((PaletteCtx *)user_data);
+    activate_selected((PaletteCtx *)user_data, FALSE);
 }
 
 static void on_row_selected(GtkListBox *list, GtkListBoxRow *row, gpointer user_data)
@@ -380,7 +391,10 @@ static gboolean on_search_key_pressed(GtkEventControllerKey *ctrl, guint keyval,
     PaletteCtx *ctx = user_data;
 
     if (keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) {
-        activate_selected(ctx);
+        /* Shift+Enter: activate the highlighted row but keep the palette
+         * open, so users can chain multiple insertions (handy for symbols). */
+        gboolean keep_open = (state & GDK_SHIFT_MASK) != 0;
+        activate_selected(ctx, keep_open);
         return GDK_EVENT_STOP;
     }
     if (keyval == GDK_KEY_Down) {

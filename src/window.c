@@ -1282,6 +1282,8 @@ static void silktex_window_dispose(GObject *object)
 
     self->current_toast = NULL;
 
+    silktex_collab_shutdown();
+
     if (self->compiler) silktex_compiler_stop(self->compiler);
     /* Git dialog widgets may still exist — null pointers so async callbacks
      * never dereference freed children if dispose races a GTask completion. */

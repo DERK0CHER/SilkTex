@@ -106,6 +106,9 @@ typedef struct {
     int               next_color_idx;  /* round-robin color assignment      */
     guint             cursor_debounce; /* GSource ID for cursor broadcast   */
 
+    /* Window the collab UI lives in (weak — owns the tab view we annotate). */
+    SilktexWindow *window;
+
     /* Header-bar button UI */
     GtkStack    *icon_stack;
     GtkSpinner  *btn_spinner;
@@ -132,6 +135,33 @@ static Collab C; /* zero-initialized */
 static void schedule_read(void);
 static void collab_update_ui(void);
 static void collab_send_name(void);
+static void collab_update_tab_indicator(gboolean active);
+
+/* ------------------------------------------------------------------ */
+/* Tab indicator: lock icon on the editor page bound to the session    */
+/* ------------------------------------------------------------------ */
+
+static void collab_update_tab_indicator(gboolean active)
+{
+    if (!C.window || !C.window->tab_view) return;
+    AdwTabView *tv = C.window->tab_view;
+    guint n = adw_tab_view_get_n_pages(tv);
+    for (guint i = 0; i < n; i++) {
+        AdwTabPage *page = adw_tab_view_get_nth_page(tv, i);
+        SilktexEditor *ed = silktex_window_editor_for_page(page);
+        gboolean is_bound = active && ed && ed == C.editor;
+        if (is_bound) {
+            g_autoptr(GIcon) icon =
+                g_themed_icon_new("system-users-symbolic");
+            adw_tab_page_set_indicator_icon(page, icon);
+            adw_tab_page_set_indicator_tooltip(page,
+                _("This document is in a collaboration session"));
+        } else if (adw_tab_page_get_indicator_icon(page)) {
+            adw_tab_page_set_indicator_icon(page, NULL);
+            adw_tab_page_set_indicator_tooltip(page, NULL);
+        }
+    }
+}
 
 /* ------------------------------------------------------------------ */
 /* Peer state helpers                                                  */
@@ -412,8 +442,13 @@ static void on_node_line(GObject *src, GAsyncResult *res, gpointer ud)
         collab_send_name();
 
     } else if (g_str_equal(event, "peer_count")) {
+        int prev = C.peer_count;
         C.peer_count = json_object_has_member(obj, "count")
                            ? (int)json_object_get_int_member(obj, "count") : 0;
+        /* Re-broadcast our display name whenever a new peer joins, so the
+         * host (whose set_name was sent before any peer was listening)
+         * still reaches late joiners. */
+        if (C.in_session && C.peer_count > prev) collab_send_name();
         collab_update_ui();
 
     } else if (g_str_equal(event, "remote_cursor")) {
@@ -652,6 +687,8 @@ static void do_leave_session(void)
 
 static void collab_update_ui(void)
 {
+    collab_update_tab_indicator(C.in_session || C.session_pending);
+
     if (!C.icon_stack) return;
 
     if (C.in_session) {
@@ -810,6 +847,11 @@ static void on_copy_btn_clicked(GtkButton *btn, gpointer ud)
 void silktex_collab_setup_window(SilktexWindow *self)
 {
     if (!self->btn_collab) return;
+
+    if (C.window)
+        g_object_remove_weak_pointer(G_OBJECT(C.window), (gpointer *)&C.window);
+    C.window = self;
+    g_object_add_weak_pointer(G_OBJECT(self), (gpointer *)&C.window);
 
     /* ── Header button child: icon stack + spinner + peer-count badge ── */
     GtkWidget *btn_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
@@ -1029,6 +1071,14 @@ void silktex_collab_setup_window(SilktexWindow *self)
 
 void silktex_collab_connect_editor(SilktexEditor *editor)
 {
+    /* Once a session is running, stay locked to the editor it was started
+     * on — switching tabs or opening new ones must not move the session
+     * to a different document. */
+    if (C.in_session || C.session_pending) {
+        collab_update_tab_indicator(TRUE);
+        return;
+    }
+
     collab_start_node(); /* no-op if already running */
 
     /* Disconnect signals from the old buffer. */
@@ -1061,4 +1111,20 @@ void silktex_collab_connect_editor(SilktexEditor *editor)
                                         G_CALLBACK(on_delete_range),             NULL);
     C.cursor_handler = g_signal_connect(buf, "notify::cursor-position",
                                         G_CALLBACK(on_cursor_position_changed),  NULL);
+}
+
+/* ------------------------------------------------------------------ */
+/* Public: shutdown — called from window dispose so closing the window  */
+/* leaves any active session and tears down the node subprocess.        */
+/* ------------------------------------------------------------------ */
+
+void silktex_collab_shutdown(void)
+{
+    if (C.in_session || C.session_pending || C.proc) {
+        do_leave_session();
+    }
+    if (C.window) {
+        g_object_remove_weak_pointer(G_OBJECT(C.window), (gpointer *)&C.window);
+        C.window = NULL;
+    }
 }

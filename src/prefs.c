@@ -42,6 +42,7 @@ struct _SilktexPrefs {
     AdwComboRow *row_snippet_mod2;
     GPtrArray *snippet_entries;
     GtkFlowBox *snippet_flow_box;
+    char *snippet_search_query;  /* casefolded current query, or NULL */
 
     GtkStringList *scheme_ids_light;
     GtkStringList *scheme_ids_dark;
@@ -658,6 +659,7 @@ static void silktex_prefs_dispose(GObject *obj)
     g_clear_object(&self->scheme_ids_light);
     g_clear_object(&self->scheme_ids_dark);
     g_clear_pointer(&self->snippet_entries, g_ptr_array_unref);
+    g_clear_pointer(&self->snippet_search_query, g_free);
     G_OBJECT_CLASS(silktex_prefs_parent_class)->dispose(obj);
 }
 
@@ -1566,6 +1568,34 @@ static void on_snippet_pill_clicked(GtkButton *btn, gpointer ud)
     snippet_edit_dialog_show(self, idx);
 }
 
+static gboolean snippet_pill_filter(GtkFlowBoxChild *child, gpointer ud)
+{
+    SilktexPrefs *self = SILKTEX_PREFS(ud);
+    if (!self->snippet_search_query || !*self->snippet_search_query) return TRUE;
+
+    guint idx = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(child), "snippet-idx"));
+    if (!self->snippet_entries || idx >= self->snippet_entries->len) return FALSE;
+    SnippetEntry *e = g_ptr_array_index(self->snippet_entries, idx);
+
+    const char *fields[] = { e->name, e->key, e->body };
+    for (gsize i = 0; i < G_N_ELEMENTS(fields); i++) {
+        if (!fields[i]) continue;
+        g_autofree char *fold = g_utf8_casefold(fields[i], -1);
+        if (strstr(fold, self->snippet_search_query)) return TRUE;
+    }
+    return FALSE;
+}
+
+static void on_snippet_search_changed(GtkEditable *entry, gpointer ud)
+{
+    SilktexPrefs *self = SILKTEX_PREFS(ud);
+    const char *q = gtk_editable_get_text(entry);
+    g_clear_pointer(&self->snippet_search_query, g_free);
+    if (q && *q) self->snippet_search_query = g_utf8_casefold(q, -1);
+    if (self->snippet_flow_box)
+        gtk_flow_box_invalidate_filter(self->snippet_flow_box);
+}
+
 static void snippets_rebuild_pills(SilktexPrefs *self)
 {
     if (!self->snippet_flow_box) return;
@@ -1588,6 +1618,11 @@ static void snippets_rebuild_pills(SilktexPrefs *self)
         g_object_set_data(G_OBJECT(pill), "snippet-idx", GUINT_TO_POINTER(i));
         g_signal_connect(pill, "clicked", G_CALLBACK(on_snippet_pill_clicked), self);
         gtk_flow_box_insert(self->snippet_flow_box, pill, -1);
+        /* Tag the wrapping FlowBoxChild so the filter can locate the entry. */
+        GtkFlowBoxChild *child =
+            gtk_flow_box_get_child_at_index(self->snippet_flow_box, (int)i);
+        if (child)
+            g_object_set_data(G_OBJECT(child), "snippet-idx", GUINT_TO_POINTER(i));
     }
 }
 
@@ -1657,6 +1692,13 @@ void silktex_prefs_set_snippets(SilktexPrefs *self, SilktexSnippets *snippets)
     gtk_box_append(GTK_BOX(toolbar), btn_save);
     gtk_box_append(GTK_BOX(toolbar), btn_reset);
 
+    GtkWidget *search = gtk_search_entry_new();
+    gtk_search_entry_set_placeholder_text(GTK_SEARCH_ENTRY(search),
+                                          _("Search snippets by name or text…"));
+    gtk_widget_set_margin_top(search, 4);
+    g_signal_connect(search, "search-changed",
+                     G_CALLBACK(on_snippet_search_changed), self);
+
     self->snippet_flow_box = GTK_FLOW_BOX(gtk_flow_box_new());
     gtk_flow_box_set_selection_mode(self->snippet_flow_box, GTK_SELECTION_NONE);
     gtk_flow_box_set_max_children_per_line(self->snippet_flow_box, 4);
@@ -1665,8 +1707,11 @@ void silktex_prefs_set_snippets(SilktexPrefs *self, SilktexSnippets *snippets)
     gtk_flow_box_set_column_spacing(self->snippet_flow_box, 8);
     gtk_widget_set_margin_top(GTK_WIDGET(self->snippet_flow_box), 8);
     gtk_widget_set_margin_bottom(GTK_WIDGET(self->snippet_flow_box), 8);
+    gtk_flow_box_set_filter_func(self->snippet_flow_box,
+                                 snippet_pill_filter, self, NULL);
 
     adw_preferences_group_add(grp_list, toolbar);
+    adw_preferences_group_add(grp_list, search);
     adw_preferences_group_add(grp_list, GTK_WIDGET(self->snippet_flow_box));
     adw_preferences_page_add(snip_page, grp_list);
 

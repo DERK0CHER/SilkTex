@@ -22,7 +22,13 @@ void silktex_collab_setup_window   (SilktexWindow *window);
 /* Connect an editor to the collaboration layer.
  * Hooks into the buffer's insert-text / delete-range signals.
  * Lazily spawns silktex-node on the first call.
- * Safe to call on every tab — only the first call starts the node. */
+ * Safe to call on every tab — only the first call starts the node.
+ * No-op while a session is active or pending: the session stays bound to
+ * the editor it was started on, so opening new tabs doesn't disrupt it. */
 void silktex_collab_connect_editor (SilktexEditor *editor);
+
+/* Leave any active session and tear down the node subprocess.
+ * Called from SilktexWindow dispose so closing the window also leaves. */
+void silktex_collab_shutdown (void);
 
 G_END_DECLS
