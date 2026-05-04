@@ -66,8 +66,9 @@ If you already have the GNOME stack installed system-wide:
 # Required packages on recent Fedora, for reference:
 sudo dnf install meson ninja-build clang pkgconf-pkg-config \
     gtk4-devel libadwaita-devel gtksourceview5-devel \
-    poppler-glib-devel blueprint-compiler \
-    adwaita-icon-theme gettext texlive-scheme-full
+    poppler-glib-devel json-glib-devel blueprint-compiler \
+    adwaita-icon-theme gettext texlive-scheme-full \
+    cargo rust
 
 meson setup build
 ninja -C build
