@@ -356,7 +356,7 @@ static void on_search_changed(GtkEditable *e, gpointer user_data)
      * user's arrow-key choice survives further typing. Otherwise fall back
      * to auto-selecting the first match (and clear when nothing matches). */
     GtkListBoxRow *current = gtk_list_box_get_selected_row(ctx->list);
-    if (current && gtk_widget_get_visible(GTK_WIDGET(current))) {
+    if (current && gtk_widget_get_child_visible(GTK_WIDGET(current))) {
         update_preview(current, ctx);
         return;
     }
@@ -365,7 +365,7 @@ static void on_search_changed(GtkEditable *e, gpointer user_data)
     for (int i = 0; ; i++) {
         GtkListBoxRow *row = gtk_list_box_get_row_at_index(ctx->list, i);
         if (!row) break;
-        if (gtk_widget_get_visible(GTK_WIDGET(row))) {
+        if (gtk_widget_get_child_visible(GTK_WIDGET(row))) {
             first_visible = row;
             break;
         }

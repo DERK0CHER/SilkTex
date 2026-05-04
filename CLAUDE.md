@@ -120,7 +120,19 @@ main.c
                  configfile.c — JSON config persistence
                  git.c        — Git integration (status, commit, clone)
                  latex.c      — Insert-menu helpers (image, table, matrix, bibliography)
+                 collab.c     — P2P collaboration glue; spawns and talks to silktex-node
 ```
+
+### `silktex-node/` subproject (P2P collaboration)
+
+A separate Rust binary that powers the real-time collaboration feature. Built by Cargo as part of the Meson build and shipped alongside `silktex`. The C side (`collab.c`) launches it as a child process and communicates with it; the node handles the network and CRDT layers.
+
+Stack:
+- **Loro** — CRDT for conflict-free concurrent text edits.
+- **iroh** — direct peer-to-peer transport (QUIC, with DERP relay fallback).
+- **tokio** — async runtime.
+
+Layout: `silktex-node/src/main.rs` (entry), `net.rs` (iroh transport), `doc.rs` (Loro document state).
 
 **Threading:** GTK/UI runs on the main thread. The compiler launches a worker thread for `pdflatex`; results are marshalled back via GLib signals.
 
