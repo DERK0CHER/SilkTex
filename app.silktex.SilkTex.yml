@@ -56,22 +56,11 @@ modules:
       env:
         CARGO_HOME: /run/build/silktex-node/cargo
     build-commands:
-      - mkdir -p .cargo
-      - |
-        cat > .cargo/config.toml << 'EOF'
-        [source.crates-io]
-        replace-with = "vendored-sources"
-        [source.vendored-sources]
-        directory = "vendor"
-        EOF
       - cargo build --release --offline
       - install -Dm755 target/release/silktex-node -t /app/bin/
     sources:
-      - type: git
-        url: https://github.com/DERK0CHER/SilkTex.git
-        tag: v1.0.3
-        commit: da08ab052c19c33af569e730d8743f683c6e726b
-        subdir: silktex-node
+      - type: dir
+        path: silktex-node
       - cargo-sources.json
 
   - name: texlive-extension-point
@@ -107,10 +96,5 @@ modules:
       - --buildtype=release
       - --libdir=lib
     sources:
-      - type: git
-        url: https://github.com/DERK0CHER/SilkTex.git
-        tag: v1.0.3
-        commit: da08ab052c19c33af569e730d8743f683c6e726b
-        x-checker-data:
-          type: git
-          tag-pattern: '^v([\d.]+)$'
+      - type: dir
+        path: .
