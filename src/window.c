@@ -1154,10 +1154,19 @@ static void on_close_dialog_response(AdwAlertDialog *dialog, const char *respons
     g_free(d);
 }
 
-static void on_leave_session_toast(AdwToast *toast, gpointer user_data)
+static void on_collab_close_dialog_response(AdwAlertDialog *dialog, const char *response,
+                                            gpointer user_data)
 {
-    (void)toast; (void)user_data;
-    silktex_collab_leave_session();
+    (void)dialog;
+    ClosePageData *d = user_data;
+
+    if (g_strcmp0(response, "leave") == 0) {
+        silktex_collab_leave_session();
+        adw_tab_view_close_page_finish(d->view, d->page, TRUE);
+    } else {
+        adw_tab_view_close_page_finish(d->view, d->page, FALSE);
+    }
+    g_free(d);
 }
 
 static gboolean on_close_page(AdwTabView *view, AdwTabPage *page, gpointer user_data)
@@ -1165,19 +1174,28 @@ static gboolean on_close_page(AdwTabView *view, AdwTabPage *page, gpointer user_
     SilktexWindow *self = SILKTEX_WINDOW(user_data);
     SilktexEditor *editor = silktex_window_editor_for_page(page);
 
-    /* Refuse to close a tab that's bound to an active collab session.
-     * Surface a toast offering a one-click "Leave Session" action; the
-     * user can dismiss the toast (default) to keep the tab open. */
+    /* Refuse to close a tab that's bound to an active collab session
+     * without explicit confirmation; closing it would orphan the session
+     * against a buffer that's about to be torn down. */
     if (silktex_collab_is_bound_editor(editor)) {
-        AdwToast *toast = adw_toast_new(
-            _("Leave the collaboration session before closing this tab."));
-        adw_toast_set_button_label(toast, _("Leave Session"));
-        adw_toast_set_timeout(toast, 6);
-        adw_toast_set_priority(toast, ADW_TOAST_PRIORITY_HIGH);
-        g_signal_connect(toast, "button-clicked",
-                         G_CALLBACK(on_leave_session_toast), NULL);
-        adw_toast_overlay_add_toast(self->toast_overlay, toast);
-        adw_tab_view_close_page_finish(view, page, FALSE);
+        ClosePageData *d = g_new(ClosePageData, 1);
+        d->view = view;
+        d->page = page;
+        d->win  = self;
+
+        AdwAlertDialog *dlg = ADW_ALERT_DIALOG(adw_alert_dialog_new(
+            _("Leave Collaboration Session?"),
+            _("This tab is hosting a live collaboration session. "
+              "Closing it will disconnect you from your peers.")));
+        adw_alert_dialog_add_response(dlg, "cancel", _("Don't Close Tab"));
+        adw_alert_dialog_add_response(dlg, "leave",  _("Leave Session"));
+        adw_alert_dialog_set_response_appearance(dlg, "leave",
+                                                 ADW_RESPONSE_DESTRUCTIVE);
+        adw_alert_dialog_set_default_response(dlg, "cancel");
+        adw_alert_dialog_set_close_response(dlg, "cancel");
+        g_signal_connect(dlg, "response",
+                         G_CALLBACK(on_collab_close_dialog_response), d);
+        adw_dialog_present(ADW_DIALOG(dlg), GTK_WIDGET(self));
         return GDK_EVENT_STOP;
     }
 
