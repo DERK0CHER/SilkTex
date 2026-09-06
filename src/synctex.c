@@ -81,7 +81,11 @@ static char *run_synctex_view(int line, const char *tex_path, const char *pdf_pa
 static char *run_synctex_edit(int page, double x, double y, const char *pdf_path,
                               const char *synctex_dir)
 {
-    g_autofree char *output = g_strdup_printf("%d:%g:%g:%s", page + 1, x, y, pdf_path);
+    /* Locale-independent: "%g" would emit a decimal comma under e.g. de_DE. */
+    char xbuf[G_ASCII_DTOSTR_BUF_SIZE], ybuf[G_ASCII_DTOSTR_BUF_SIZE];
+    g_ascii_formatd(xbuf, sizeof xbuf, "%g", x);
+    g_ascii_formatd(ybuf, sizeof ybuf, "%g", y);
+    g_autofree char *output = g_strdup_printf("%d:%s:%s:%s", page + 1, xbuf, ybuf, pdf_path);
 
     if (synctex_dir && *synctex_dir) {
         const char *args[] = {"edit", "-o", output, "-d", synctex_dir, NULL};
@@ -105,7 +109,7 @@ static gboolean parse_double_field(const char *output, const char *key, double *
     const char *p = strstr(output, key);
     if (!p) return FALSE;
     p += strlen(key);
-    *out = strtod(p, NULL);
+    *out = g_ascii_strtod(p, NULL);
     return TRUE;
 }
 
@@ -153,9 +157,10 @@ gboolean silktex_synctex_forward(SilktexEditor *editor, SilktexPreview *preview,
         if (!out && synctex_dir) out = run_synctex_view(line, tex_path, pdf_path, NULL);
         if (!out) continue;
 
-        parse_int_field(out, "Page:", &page);
-        parse_double_field(out, "x:", &x);
-        parse_double_field(out, "y:", &y);
+        /* Anchor keys at line start so paths echoed in "Output:" cannot match. */
+        parse_int_field(out, "\nPage:", &page);
+        parse_double_field(out, "\nx:", &x);
+        parse_double_field(out, "\ny:", &y);
         if (page < 1) g_clear_pointer(&out, g_free);
     }
     g_ptr_array_unref(paths);
@@ -185,7 +190,7 @@ gboolean silktex_synctex_inverse(SilktexEditor *editor, const char *pdf_path, in
     }
 
     int line = 0;
-    if (!parse_int_field(out, "Line:", &line) || line < 1) return FALSE;
+    if (!parse_int_field(out, "\nLine:", &line) || line < 1) return FALSE;
 
     silktex_editor_goto_line(editor, line - 1);
     return TRUE;
