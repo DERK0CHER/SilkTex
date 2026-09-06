@@ -1,4 +1,9 @@
 # Build outputs
+__pycache__/
+*.pyc
+result
+result-*
+.direnv/
 silktex-node/target/
 build/
 .goblint/
@@ -11,8 +16,6 @@ app.silktex.SilkTex.flatpak
 .clang-format
 .clangd
 .editorconfig
-.github/
-.gitignore
 .vscode/
 
 # Editor / OS

@@ -8,6 +8,8 @@ data/misc/app.silktex.SilkTex.desktop.in
 data/misc/app.silktex.SilkTex.metainfo.xml.in
 
 src/application.c
+src/cmdpalette.c
+src/collab.c
 src/compiler.c
 src/configfile.c
 src/editor.c
@@ -21,3 +23,5 @@ src/structure.c
 src/synctex.c
 src/utils.c
 src/window.c
+src/window-git.c
+src/window-primary-menu.c
