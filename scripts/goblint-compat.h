@@ -23,7 +23,16 @@
 #ifndef SILKTEX_GOBLINT_COMPAT_H
 #define SILKTEX_GOBLINT_COMPAT_H
 
+/*
+ * Meson's compiler sanity check builds a trivial program with CFLAGS but
+ * without any pkg-config -I flags, so the GLib headers are not reachable
+ * there. Probe with __has_include and do nothing when they are missing,
+ * otherwise `meson setup` fails with "Compiler cc cannot compile programs".
+ */
+
 #ifdef __GI_SCANNER__
+#if defined(__has_include)
+#if __has_include(<glib.h>) && __has_include(<json-glib/json-glib.h>)
 
 #undef __GI_SCANNER__
 
@@ -34,6 +43,8 @@
 
 #define __GI_SCANNER__ 1
 
+#endif /* __has_include(<glib.h>) */
+#endif /* defined(__has_include) */
 #endif /* __GI_SCANNER__ */
 
 #endif /* SILKTEX_GOBLINT_COMPAT_H */
