@@ -10,6 +10,13 @@ For GTK/Graphene on x86_64, CIL cannot parse GCC SIMD vector intrinsics. The
 gobject-introspection). The Goblint job sets `CFLAGS=-D__GI_SCANNER__` so Meson
 records it in compile_commands.json; do not add it only in this script.
 
+GLib gates its ``g_auto``/``g_autoptr``/``g_autofree`` cleanup macros on that
+same define (glib/gmacros.h), so it alone turns every use of them into a
+compile error and the build dies before Goblint runs. The job therefore also
+force-includes ``scripts/goblint-compat.h``, which pulls the GLib stack in with
+the define lifted and then restores it for the Graphene headers GTK includes
+later. Keep the two flags together.
+
 Run ``ninja -C build`` at least once first: ``compile_commands.json`` lists
 generated C (e.g. the build tree’s ``.../data/ui/silktex-resources.c``), but
 those files are only created when Ninja runs the glib-compile-resources/Blueprint

@@ -94,7 +94,16 @@ static void on_recent_clear(GtkButton *btn, gpointer ud)
     (void)btn;
     AdwDialog *dlg = ADW_DIALOG(ud);
     GtkRecentManager *mgr = gtk_recent_manager_get_default();
-    gtk_recent_manager_purge_items(mgr, NULL);
+    /* Only drop our own entries; purge_items() would wipe the whole desktop list. */
+    const char *app = g_get_application_name();
+    if (!app) app = g_get_prgname();
+    GList *items = gtk_recent_manager_get_items(mgr);
+    for (GList *l = items; l != NULL; l = l->next) {
+        GtkRecentInfo *info = l->data;
+        if (app && gtk_recent_info_has_application(info, app))
+            gtk_recent_manager_remove_item(mgr, gtk_recent_info_get_uri(info), NULL);
+    }
+    g_list_free_full(items, (GDestroyNotify)gtk_recent_info_unref);
     adw_dialog_close(dlg);
 }
 

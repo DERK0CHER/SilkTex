@@ -11,6 +11,7 @@
 #include "i18n.h"
 #include <glib/gstdio.h>
 #include <sys/stat.h>
+#include <errno.h>
 
 struct _SilktexEditor {
     GObject parent_instance;
@@ -80,11 +81,13 @@ static void silktex_editor_init_workfile(SilktexEditor *self)
      * rejects dot-prefixed filenames) so simultaneous tabs never collide. */
     g_autofree char *tmpdir = silktex_editor_get_tmpdir();
     if (!g_file_test(tmpdir, G_FILE_TEST_IS_DIR)) {
-        g_mkdir_with_parents(tmpdir, 0755);
+        g_mkdir_with_parents(tmpdir, 0700);
     }
 
     self->fdname = g_build_filename(tmpdir, "silktex_XXXXXX", NULL);
     self->workfd = g_mkstemp(self->fdname);
+    if (self->workfd < 0)
+        g_warning("Failed to create workfile %s: %s", self->fdname, g_strerror(errno));
 
     self->workfile = g_strdup_printf("%s.tex", self->fdname);
     self->pdffile = g_strdup_printf("%s.pdf", self->fdname);
@@ -115,7 +118,14 @@ static void silktex_editor_dispose(GObject *object)
 {
     SilktexEditor *self = SILKTEX_EDITOR(object);
 
+    if (self->css_provider && gdk_display_get_default())
+        gtk_style_context_remove_provider_for_display(gdk_display_get_default(),
+                                                      GTK_STYLE_PROVIDER(self->css_provider));
     g_clear_object(&self->css_provider);
+    if (self->buffer) g_signal_handlers_disconnect_by_func(self->buffer, on_buffer_changed, self);
+    g_clear_object(&self->buffer);
+    g_clear_object(&self->error_tag);
+    g_clear_object(&self->search_tag);
     g_clear_pointer(&self->filename, g_free);
     g_clear_pointer(&self->search_term, g_free);
     g_clear_pointer(&self->font_family, g_free);
@@ -285,6 +295,12 @@ void silktex_editor_load_file(SilktexEditor *self, GFile *file)
     if (!g_file_load_contents(file, NULL, &contents, &length, NULL, &error)) {
         g_warning("Failed to load file: %s", error->message);
         g_error_free(error);
+        return;
+    }
+
+    if (!g_utf8_validate(contents, length, NULL)) {
+        g_warning("Failed to load file: contents are not valid UTF-8");
+        g_free(contents);
         return;
     }
 
@@ -596,6 +612,8 @@ void silktex_editor_replace_all(SilktexEditor *self, const char *term, const cha
 {
     g_return_if_fail(SILKTEX_IS_EDITOR(self));
 
+    if (term == NULL || !*term) return;
+
     GtkTextIter start, mstart, mend;
     gtk_text_buffer_get_start_iter(GTK_TEXT_BUFFER(self->buffer), &start);
 
@@ -683,7 +701,8 @@ void silktex_editor_update_workfile(SilktexEditor *self)
     g_autofree char *text = silktex_editor_get_text(self);
     GError *error = NULL;
 
-    if (!g_file_set_contents(self->workfile, text, -1, &error)) {
+    if (!g_file_set_contents_full(self->workfile, text, -1, G_FILE_SET_CONTENTS_CONSISTENT, 0600,
+                                  &error)) {
         g_warning("Failed to update workfile: %s", error->message);
         g_error_free(error);
     }

@@ -35,6 +35,7 @@ typedef struct {
     GList *unique;    /* one representative per group, group-sorted */
     GList *current;   /* pointer into unique – focused group        */
     char *sel_text;   /* captured selection for $SELECTED_TEXT      */
+    GtkTextBuffer *buf; /* owned ref – buffer the marks live in     */
 } SnippetState;
 
 struct _SilktexSnippets {
@@ -172,13 +173,22 @@ static void append_snippet(SilktexSnippets *self, const char *prefix, const char
     tail->next = node;
 }
 
+/* NULL when the member is missing or not a string (user file is untrusted). */
+static const char *json_string_member(JsonObject *obj, const char *key)
+{
+    JsonNode *n = json_object_get_member(obj, key);
+    if (!n || !JSON_NODE_HOLDS_VALUE(n) || json_node_get_value_type(n) != G_TYPE_STRING)
+        return NULL;
+    return json_node_get_string(n);
+}
+
 static char *snippet_body_from_json_member(JsonObject *obj)
 {
     if (!json_object_has_member(obj, "body")) return g_strdup("");
 
     JsonNode *body_node = json_object_get_member(obj, "body");
     if (JSON_NODE_HOLDS_VALUE(body_node)) {
-        const char *body = json_node_get_string(body_node);
+        const char *body = json_string_member(obj, "body");
         return g_strdup(body ? body : "");
     }
 
@@ -188,7 +198,11 @@ static char *snippet_body_from_json_member(JsonObject *obj)
         guint len = json_array_get_length(arr);
         for (guint i = 0; i < len; i++) {
             if (i > 0) g_string_append_c(body, '\n');
-            const char *line = json_array_get_string_element(arr, i);
+            JsonNode *el = json_array_get_element(arr, i);
+            const char *line = JSON_NODE_HOLDS_VALUE(el) &&
+                                       json_node_get_value_type(el) == G_TYPE_STRING
+                                   ? json_node_get_string(el)
+                                   : NULL;
             g_string_append(body, line ? line : "");
         }
         return g_string_free(body, FALSE);
@@ -203,14 +217,18 @@ static char *snippet_prefix_from_json_member(JsonObject *obj)
 
     JsonNode *prefix_node = json_object_get_member(obj, "prefix");
     if (JSON_NODE_HOLDS_VALUE(prefix_node)) {
-        const char *prefix = json_node_get_string(prefix_node);
+        const char *prefix = json_string_member(obj, "prefix");
         return g_strdup(prefix ? prefix : "");
     }
 
     if (JSON_NODE_HOLDS_ARRAY(prefix_node)) {
         JsonArray *arr = json_node_get_array(prefix_node);
         if (json_array_get_length(arr) > 0) {
-            const char *prefix = json_array_get_string_element(arr, 0);
+            JsonNode *el = json_array_get_element(arr, 0);
+            const char *prefix = JSON_NODE_HOLDS_VALUE(el) &&
+                                         json_node_get_value_type(el) == G_TYPE_STRING
+                                     ? json_node_get_string(el)
+                                     : NULL;
             return g_strdup(prefix ? prefix : "");
         }
     }
@@ -230,24 +248,21 @@ static gboolean load_json_snippets(SilktexSnippets *self, const char *path)
     }
 
     JsonNode *root = json_parser_get_root(parser);
-    if (!JSON_NODE_HOLDS_OBJECT(root)) return FALSE;
+    if (root == NULL || !JSON_NODE_HOLDS_OBJECT(root)) return FALSE; /* empty file → NULL root */
 
     JsonObject *root_obj = json_node_get_object(root);
     g_autoptr(GList) members = json_object_get_members(root_obj);
 
     for (GList *l = members; l; l = l->next) {
         const char *name = l->data;
-        JsonObject *entry = json_object_get_object_member(root_obj, name);
-        if (!entry) continue;
+        JsonNode *entry_node = json_object_get_member(root_obj, name);
+        if (!entry_node || !JSON_NODE_HOLDS_OBJECT(entry_node)) continue;
+        JsonObject *entry = json_node_get_object(entry_node);
 
         g_autofree char *prefix = snippet_prefix_from_json_member(entry);
         g_autofree char *body = snippet_body_from_json_member(entry);
-        const char *description = json_object_has_member(entry, "description")
-                                      ? json_object_get_string_member(entry, "description")
-                                      : name;
-        const char *accelerator = json_object_has_member(entry, "accelerator")
-                                      ? json_object_get_string_member(entry, "accelerator")
-                                      : "";
+        const char *description = json_string_member(entry, "description");
+        const char *accelerator = json_string_member(entry, "accelerator");
 
         append_snippet(self, prefix, accelerator, description && *description ? description : name,
                        body);
@@ -344,7 +359,8 @@ static SnippetState *parse_snippet(const char *body, const char *sel_text)
             if (pats[pi].is_num) {
                 g_autofree char *gn = g_match_info_fetch(mi, 1);
                 g_autofree char *dt = g_match_info_fetch(mi, 2);
-                h->group = atol(gn ? gn : "0");
+                /* Clamped so the (int) casts used as hash keys stay lossless. */
+                h->group = MIN(g_ascii_strtoll(gn ? gn : "0", NULL, 10), G_MAXINT);
                 h->deftext = g_strdup(dt ? dt : "");
             } else {
                 g_autofree char *kw = g_match_info_fetch(mi, 1);
@@ -397,10 +413,11 @@ static void delete_marks(SnippetState *s, GtkTextBuffer *buf)
     }
 }
 
-static void free_state(SnippetState *s, GtkTextBuffer *buf)
+static void free_state(SnippetState *s)
 {
     if (!s) return;
-    delete_marks(s, buf);
+    delete_marks(s, s->buf);
+    g_object_unref(s->buf);
     for (GList *c = s->holders; c; c = c->next) {
         g_free(((Holder *)c->data)->deftext);
         g_free(c->data);
@@ -520,10 +537,10 @@ static void sync_group(SnippetState *s, GtkTextBuffer *buf)
     }
 }
 
-static void deactivate(SilktexSnippets *self, GtkTextBuffer *buf)
+static void deactivate(SilktexSnippets *self)
 {
     if (!self->active) return;
-    free_state(self->active, buf);
+    free_state(self->active);
     GList *last = g_list_last(self->stack);
     if (last) {
         self->active = last->data;
@@ -531,6 +548,14 @@ static void deactivate(SilktexSnippets *self, GtkTextBuffer *buf)
     } else {
         self->active = NULL;
     }
+}
+
+/* One SilktexSnippets serves every tab: drop states whose marks belong to
+ * another (possibly already destroyed) editor buffer. */
+static void drop_foreign_states(SilktexSnippets *self, GtkTextBuffer *buf)
+{
+    while (self->active && self->active->buf != buf)
+        deactivate(self);
 }
 
 static void activate_snippet(SilktexSnippets *self, SilktexEditor *editor, const char *keyword,
@@ -550,6 +575,7 @@ static void activate_snippet(SilktexSnippets *self, SilktexEditor *editor, const
     g_autofree char *basename = filename ? g_path_get_basename(filename) : g_strdup("");
 
     SnippetState *s = parse_snippet(body, sel);
+    s->buf = g_object_ref(buf);
 
     gtk_text_buffer_begin_user_action(buf);
 
@@ -584,12 +610,14 @@ static void activate_snippet(SilktexSnippets *self, SilktexEditor *editor, const
     }
     self->active = s;
 
-    if (!goto_next(s, buf, view)) deactivate(self, buf);
+    if (!goto_next(s, buf, view)) deactivate(self);
 }
 
 static void silktex_snippets_finalize(GObject *obj)
 {
     SilktexSnippets *self = SILKTEX_SNIPPETS(obj);
+    while (self->active)
+        deactivate(self);
     g_free(self->filename);
     free_slist(self->head);
     free_accels(self->accels);
@@ -650,8 +678,10 @@ gboolean silktex_snippets_handle_key(SilktexSnippets *self, SilktexEditor *edito
     GtkTextBuffer *buf = GTK_TEXT_BUFFER(sbuf);
     GtkTextView *view = GTK_TEXT_VIEW(silktex_editor_get_view(editor));
 
+    drop_foreign_states(self, buf);
+
     if (keyval == GDK_KEY_Escape && self->active) {
-        deactivate(self, buf);
+        deactivate(self);
         return TRUE;
     }
 
@@ -678,14 +708,14 @@ gboolean silktex_snippets_handle_key(SilktexSnippets *self, SilktexEditor *edito
             }
         }
         if (self->active) {
-            if (!goto_next(self->active, buf, view)) deactivate(self, buf);
+            if (!goto_next(self->active, buf, view)) deactivate(self);
             return TRUE;
         }
     }
 
     if ((keyval == GDK_KEY_ISO_Left_Tab || keyval == GDK_KEY_Tab) && (state & GDK_SHIFT_MASK)) {
         if (self->active) {
-            if (!goto_prev(self->active, buf, view)) deactivate(self, buf);
+            if (!goto_prev(self->active, buf, view)) deactivate(self);
             return TRUE;
         }
     }
@@ -697,10 +727,10 @@ gboolean silktex_snippets_handle_key(SilktexSnippets *self, SilktexEditor *edito
             Holder *last_h = last_node->data;
             GtkTextIter cur_it, bound_it;
             gtk_text_buffer_get_iter_at_mark(buf, &cur_it, gtk_text_buffer_get_insert(buf));
-            gtk_text_buffer_get_iter_at_mark(buf, &bound_it, last_h->lmark);
+            gtk_text_buffer_get_iter_at_mark(buf, &bound_it, last_h->rmark);
             int cur_off = gtk_text_iter_get_offset(&cur_it);
             int bound_end = gtk_text_iter_get_offset(&bound_it);
-            if (cur_off < self->active->start_offset || cur_off > bound_end) deactivate(self, buf);
+            if (cur_off < self->active->start_offset || cur_off > bound_end) deactivate(self);
         }
     }
 
@@ -717,6 +747,8 @@ gboolean silktex_snippets_handle_key_release(SilktexSnippets *self, SilktexEdito
 
     GtkSourceBuffer *sbuf = silktex_editor_get_buffer(editor);
     GtkTextBuffer *buf = GTK_TEXT_BUFFER(sbuf);
+    drop_foreign_states(self, buf);
+    if (!self->active) return FALSE;
     sync_group(self->active, buf);
     return FALSE;
 }

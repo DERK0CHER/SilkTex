@@ -3414,6 +3414,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "data-encoding",
+ "getrandom 0.4.2",
  "iroh",
  "loro",
  "postcard",

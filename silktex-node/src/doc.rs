@@ -5,11 +5,15 @@ use crate::TextOp;
 
 pub struct Document {
     doc: LoroDoc,
+    /// How many local ops (Command::Op) have been folded into `doc`. This is
+    /// the C side's op sequence number: it counts every op handed to
+    /// `apply_op`, in order, so the two counters cannot drift apart.
+    local_seq: u64,
 }
 
 impl Document {
     pub fn new() -> Self {
-        Self { doc: LoroDoc::new() }
+        Self { doc: LoroDoc::new(), local_seq: 0 }
     }
 
     pub fn set_content(&mut self, text: &str) -> Result<()> {
@@ -31,29 +35,51 @@ impl Document {
 
     /// Apply a local op, return the Loro update bytes to broadcast.
     pub fn apply_op(&mut self, op: &TextOp) -> Result<Vec<u8>> {
+        /* Count the op before validating it. The C side numbers every op it
+         * sends, valid or not; skipping a rejected one here would leave that
+         * op unacknowledged forever and the editor transforming past it. */
+        self.local_seq += 1;
         let vv = self.doc.oplog_vv();
         let t = self.doc.get_text("t");
+        /* Validate before touching the doc: Loro's own bound check computes
+         * `pos + len`, which wraps on a huge `delete` in release builds, and
+         * a failed second step would leave a half-applied op. All units are
+         * unicode code points (GTK offsets, LoroText::insert/delete, diff()). */
+        let len = t.len_unicode();
+        let del = op.delete.unwrap_or(0);
+        let end = op
+            .retain
+            .checked_add(del)
+            .ok_or_else(|| anyhow::anyhow!("op out of range: retain {} + delete {del}", op.retain))?;
+        if end > len {
+            anyhow::bail!("op out of range: retain {} + delete {del} > len {len}", op.retain);
+        }
+        /* Delete first, then insert at the same position — the order the C side
+         * uses in apply_remote_op() and the meaning of the op produced by diff(). */
+        if del > 0 {
+            t.delete(op.retain, del)?;
+        }
         if let Some(ins) = &op.insert {
             t.insert(op.retain, ins)?;
-        }
-        if let Some(del) = op.delete {
-            if del > 0 {
-                t.delete(op.retain, del)?;
-            }
         }
         self.doc.commit();
         Ok(self.doc.export(ExportMode::updates(&vv))?)
     }
 
-    /// Apply a remote Loro update; return the minimal op to replay in the UI.
-    pub fn apply_update(&mut self, data: &[u8]) -> Result<Option<TextOp>> {
+    /// Apply a remote Loro update; return the minimal op to replay in the UI
+    /// together with the local-op count the diff was computed against.
+    ///
+    /// Both values are read under the caller's `&mut self`, so the count and
+    /// the diff describe the very same document state — the editor needs that
+    /// pairing to know which of its own in-flight ops the offsets predate.
+    pub fn apply_update(&mut self, data: &[u8]) -> Result<(Option<TextOp>, u64)> {
         let before = self.get_content();
         self.doc.import(data)?;
         let after = self.get_content();
         if before == after {
-            return Ok(None);
+            return Ok((None, self.local_seq));
         }
-        Ok(Some(diff(&before, &after)))
+        Ok((Some(diff(&before, &after)), self.local_seq))
     }
 
     pub fn apply_snapshot(&mut self, data: &[u8]) -> Result<()> {
@@ -134,9 +160,37 @@ mod tests {
         // Both start empty; apply op to doc1, then propagate update to doc2.
         let op = TextOp { retain: 0, insert: Some("hello".into()), delete: None };
         let update = doc1.apply_op(&op).unwrap();
-        let result = doc2.apply_update(&update).unwrap();
+        let (result, base_seq) = doc2.apply_update(&update).unwrap();
         assert_eq!(doc2.get_content(), "hello");
         assert!(result.is_some());
+        assert_eq!(base_seq, 0, "doc2 applied no local ops of its own");
+    }
+
+    #[test]
+    fn apply_update_reports_local_op_count() {
+        let mut doc1 = Document::new();
+        let mut doc2 = Document::new();
+        // doc2 makes two local edits of its own before the remote update lands.
+        doc2.apply_op(&TextOp { retain: 0, insert: Some("ab".into()), delete: None }).unwrap();
+        doc2.apply_op(&TextOp { retain: 2, insert: Some("cd".into()), delete: None }).unwrap();
+        let update = doc1
+            .apply_op(&TextOp { retain: 0, insert: Some("X".into()), delete: None })
+            .unwrap();
+        let (_, base_seq) = doc2.apply_update(&update).unwrap();
+        assert_eq!(base_seq, 2);
+    }
+
+    #[test]
+    fn rejected_op_still_counts() {
+        let mut doc = Document::new();
+        // Out of range: rejected, but the C side already numbered it.
+        assert!(doc.apply_op(&TextOp { retain: 99, insert: Some("x".into()), delete: None }).is_err());
+        let mut peer = Document::new();
+        let update = peer
+            .apply_op(&TextOp { retain: 0, insert: Some("hi".into()), delete: None })
+            .unwrap();
+        let (_, base_seq) = doc.apply_update(&update).unwrap();
+        assert_eq!(base_seq, 1);
     }
 
     #[test]

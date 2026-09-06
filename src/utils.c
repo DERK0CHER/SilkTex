@@ -110,6 +110,11 @@ gboolean utils_subinstr(const gchar *substr, const gchar *target, gboolean case_
 
 gchar *g_substr(gchar *src, gint start, gint end)
 {
+    g_return_val_if_fail(src != NULL, NULL);
+
+    gint srclen = strlen(src);
+    start = CLAMP(start, 0, srclen);
+    end = CLAMP(end, start, srclen);
     gint len = end - start + 1;
     gchar *dst = g_malloc0(len);
     return strncpy(dst, &src[start], end - start);
@@ -122,7 +127,11 @@ slist *slist_find(slist *head, const gchar *term, gboolean n, gboolean create)
 
     while (current) {
         if (n) {
-            if (strncmp(current->first, term, strlen(term)) == 0) return current;
+            if (term == NULL) {
+                if (current->first == NULL) return current;
+            } else if (current->first != NULL && strncmp(current->first, term, strlen(term)) == 0) {
+                return current;
+            }
         } else {
             if (g_strcmp0(current->first, term) == 0) return current;
         }
@@ -150,6 +159,8 @@ slist *slist_append(slist *head, slist *node)
     }
     if (prev != NULL) {
         prev->next = node;
+    } else {
+        head = node;
     }
     return head;
 }

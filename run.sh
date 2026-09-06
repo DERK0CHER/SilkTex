@@ -44,8 +44,11 @@ if ! command -v nix >/dev/null 2>&1; then
     exit 1
 fi
 
-pkill -f "$BUILD_DIR/src/silktex" 2>/dev/null || true
-pkill -f "$BUILD_DIR/src/silktex-node" 2>/dev/null || true
+# Only match processes whose command line *starts with* this checkout's
+# binaries (anchored, absolute path) so unrelated processes are never killed.
+APP_BIN="$PWD/$BUILD_DIR/src/silktex"
+pkill -f "^${APP_BIN}( |\$)" 2>/dev/null || true
+pkill -f "^${APP_BIN}-node( |\$)" 2>/dev/null || true
 
 if [[ $CLEAN -eq 1 ]]; then
     rm -rf "$BUILD_DIR"
@@ -67,7 +70,7 @@ RUST_LOG_VALUE="${RUST_LOG:-silktex_node=info,iroh=error}"
 if [[ $DETACH -eq 1 ]]; then
     echo ">> launching silktex (detached, GSK_RENDERER=$GSK_RENDERER_VALUE, RUST_LOG=$RUST_LOG_VALUE)"
     nix develop --command env GSK_RENDERER="$GSK_RENDERER_VALUE" RUST_LOG="$RUST_LOG_VALUE" \
-        "$BUILD_DIR/src/silktex" "${APP_ARGS[@]}" >/dev/null 2>&1 &
+        "$APP_BIN" "${APP_ARGS[@]}" >/dev/null 2>&1 &
     disown || true
     exit 0
 fi
@@ -75,4 +78,4 @@ fi
 echo ">> launching silktex (foreground, GSK_RENDERER=$GSK_RENDERER_VALUE, RUST_LOG=$RUST_LOG_VALUE)"
 echo ">> this keeps the terminal attached while the app is running (Ctrl+C to stop)"
 exec nix develop --command env GSK_RENDERER="$GSK_RENDERER_VALUE" RUST_LOG="$RUST_LOG_VALUE" \
-    "$BUILD_DIR/src/silktex" "${APP_ARGS[@]}"
+    "$APP_BIN" "${APP_ARGS[@]}"

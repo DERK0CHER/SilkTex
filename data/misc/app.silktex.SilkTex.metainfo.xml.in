@@ -57,12 +57,6 @@
     <display_length compare="ge">768</display_length>
   </requires>
 
-  <!--
-    Flathub requires at least one screenshot. Before submitting, upload
-    PNGs (recommended 1280x720 or similar 16:9) to a durable location —
-    e.g. an assets/ branch in this repo, or a release asset — and point
-    the URLs below at them. Remove this comment when done.
-  -->
   <screenshots>
     <screenshot type="default">
       <caption>Editor with live PDF preview</caption>
@@ -80,7 +74,8 @@
         <p>Flatpak readiness release.</p>
         <ul>
           <li>Builds cleanly from GNOME Builder and the Flatpak manifest.</li>
-          <li>Uses the host TeX Live tools through flatpak-spawn to avoid bundling TeX Live.</li>
+          <li>Uses the org.freedesktop.Sdk.Extension.texlive extension for LaTeX tools
+              instead of bundling TeX Live.</li>
           <li>Improves Flatpak preview startup reliability and default template compatibility.</li>
         </ul>
       </description>

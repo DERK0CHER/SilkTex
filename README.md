@@ -190,11 +190,11 @@ meson.build            top-level meson project
   project-wide via `-Wno-missing-field-initializers` and
   `-Wno-unused-parameter`.
 - Default Git branch: `master`.
-- Before tagging a Flatpak release, regenerate `cargo-sources.json` from
-  the current lock file:
+- After every change to `silktex-node/Cargo.lock`, regenerate
+  `cargo-sources.json` with `scripts/gen_cargo_sources.py` (stdlib only, no
+  network); `scripts/gen_cargo_sources.py --check` fails if it is stale:
   ```bash
-  python3 flatpak-builder-tools/cargo/flatpak-cargo-generator.py \
-      silktex-node/Cargo.lock -o cargo-sources.json
+  python3 scripts/gen_cargo_sources.py
   ```
 
 ## License

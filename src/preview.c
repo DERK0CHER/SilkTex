@@ -22,6 +22,20 @@
 #define PAGE_GAP_BETWEEN 16
 #define PAGE_PADDING     8
 
+/* Lazy page cache (continuous layout): only pages near the viewport are kept
+ * rendered, so memory scales with the viewport instead of the page count. */
+#define PREVIEW_RENDER_MARGIN    1
+#define PREVIEW_MAX_CACHED_PAGES 8
+#define PREVIEW_CACHE_BUDGET     ((gsize)192 * 1024 * 1024)
+
+/* Per-page layout for the cached zoom/scale. Derived from poppler_page_get_size()
+ * only, so it is known for pages that are not currently rendered. */
+typedef struct {
+    int lw;   /* logical width of the page, in widget pixels  */
+    int lh;   /* logical height of the page, in widget pixels */
+    double y; /* top of the page in drawing-area content coords */
+} SilktexPageGeom;
+
 struct _SilktexPreview {
     GtkWidget parent_instance;
 
@@ -44,6 +58,8 @@ struct _SilktexPreview {
     double cached_zoom;
     int cached_scale;
     GPtrArray *page_surfaces;
+    SilktexPageGeom *page_geom;
+    int geom_n_pages;
     double total_height;
 
     SilktexPreviewLayout layout;
@@ -74,6 +90,8 @@ static void silktex_preview_invalidate_cache(SilktexPreview *self)
     if (self->page_surfaces != NULL) {
         g_ptr_array_set_size(self->page_surfaces, 0);
     }
+    g_clear_pointer(&self->page_geom, g_free);
+    self->geom_n_pages = 0;
     self->total_height = 0;
 }
 
@@ -85,7 +103,7 @@ static void on_scale_factor_changed(SilktexPreview *self, GParamSpec *pspec, GOb
     gtk_widget_queue_draw(self->drawing_area);
 }
 
-static cairo_surface_t *render_single_page(SilktexPreview *self, int index, int scale,
+static cairo_surface_t *render_single_page(SilktexPreview *self, int index, int scale, double zoom,
                                            double *out_page_w, double *out_page_h)
 {
     PopplerPage *page = poppler_document_get_page(self->document, index);
@@ -97,17 +115,24 @@ static cairo_surface_t *render_single_page(SilktexPreview *self, int index, int 
     if (out_page_w) *out_page_w = page_w;
     if (out_page_h) *out_page_h = page_h;
 
-    double effective_zoom = self->zoom * scale;
-    int width = MAX((int)ceil(page_w * effective_zoom), 1);
-    int height = MAX((int)ceil(page_h * effective_zoom), 1);
+    double effective_zoom = zoom * scale;
+    /* Clamp in double before the int cast (UB on overflow); cairo image
+     * surfaces are limited to 32767 px per side anyway. */
+    int width = (int)CLAMP(ceil(page_w * effective_zoom), 1.0, 32767.0);
+    int height = (int)CLAMP(ceil(page_h * effective_zoom), 1.0, 32767.0);
 
     cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
+    if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(surface);
+        g_object_unref(page);
+        return NULL;
+    }
     cairo_surface_set_device_scale(surface, (double)scale, (double)scale);
 
     cairo_t *cr = cairo_create(surface);
     cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
     cairo_paint(cr);
-    cairo_scale(cr, self->zoom, self->zoom);
+    cairo_scale(cr, zoom, zoom);
     poppler_page_render(page, cr);
     cairo_destroy(cr);
     g_object_unref(page);
@@ -131,12 +156,58 @@ static int surface_logical_height(cairo_surface_t *s)
     return (int)(cairo_image_surface_get_height(s) / (sy > 0 ? sy : 1.0));
 }
 
+/* Lay out every page from its PDF size alone — no rendering. page_surfaces is
+ * resized to match and filled with NULL; entries are filled in on demand. */
+static void silktex_preview_build_geometry(SilktexPreview *self, int scale)
+{
+    const int page_gap = PAGE_GAP_BETWEEN;
+
+    self->page_geom = g_new0(SilktexPageGeom, self->n_pages);
+    self->geom_n_pages = self->n_pages;
+    g_ptr_array_set_size(self->page_surfaces, self->n_pages);
+
+    self->page_width = 0;
+    self->page_height = 0;
+
+    double y = PAGE_PADDING;
+    int max_width = 0;
+
+    for (int i = 0; i < self->n_pages; i++) {
+        double page_w = 0, page_h = 0;
+        PopplerPage *page = poppler_document_get_page(self->document, i);
+        if (page != NULL) {
+            poppler_page_get_size(page, &page_w, &page_h);
+            g_object_unref(page);
+        }
+        if (i == 0) {
+            self->page_width = page_w;
+            self->page_height = page_h;
+        }
+        /* Mirror render_single_page()'s clamping and surface_logical_*() so the
+         * geometry matches the surfaces pixel for pixel. */
+        double effective_zoom = self->cached_zoom * scale;
+        int dev_w = (int)CLAMP(ceil(page_w * effective_zoom), 1.0, 32767.0);
+        int dev_h = (int)CLAMP(ceil(page_h * effective_zoom), 1.0, 32767.0);
+        self->page_geom[i].lw = dev_w / scale;
+        self->page_geom[i].lh = dev_h / scale;
+        self->page_geom[i].y = y;
+        max_width = MAX(max_width, self->page_geom[i].lw);
+        y += self->page_geom[i].lh + page_gap;
+    }
+
+    self->total_height = y - page_gap + PAGE_PADDING;
+
+    gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(self->drawing_area),
+                                       MAX(max_width + 2 * PAGE_PADDING, 1));
+    gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(self->drawing_area),
+                                        MAX((int)self->total_height, 1));
+}
+
 static void silktex_preview_render_pages(SilktexPreview *self)
 {
     if (self->document == NULL) return;
     if (self->n_pages <= 0) return;
 
-    const int page_gap = PAGE_GAP_BETWEEN;
     int scale = gtk_widget_get_scale_factor(self->drawing_area);
     if (scale < 1) scale = 1;
 
@@ -146,14 +217,14 @@ static void silktex_preview_render_pages(SilktexPreview *self)
             return;
         }
         silktex_preview_invalidate_cache(self);
+        self->cached_zoom = self->zoom;
+        self->cached_scale = scale;
         double page_w = 0, page_h = 0;
         cairo_surface_t *surface =
-            render_single_page(self, self->current_page, scale, &page_w, &page_h);
+            render_single_page(self, self->current_page, scale, self->cached_zoom, &page_w, &page_h);
         if (surface == NULL) return;
         self->cached_surface = surface;
         self->cached_page = self->current_page;
-        self->cached_zoom = self->zoom;
-        self->cached_scale = scale;
         self->page_width = page_w;
         self->page_height = page_h;
         int lw = surface_logical_width(surface);
@@ -166,7 +237,7 @@ static void silktex_preview_render_pages(SilktexPreview *self)
         return;
     }
 
-    if (self->page_surfaces != NULL && self->page_surfaces->len == (guint)self->n_pages &&
+    if (self->page_geom != NULL && self->geom_n_pages == self->n_pages &&
         self->cached_scale == scale) {
         return;
     }
@@ -174,37 +245,98 @@ static void silktex_preview_render_pages(SilktexPreview *self)
     silktex_preview_invalidate_cache(self);
     self->cached_zoom = self->zoom;
     self->cached_scale = scale;
-    self->page_width = 0;
-    self->page_height = 0;
-    self->total_height = 0;
+    silktex_preview_build_geometry(self, scale);
+}
 
-    int max_width = 0;
+static gboolean geometry_is_valid(SilktexPreview *self)
+{
+    return self->page_geom != NULL && self->geom_n_pages == self->n_pages && self->n_pages > 0 &&
+           self->page_surfaces != NULL && self->page_surfaces->len == (guint)self->n_pages;
+}
 
-    for (int i = 0; i < self->n_pages; i++) {
-        double page_w = 0, page_h = 0;
-        cairo_surface_t *surface = render_single_page(self, i, scale, &page_w, &page_h);
-        if (surface == NULL) {
-            g_ptr_array_add(self->page_surfaces, NULL);
-            continue;
-        }
-        if (i == 0) {
-            self->page_width = page_w;
-            self->page_height = page_h;
-        }
-        int lw = surface_logical_width(surface);
-        int lh = surface_logical_height(surface);
-        max_width = MAX(max_width, lw);
-        self->total_height += lh;
-        g_ptr_array_add(self->page_surfaces, surface);
+static gsize page_surface_bytes(const SilktexPageGeom *geom, int scale)
+{
+    return (gsize)geom->lw * (gsize)geom->lh * (gsize)scale * (gsize)scale * 4;
+}
+
+static void preview_drop_surface(SilktexPreview *self, int index)
+{
+    cairo_surface_t *surface = g_ptr_array_index(self->page_surfaces, index);
+    if (surface == NULL) return;
+    cairo_surface_destroy(surface);
+    g_ptr_array_index(self->page_surfaces, index) = NULL;
+}
+
+/* Pages intersecting the viewport, in geometry (cached-zoom) coordinates. */
+static void continuous_visible_range(SilktexPreview *self, double scale_ratio, int *out_first,
+                                     int *out_last)
+{
+    double top = 0.0;
+    double bottom = 0.0;
+
+    GtkAdjustment *vadj =
+        gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(self->scrolled_window));
+    if (vadj != NULL && gtk_adjustment_get_page_size(vadj) > 0.0) {
+        top = gtk_adjustment_get_value(vadj);
+        bottom = top + gtk_adjustment_get_page_size(vadj);
+    } else {
+        bottom = gtk_widget_get_height(self->scrolled_window);
+        if (bottom <= 0.0) bottom = self->total_height;
+    }
+    if (scale_ratio > 0.001) {
+        top /= scale_ratio;
+        bottom /= scale_ratio;
     }
 
-    if (self->n_pages > 1) self->total_height += (self->n_pages - 1) * page_gap;
-    self->total_height += 2 * PAGE_PADDING;
+    int first = -1;
+    int last = -1;
+    for (int i = 0; i < self->n_pages; i++) {
+        double page_top = self->page_geom[i].y;
+        double page_bottom = page_top + self->page_geom[i].lh;
+        if (page_bottom < top || page_top > bottom) continue;
+        if (first < 0) first = i;
+        last = i;
+    }
+    if (first < 0) {
+        first = CLAMP(self->current_page, 0, self->n_pages - 1);
+        last = first;
+    }
 
-    gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(self->drawing_area),
-                                       MAX(max_width + 2 * PAGE_PADDING, 1));
-    gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(self->drawing_area),
-                                        MAX((int)self->total_height, 1));
+    *out_first = first;
+    *out_last = last;
+}
+
+/* Render the visible pages plus a one-page margin, drop everything else. */
+static void ensure_visible_surfaces(SilktexPreview *self, int first_vis, int last_vis)
+{
+    int scale = self->cached_scale > 0 ? self->cached_scale : 1;
+
+    int lo = MAX(0, first_vis - PREVIEW_RENDER_MARGIN);
+    int hi = MIN(self->n_pages - 1, last_vis + PREVIEW_RENDER_MARGIN);
+    if (hi - lo + 1 > PREVIEW_MAX_CACHED_PAGES) {
+        lo = MAX(0, first_vis - 1);
+        hi = MIN(self->n_pages - 1, lo + PREVIEW_MAX_CACHED_PAGES - 1);
+    }
+
+    for (int i = 0; i < self->n_pages; i++) {
+        if (i < lo || i > hi) preview_drop_surface(self, i);
+    }
+
+    gsize used = 0;
+    for (int i = lo; i <= hi; i++) {
+        gsize cost = page_surface_bytes(&self->page_geom[i], scale);
+        if (g_ptr_array_index(self->page_surfaces, i) != NULL) {
+            used += cost;
+            continue;
+        }
+        /* Margin pages are a nicety — skip them once the budget is spent. Pages
+         * actually on screen are always rendered. */
+        if ((i < first_vis || i > last_vis) && used + cost > PREVIEW_CACHE_BUDGET) continue;
+        cairo_surface_t *surface = render_single_page(self, i, scale, self->cached_zoom, NULL, NULL);
+        if (surface == NULL) continue;
+        g_ptr_array_index(self->page_surfaces, i) = surface;
+        used += cost;
+    }
 }
 
 static void preview_bg_color(SilktexPreview *self, double *r, double *g, double *b)
@@ -314,23 +446,31 @@ static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, 
         return;
     }
 
+    if (!geometry_is_valid(self)) return;
+
+    int first_vis = 0;
+    int last_vis = 0;
+    continuous_visible_range(self, scale_ratio, &first_vis, &last_vis);
+    ensure_visible_surfaces(self, first_vis, last_vis);
+
     double y = PAGE_PADDING;
-    for (guint i = 0; i < self->page_surfaces->len; i++) {
-        cairo_surface_t *surface = g_ptr_array_index(self->page_surfaces, i);
-        if (surface == NULL) continue;
-        int lw = surface_logical_width(surface);
-        int lh = surface_logical_height(surface);
+    for (int i = 0; i < self->n_pages; i++) {
+        int lw = self->page_geom[i].lw;
+        int lh = self->page_geom[i].lh;
         int dw = (int)round(lw * scale_ratio);
         int dh = (int)round(lh * scale_ratio);
-        double x = (width - dw) / 2.0;
-        if (x < 0) x = PAGE_PADDING;
+        cairo_surface_t *surface = g_ptr_array_index(self->page_surfaces, i);
+        if (surface != NULL) {
+            double x = (width - dw) / 2.0;
+            if (x < 0) x = PAGE_PADDING;
 
-        draw_page_paper_shadow(cr, x, y, dw, dh);
-        cairo_save(cr);
-        cairo_translate(cr, x, y);
-        cairo_scale(cr, scale_ratio, scale_ratio);
-        draw_surface_with_optional_invert(cr, surface, 0, 0, lw, lh, self->inverted);
-        cairo_restore(cr);
+            draw_page_paper_shadow(cr, x, y, dw, dh);
+            cairo_save(cr);
+            cairo_translate(cr, x, y);
+            cairo_scale(cr, scale_ratio, scale_ratio);
+            draw_surface_with_optional_invert(cr, surface, 0, 0, lw, lh, self->inverted);
+            cairo_restore(cr);
+        }
 
         y += dh + PAGE_GAP_BETWEEN;
     }
@@ -380,20 +520,21 @@ static void draw_func(GtkDrawingArea *area, cairo_t *cr, int width, int height, 
             }
         } else {
             double py = PAGE_PADDING;
-            for (guint i = 0; i < self->page_surfaces->len; i++) {
-                cairo_surface_t *mag_surface = g_ptr_array_index(self->page_surfaces, i);
-                if (mag_surface == NULL) continue;
-                int lw = surface_logical_width(mag_surface);
-                int lh = surface_logical_height(mag_surface);
+            for (int i = 0; i < self->n_pages; i++) {
+                int lw = self->page_geom[i].lw;
+                int lh = self->page_geom[i].lh;
                 int dw = (int)round(lw * scale_ratio);
                 int dh = (int)round(lh * scale_ratio);
-                double px = (width - dw) / 2.0;
-                if (px < 0) px = PAGE_PADDING;
-                cairo_save(cr);
-                cairo_translate(cr, px, py);
-                cairo_scale(cr, scale_ratio, scale_ratio);
-                draw_surface_with_optional_invert(cr, mag_surface, 0, 0, lw, lh, self->inverted);
-                cairo_restore(cr);
+                cairo_surface_t *mag_surface = g_ptr_array_index(self->page_surfaces, i);
+                if (mag_surface != NULL) {
+                    double px = (width - dw) / 2.0;
+                    if (px < 0) px = PAGE_PADDING;
+                    cairo_save(cr);
+                    cairo_translate(cr, px, py);
+                    cairo_scale(cr, scale_ratio, scale_ratio);
+                    draw_surface_with_optional_invert(cr, mag_surface, 0, 0, lw, lh, self->inverted);
+                    cairo_restore(cr);
+                }
                 py += dh + PAGE_GAP_BETWEEN;
             }
         }
@@ -417,11 +558,15 @@ static void silktex_preview_dispose(GObject *object)
         g_source_remove(self->rerender_debounce_id);
         self->rerender_debounce_id = 0;
     }
+    if (self->fit_tick_id) {
+        gtk_widget_remove_tick_callback(GTK_WIDGET(self), self->fit_tick_id);
+        self->fit_tick_id = 0;
+    }
     silktex_preview_invalidate_cache(self);
     g_clear_object(&self->document);
     g_clear_pointer(&self->pdf_path, g_free);
     g_clear_pointer(&self->page_surfaces, g_ptr_array_unref);
-    gtk_widget_unparent(self->scrolled_window);
+    g_clear_pointer(&self->scrolled_window, gtk_widget_unparent);
     G_OBJECT_CLASS(silktex_preview_parent_class)->dispose(object);
 }
 
@@ -508,34 +653,29 @@ static void silktex_preview_class_init(SilktexPreviewClass *klass)
 static void on_vadj_value_changed(GtkAdjustment *adj, gpointer user_data)
 {
     SilktexPreview *self = SILKTEX_PREVIEW(user_data);
-    if (self->scrolling_programmatically) return;
     if (self->layout != SILKTEX_PREVIEW_LAYOUT_CONTINUOUS) return;
-    if (self->document == NULL || self->page_surfaces == NULL) return;
-    if (self->page_surfaces->len == 0) return;
+    if (self->document == NULL) return;
+    /* Pages are rendered lazily from draw_func — scrolling exposes new ones. */
+    gtk_widget_queue_draw(self->drawing_area);
+    if (self->scrolling_programmatically) return;
+    if (!geometry_is_valid(self)) return;
 
     double scroll_top = gtk_adjustment_get_value(adj);
     double viewport_size = gtk_adjustment_get_page_size(adj);
     double scroll_bottom = scroll_top + viewport_size;
 
-    double y = PAGE_PADDING;
     int best_page = 0;
     double best_overlap = -1.0;
 
-    for (guint i = 0; i < self->page_surfaces->len; i++) {
-        cairo_surface_t *surface = g_ptr_array_index(self->page_surfaces, i);
-        if (surface == NULL) continue;
-
-        int lh = surface_logical_height(surface);
-        double page_top = y;
-        double page_bottom = y + lh;
+    for (int i = 0; i < self->n_pages; i++) {
+        double page_top = self->page_geom[i].y;
+        double page_bottom = page_top + self->page_geom[i].lh;
 
         double overlap = MIN(page_bottom, scroll_bottom) - MAX(page_top, scroll_top);
         if (overlap > best_overlap) {
             best_overlap = overlap;
-            best_page = (int)i;
+            best_page = i;
         }
-
-        y += lh + PAGE_GAP_BETWEEN;
     }
 
     if (best_page != self->current_page) {
@@ -590,8 +730,7 @@ static void on_preview_pressed(GtkGestureClick *gesture, int n_press, double cli
             }
             page = self->current_page;
 
-        } else if (self->layout == SILKTEX_PREVIEW_LAYOUT_CONTINUOUS &&
-                   self->page_surfaces != NULL) {
+        } else if (self->layout == SILKTEX_PREVIEW_LAYOUT_CONTINUOUS && geometry_is_valid(self)) {
             double content_y = click_y;
             double content_x = click_x;
 
@@ -599,12 +738,9 @@ static void on_preview_pressed(GtkGestureClick *gesture, int n_press, double cli
             int area_w = gtk_widget_get_width(self->drawing_area);
 
             double strip_y = PAGE_PADDING;
-            for (guint i = 0; i < self->page_surfaces->len; i++) {
-                cairo_surface_t *surface = g_ptr_array_index(self->page_surfaces, i);
-                if (surface == NULL) continue;
-
-                int lw = surface_logical_width(surface);
-                int lh = surface_logical_height(surface);
+            for (int i = 0; i < self->n_pages; i++) {
+                int lw = self->page_geom[i].lw;
+                int lh = self->page_geom[i].lh;
 
                 double page_x = (area_w - lw) / 2.0;
                 if (page_x < 0) page_x = PAGE_PADDING;
@@ -774,8 +910,10 @@ gboolean silktex_preview_load_file(SilktexPreview *self, const char *path)
     g_clear_object(&self->document);
     self->document = new_doc;
 
+    /* `path` may alias self->pdf_path (see silktex_preview_refresh) — copy first. */
+    char *new_path = g_strdup(path);
     g_free(self->pdf_path);
-    self->pdf_path = g_strdup(path);
+    self->pdf_path = new_path;
     self->n_pages = poppler_document_get_n_pages(self->document);
 
     if (same_path && saved_page >= 0 && saved_page < self->n_pages)
@@ -850,13 +988,8 @@ void silktex_preview_set_page(SilktexPreview *self, int page)
     if (self->layout == SILKTEX_PREVIEW_LAYOUT_CONTINUOUS) {
         GtkAdjustment *vadj =
             gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(self->scrolled_window));
-        if (vadj != NULL && self->page_surfaces != NULL) {
-            double y = PAGE_PADDING;
-            for (int i = 0; i < page; i++) {
-                cairo_surface_t *surface = g_ptr_array_index(self->page_surfaces, i);
-                if (surface != NULL) y += surface_logical_height(surface);
-                y += PAGE_GAP_BETWEEN;
-            }
+        if (vadj != NULL && geometry_is_valid(self) && page < self->n_pages) {
+            double y = self->page_geom[page].y;
             self->scrolling_programmatically = TRUE;
             gtk_adjustment_set_value(vadj, y);
             self->scrolling_programmatically = FALSE;
@@ -1131,18 +1264,12 @@ void silktex_preview_scroll_to_position(SilktexPreview *self, double pdf_x, doub
         gtk_adjustment_set_value(hadj, canvas_x - viewport_w / 2.0);
         self->scrolling_programmatically = FALSE;
 
-    } else if (self->layout == SILKTEX_PREVIEW_LAYOUT_CONTINUOUS && self->page_surfaces != NULL &&
-               self->current_page < (int)self->page_surfaces->len) {
-        double strip_y = PAGE_PADDING;
-        for (int i = 0; i < self->current_page; i++) {
-            cairo_surface_t *s = g_ptr_array_index(self->page_surfaces, i);
-            if (s) strip_y += surface_logical_height(s);
-            strip_y += PAGE_GAP_BETWEEN;
-        }
+    } else if (self->layout == SILKTEX_PREVIEW_LAYOUT_CONTINUOUS && geometry_is_valid(self) &&
+               self->current_page < self->n_pages) {
+        double strip_y = self->page_geom[self->current_page].y;
 
-        cairo_surface_t *cur = g_ptr_array_index(self->page_surfaces, self->current_page);
-        int lw = cur ? surface_logical_width(cur) : 0;
-        int lh = cur ? surface_logical_height(cur) : 0;
+        int lw = self->page_geom[self->current_page].lw;
+        int lh = self->page_geom[self->current_page].lh;
 
         double page_x = (area_w - lw) / 2.0;
         if (page_x < 0) page_x = PAGE_PADDING;

@@ -5,7 +5,9 @@
 # Release manifest for Flathub.
 #
 # LaTeX tools are provided by org.freedesktop.Sdk.Extension.texlive, mounted
-# at /app/texlive and exposed through PATH.
+# at /app/texlive and exposed through PATH. There is no host fallback: the
+# sandbox never runs the host's pdflatex. Users install the extension with
+#   flatpak install flathub org.freedesktop.Sdk.Extension.texlive//25.08
 app-id: app.silktex.SilkTex
 runtime: org.gnome.Platform
 runtime-version: '50'

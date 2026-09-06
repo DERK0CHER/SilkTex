@@ -121,6 +121,9 @@ static void on_btn_replace_all(GtkButton *b, gpointer ud)
     if (!self->editor) return;
     const char *term = gtk_editable_get_text(GTK_EDITABLE(self->search_entry));
     const char *repl = gtk_editable_get_text(GTK_EDITABLE(self->replace_entry));
+    /* An empty term matches at every position and would insert the replacement
+     * between every character of the document. */
+    if (!term || !*term) return;
     gboolean whole = gtk_check_button_get_active(self->chk_whole);
     gboolean matchcase = gtk_check_button_get_active(self->chk_case);
     silktex_editor_replace_all(self->editor, term, repl, whole, matchcase);
@@ -140,7 +143,7 @@ static void silktex_searchbar_dispose(GObject *obj)
 {
     SilktexSearchbar *self = SILKTEX_SEARCHBAR(obj);
     g_clear_object(&self->editor);
-    gtk_widget_unparent(self->revealer);
+    g_clear_pointer(&self->revealer, gtk_widget_unparent);
     G_OBJECT_CLASS(silktex_searchbar_parent_class)->dispose(obj);
 }
 

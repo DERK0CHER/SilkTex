@@ -41,7 +41,10 @@ pub struct TextOp {
 #[serde(tag = "event", rename_all = "snake_case")]
 enum Event<'a> {
     SessionReady  { doc_id: &'a str, session_id: &'a str },
-    RemoteOp      { doc_id: String,  #[serde(flatten)] op: TextOp },
+    /* base_seq: how many ops from the C side were already folded into the
+     * document state this op's offsets were computed against. The editor
+     * transforms the op past its own still-unacknowledged ops. */
+    RemoteOp      { doc_id: String,  base_seq: u64, #[serde(flatten)] op: TextOp },
     Snapshot      { doc_id: &'a str, content: String },
     PeerCount     { doc_id: &'a str, count: usize },
     RemoteCursor  { doc_id: &'a str, peer_id: String, offset: usize },
@@ -98,13 +101,13 @@ async fn main() -> Result<()> {
 
     /* Spawn a task that processes incoming network updates. */
     let doc2    = doc.clone();
-    let (apply_tx, mut apply_rx) = mpsc::channel::<(String, TextOp)>(64);
+    let (apply_tx, mut apply_rx) = mpsc::channel::<(String, TextOp, u64)>(64);
     tokio::spawn(async move {
         while let Some((doc_id, update)) = net_rx.recv().await {
             if doc_id == "__snap_req__" {
                 let _ = apply_tx.send(("__snap_req__".into(), TextOp {
                     retain: 0, insert: None, delete: None,
-                })).await;
+                }, 0)).await;
                 continue;
             }
             if doc_id == "__peer_count__" {
@@ -115,7 +118,7 @@ async fn main() -> Result<()> {
                 } else { 0 };
                 let _ = apply_tx.send(("__peer_count__".into(), TextOp {
                     retain: count, insert: None, delete: None,
-                })).await;
+                }, 0)).await;
                 continue;
             }
             if doc_id == "__meta__" {
@@ -123,14 +126,16 @@ async fn main() -> Result<()> {
                 let json_str = String::from_utf8_lossy(&update).into_owned();
                 let _ = apply_tx.send(("__meta__".into(), TextOp {
                     retain: 0, insert: Some(json_str), delete: None,
-                })).await;
+                }, 0)).await;
                 continue;
             }
             let mut d = doc2.lock().await;
+            /* base_seq is read under the same lock as the diff, so the pair
+             * cannot be raced by a Command::Op arriving on the main loop. */
             match d.apply_update(&update) {
-                Ok(Some(op)) => { let _ = apply_tx.send((doc_id, op)).await; }
-                Ok(None)     => {}
-                Err(e)       => eprintln!("apply_update: {e}"),
+                Ok((Some(op), base_seq)) => { let _ = apply_tx.send((doc_id, op, base_seq)).await; }
+                Ok((None, _))            => {}
+                Err(e)                   => eprintln!("apply_update: {e}"),
             }
         }
     });
@@ -142,7 +147,7 @@ async fn main() -> Result<()> {
     'main_loop: loop {
         tokio::select! {
             /* Emit events arising from remote ops. */
-            Some((doc_id, op)) = apply_rx.recv() => {
+            Some((doc_id, op, base_seq)) = apply_rx.recv() => {
                 if doc_id == "__snap_req__" {
                     /* A peer requested our snapshot. */
                     if let Some(net) = &network {
@@ -168,7 +173,8 @@ async fn main() -> Result<()> {
                                     }
                                 }
                                 "name" => {
-                                    let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+                                    /* Peer-controlled; cap so a remote peer cannot push an unbounded string into the UI. */
+                                    let name: String = obj.get("name").and_then(|v| v.as_str()).unwrap_or("?").chars().take(64).collect();
                                     if !emit(&Event::PeerName { peer_id, name }) {
                                         break 'main_loop;
                                     }
@@ -178,7 +184,7 @@ async fn main() -> Result<()> {
                         }
                     }
                 } else {
-                    if !emit(&Event::RemoteOp { doc_id, op }) {
+                    if !emit(&Event::RemoteOp { doc_id, base_seq, op }) {
                         break 'main_loop;
                     }
                 }
@@ -204,11 +210,31 @@ async fn main() -> Result<()> {
                         if let Some(net) = network.take() {
                             net.shutdown().await;
                         }
-                        doc.lock().await.set_content(&content)?;
+                        /* Fresh document: a reused LoroDoc keeps the previous
+                         * session's oplog (including deleted text) and would
+                         * ship it to joiners inside the snapshot. */
+                        {
+                            let mut d = doc.lock().await;
+                            *d = Document::new();
+                            if let Err(e) = d.set_content(&content) {
+                                if !emit(&Event::Error { msg: format!("create: {e}") }) {
+                                    break 'main_loop;
+                                }
+                                continue;
+                            }
+                        }
                         current_doc_id = doc_id.clone();
 
                         let (net, session_code) =
-                            Network::start(net_tx.clone(), doc_id.clone()).await?;
+                            match Network::start(net_tx.clone(), doc_id.clone()).await {
+                                Ok(r) => r,
+                                Err(e) => {
+                                    if !emit(&Event::Error { msg: format!("create: {e}") }) {
+                                        break 'main_loop;
+                                    }
+                                    continue;
+                                }
+                            };
                         if !emit(&Event::SessionReady {
                             doc_id: &doc_id,
                             session_id: &session_code,
@@ -224,25 +250,52 @@ async fn main() -> Result<()> {
                             net.shutdown().await;
                         }
                         current_doc_id = doc_id.clone();
+                        /* Fresh document before connecting: importing the host's
+                         * snapshot into a doc that still holds a previous session's
+                         * history would merge the two texts, and our later ops would
+                         * depend on history the host never sees. Resetting before
+                         * join keeps ops that arrive ahead of the snapshot queued in
+                         * the doc that survives. */
+                        *doc.lock().await = Document::new();
 
-                        let (net, snapshot) = Network::join(
+                        let (net, snapshot) = match Network::join(
                             session_id.clone(), net_tx.clone(), doc_id.clone(),
-                        ).await?;
+                        ).await {
+                            Ok(r) => r,
+                            Err(e) => {
+                                if !emit(&Event::Error { msg: format!("join: {e}") }) {
+                                    break 'main_loop;
+                                }
+                                continue;
+                            }
+                        };
 
-                        if let Some(snap) = snapshot {
+                        /* Without the host's snapshot the session can never converge
+                         * (net.rs drops any snapshot arriving after its timeout). */
+                        let Some(snap) = snapshot else {
+                            net.shutdown().await;
+                            if !emit(&Event::Error {
+                                msg: "join: no snapshot received from host (not connected?)".into(),
+                            }) {
+                                break 'main_loop;
+                            }
+                            continue;
+                        };
+                        {
                             let mut d = doc.lock().await;
                             if let Err(e) = d.apply_snapshot(&snap) {
-                                if !emit(&Event::Error { msg: format!("snapshot: {e}") }) {
-                                    net.shutdown().await;
-                                    break 'main_loop;
-                                }
-                            } else {
-                                let content = d.get_content();
                                 drop(d);
-                                if !emit(&Event::Snapshot { doc_id: &doc_id, content }) {
-                                    net.shutdown().await;
+                                net.shutdown().await;
+                                if !emit(&Event::Error { msg: format!("snapshot: {e}") }) {
                                     break 'main_loop;
                                 }
+                                continue;
+                            }
+                            let content = d.get_content();
+                            drop(d);
+                            if !emit(&Event::Snapshot { doc_id: &doc_id, content }) {
+                                net.shutdown().await;
+                                break 'main_loop;
                             }
                         }
                         /* Emit SessionReady for the joiner so the C layer enters session state. */
@@ -431,12 +484,13 @@ mod tests {
     #[test]
     fn event_remote_op_flattens_text_op() {
         let op = TextOp { retain: 3, insert: Some("hi".into()), delete: None };
-        let ev = Event::RemoteOp { doc_id: "d".into(), op };
+        let ev = Event::RemoteOp { doc_id: "d".into(), base_seq: 7, op };
         let s = serde_json::to_string(&ev).unwrap();
         let val: serde_json::Value = serde_json::from_str(&s).unwrap();
         assert_eq!(val["event"], "remote_op");
         assert_eq!(val["retain"], 3);
         assert_eq!(val["insert"], "hi");
+        assert_eq!(val["base_seq"], 7);
         assert!(val.get("delete").is_none());
     }
 

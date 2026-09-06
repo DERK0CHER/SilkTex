@@ -92,6 +92,9 @@ void config_init(void)
     if (!g_key_file_load_from_file(key_file, conf_filepath, G_KEY_FILE_NONE, &error)) {
         if (g_error_matches(error, G_FILE_ERROR, G_FILE_ERROR_NOENT)) {
             slog(L_WARNING, "Config file not found, using defaults\n");
+        } else {
+            slog(L_ERROR, "Config file unreadable (%s), resetting to defaults\n",
+                 error->message);
         }
         g_clear_error(&error);
 

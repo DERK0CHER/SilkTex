@@ -59,6 +59,7 @@ executable(
     link_with:    silktex_lib,
     dependencies: project_dependencies,
     c_args:       build_args,
+    link_args:    build_link_args,
     install:      true,
 )
 

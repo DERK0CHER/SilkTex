@@ -22,6 +22,8 @@ char *silktex_latex_generate_table(int rows, int cols, int borders, int alignmen
 {
     if (rows < 1) rows = 1;
     if (cols < 1) cols = 1;
+    if (rows > 99) rows = 99; /* append_int2 emits at most two digits */
+    if (cols > 99) cols = 99;
     if (alignment < 0 || alignment > 2) alignment = 1;
     if (borders < 0 || borders > 2) borders = 0;
 
@@ -59,6 +61,8 @@ char *silktex_latex_generate_matrix(int bracket, int rows, int cols)
     if (bracket < 0 || bracket >= (int)G_N_ELEMENTS(bracket_names)) bracket = 1;
     if (rows < 1) rows = 1;
     if (cols < 1) cols = 1;
+    if (rows > 99) rows = 99; /* append_int2 emits at most two digits */
+    if (cols > 99) cols = 99;
 
     GString *s = g_string_sized_new((gsize)rows * (cols * 6 + 3) + 32);
     g_string_append_printf(s, "$\\begin{%s}", bracket_names[bracket]);
@@ -164,16 +168,19 @@ static char *relativize(const char *file, SilktexEditor *editor)
     return rel ? rel : g_strdup(file);
 }
 
+/* `ud` is a ref'd entry widget: the dialog ctx may already be freed if the
+ * user closed the alert dialog while the file picker was still open. */
 static void img_pick_response(GObject *src, GAsyncResult *res, gpointer ud)
 {
-    ImgCtx *ctx = ud;
+    GtkWidget *entry = ud;
     GFile *f = gtk_file_dialog_open_finish(GTK_FILE_DIALOG(src), res, NULL);
     if (f) {
         char *p = g_file_get_path(f);
-        gtk_editable_set_text(GTK_EDITABLE(ctx->file_entry), p ? p : "");
+        gtk_editable_set_text(GTK_EDITABLE(entry), p ? p : "");
         g_free(p);
         g_object_unref(f);
     }
+    g_object_unref(entry);
 }
 
 static void on_img_browse(GtkButton *b, gpointer ud)
@@ -195,7 +202,7 @@ static void on_img_browse(GtkButton *b, gpointer ud)
     gtk_file_dialog_set_filters(d, G_LIST_MODEL(ls));
     gtk_file_dialog_set_default_filter(d, flt);
     gtk_file_dialog_open(d, GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(b))), NULL, img_pick_response,
-                         ctx);
+                         g_object_ref(ctx->file_entry));
     g_object_unref(ls);
     g_object_unref(flt);
 }
@@ -403,14 +410,15 @@ typedef struct {
 
 static void bib_pick_response(GObject *src, GAsyncResult *res, gpointer ud)
 {
-    BibCtx *ctx = ud;
+    GtkWidget *entry = ud; /* ref'd; see img_pick_response */
     GFile *f = gtk_file_dialog_open_finish(GTK_FILE_DIALOG(src), res, NULL);
     if (f) {
         char *p = g_file_get_path(f);
-        gtk_editable_set_text(GTK_EDITABLE(ctx->file_row), p ? p : "");
+        gtk_editable_set_text(GTK_EDITABLE(entry), p ? p : "");
         g_free(p);
         g_object_unref(f);
     }
+    g_object_unref(entry);
 }
 
 static void on_bib_browse(GtkButton *b, gpointer ud)
@@ -426,7 +434,7 @@ static void on_bib_browse(GtkButton *b, gpointer ud)
     gtk_file_dialog_set_filters(d, G_LIST_MODEL(ls));
     gtk_file_dialog_set_default_filter(d, flt);
     gtk_file_dialog_open(d, GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(b))), NULL, bib_pick_response,
-                         ctx);
+                         g_object_ref(ctx->file_row));
     g_object_unref(ls);
     g_object_unref(flt);
 }
@@ -439,8 +447,7 @@ static void on_bib_response(AdwAlertDialog *dlg, const char *resp, gpointer ud)
         if (file && *file) {
             g_autofree char *rel = relativize(file, ctx->editor);
             char *base = g_strdup(rel);
-            char *dot = g_strrstr(base, ".bib");
-            if (dot) *dot = '\0';
+            if (g_str_has_suffix(base, ".bib")) base[strlen(base) - 4] = '\0';
             g_autofree char *snippet =
                 g_strdup_printf("\\bibliographystyle{plain}\n\\bibliography{%s}\n", base);
             silktex_latex_insert_at_cursor(ctx->editor, snippet, NULL);

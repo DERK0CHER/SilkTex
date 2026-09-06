@@ -42,8 +42,10 @@ jobs:
 
       - name: Meson + Goblint
         env:
-          # Graphene: avoid SIMD vector intrinsics CIL cannot parse (see scripts/goblint_all.py)
-          CFLAGS: -D__GI_SCANNER__
+          # Graphene: avoid SIMD vector intrinsics CIL cannot parse (see scripts/goblint_all.py).
+          # GLib hides g_auto/g_autoptr/g_autofree behind the same macro, so the
+          # compat header restores them; without it the build fails before Goblint runs.
+          CFLAGS: -D__GI_SCANNER__ -include ${{ github.workspace }}/scripts/goblint-compat.h
         run: |
           eval "$(opam env)"
           meson setup build

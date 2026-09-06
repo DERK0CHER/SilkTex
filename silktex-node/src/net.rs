@@ -13,9 +13,11 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 
 /// Application-layer protocol identifier (negotiated via TLS ALPN).
-const ALPN: &[u8] = b"silktex/collab/0";
+/// Bumped to /1 when the HELLO payload became the join secret: a /0 build and a
+/// /1 build now fail ALPN negotiation instead of half-connecting.
+const ALPN: &[u8] = b"silktex/collab/1";
 
-const TAG_HELLO: u8 = 0x00; // initial handshake byte from joiner → host
+const TAG_HELLO: u8 = 0x00; // join secret from joiner → host
 const TAG_OP:    u8 = 0x01; // Loro CRDT operation
 const TAG_SNAP:  u8 = 0x02; // full Loro snapshot
 const TAG_META:  u8 = 0x03; // JSON metadata: cursor position, display name
@@ -23,16 +25,31 @@ const TAG_META:  u8 = 0x03; // JSON metadata: cursor position, display name
 const MAX_TICKET_BYTES: usize = 8 * 1024;
 const MAX_WIRE_PAYLOAD: usize = 16 * 1024 * 1024;
 const MAX_PEERS: usize = 8;
+const SECRET_LEN: usize = 32;
 
 /* ------------------------------------------------------------------ */
 /* Session ticket                                                       */
 /* ------------------------------------------------------------------ */
 
 /// The session code is this struct serialised with postcard + base32.
-/// The joiner decodes it to know how to reach the host.
-#[derive(Debug, Serialize, Deserialize)]
+/// The joiner decodes it to know how to reach the host and to prove it was
+/// given the code: `secret` is a fresh CSPRNG value per session and is the
+/// only thing that authorises a joiner.  Postcard writes fixed-size byte
+/// arrays inline, so this adds exactly 32 bytes to the code.
+#[derive(Serialize, Deserialize)]
 struct Ticket {
     addr: EndpointAddr,
+    secret: [u8; SECRET_LEN],
+}
+
+/// Hand-written so that debug-formatting a ticket can never leak the secret.
+impl std::fmt::Debug for Ticket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Ticket")
+            .field("addr", &self.addr)
+            .field("secret", &"<redacted>")
+            .finish()
+    }
 }
 
 impl Ticket {
@@ -62,6 +79,20 @@ impl Ticket {
             .map_err(|e| anyhow::anyhow!("ticket invalid (use the copy button): {e}"))?;
         postcard::from_bytes(&bytes).map_err(|e| anyhow::anyhow!("ticket decode: {e}"))
     }
+}
+
+/// Compare two byte strings without leaking *where* they differ through timing.
+/// Only the length is allowed to affect the running time (the secret's length is
+/// public); the byte loop is branch-free.  Never index into the network payload.
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
 
 /* ------------------------------------------------------------------ */
@@ -125,12 +156,15 @@ impl Network {
         let endpoint = build_endpoint(memory_lookup, true).await?;
 
         let local_peer_id = format!("{}", endpoint.id());
-        let ticket = Ticket { addr: endpoint.addr() };
+        let mut secret = [0u8; SECRET_LEN];
+        getrandom::fill(&mut secret).map_err(|e| anyhow::anyhow!("join secret: {e}"))?;
+        let ticket = Ticket { addr: endpoint.addr(), secret };
         let session_code = ticket.encode()?;
-        tracing::info!("session host: id={} code={}", endpoint.id(), session_code);
+        // Never log the code or the secret: the code *is* the credential.
+        tracing::info!("session host: id={}", endpoint.id());
 
         let peers: PeerMap = Arc::new(Mutex::new(HashMap::new()));
-        tokio::spawn(host_run(endpoint, peers, update_tx, doc_id, cmd_rx));
+        tokio::spawn(host_run(endpoint, peers, secret, update_tx, doc_id, cmd_rx));
 
         Ok((Self { cmd_tx, local_peer_id }, session_code))
     }
@@ -154,7 +188,7 @@ impl Network {
         let (snap_tx, mut snap_rx) = mpsc::channel::<Vec<u8>>(1);
 
         tokio::spawn(joiner_run(
-            endpoint, ticket.addr, update_tx, doc_id, cmd_rx, snap_tx,
+            endpoint, ticket.addr, ticket.secret, update_tx, doc_id, cmd_rx, snap_tx,
         ));
 
         let snapshot = tokio::time::timeout(Duration::from_secs(20), snap_rx.recv())
@@ -224,6 +258,7 @@ fn inject_peer_id(payload: &[u8], peer_id: &str) -> Vec<u8> {
 async fn host_run(
     endpoint: Endpoint,
     peers: PeerMap,
+    secret: [u8; SECRET_LEN],
     update_tx: mpsc::Sender<(String, Vec<u8>)>,
     doc_id: String,
     mut cmd_rx: mpsc::Receiver<NetCmd>,
@@ -240,11 +275,13 @@ async fn host_run(
                     NetCmd::Shutdown    => break,
                 };
                 let map = lock_peers(&peers);
-                for tx in map.values() {
+                for (id, tx) in map.iter() {
                     let mut envelope = Vec::with_capacity(1 + data.len());
                     envelope.push(tag);
                     envelope.extend_from_slice(&data);
-                    let _ = tx.try_send(envelope);
+                    if tx.try_send(envelope).is_err() {
+                        tracing::warn!("outgoing queue full for peer {id}; dropping message");
+                    }
                 }
             }
 
@@ -255,34 +292,66 @@ async fn host_run(
                     Ok(a)  => a,
                     Err(e) => { tracing::warn!("accept error: {e}"); continue; }
                 };
-                let conn: Connection = match accepting.await {
-                    Ok(c)  => c,
-                    Err(e) => { tracing::warn!("connecting error: {e}"); continue; }
-                };
-                let peer_id = conn.remote_id();
-                if lock_peers(&peers).len() >= MAX_PEERS {
-                    tracing::warn!("rejecting peer {peer_id}: peer limit reached");
-                    continue;
-                }
-                tracing::info!("joiner connected: {peer_id}");
 
-                let (peer_tx, peer_rx) = mpsc::channel::<Vec<u8>>(64);
-                lock_peers(&peers).insert(peer_id, peer_tx);
-
-                emit_peer_count(&update_tx, &peers).await;
-
+                // Finish the handshake in its own task so a slow or hostile
+                // handshake cannot stall broadcasting to the other peers.
                 let update_tx2 = update_tx.clone();
                 let doc_id2    = doc_id.clone();
                 let peers2     = peers.clone();
-                let peers3     = peers.clone();
-                let update_tx3 = update_tx.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = host_handle_peer(conn, peer_rx, update_tx2, doc_id2, peers3, peer_id).await {
+                    let conn: Connection = match accepting.await {
+                        Ok(c)  => c,
+                        Err(e) => { tracing::warn!("connecting error: {e}"); return; }
+                    };
+                    let peer_id = conn.remote_id();
+
+                    // Authenticate first.  Nothing below this point runs for a
+                    // caller that cannot prove it holds the session code: no peer
+                    // map entry, no snapshot request, no document data.  Bounded
+                    // in time so a silent connection cannot pin this task forever;
+                    // on every failure path `conn` is dropped, which closes it.
+                    let hello = tokio::time::timeout(Duration::from_secs(10), async {
+                        let (send, mut recv) = conn.accept_bi().await?;
+                        let (tag, payload) = read_msg(&mut recv).await?;
+                        anyhow::Ok((send, recv, tag, payload))
+                    })
+                    .await;
+                    let (send, recv, tag, payload) = match hello {
+                        Ok(Ok(v))  => v,
+                        Ok(Err(e)) => { tracing::warn!("rejecting peer {peer_id}: handshake failed: {e}"); return; }
+                        Err(_)     => { tracing::warn!("rejecting peer {peer_id}: handshake timed out"); return; }
+                    };
+                    if tag != TAG_HELLO {
+                        tracing::warn!("rejecting peer {peer_id}: expected HELLO, got tag {tag:#04x}");
+                        return;
+                    }
+                    // Constant-time; a wrong-length payload simply fails to match.
+                    if !ct_eq(&payload, &secret) {
+                        tracing::warn!("rejecting peer {peer_id}: invalid join secret");
+                        return;
+                    }
+
+                    let (peer_tx, peer_rx) = mpsc::channel::<Vec<u8>>(64);
+                    {
+                        let mut map = lock_peers(&peers2);
+                        if map.len() >= MAX_PEERS {
+                            tracing::warn!("rejecting peer {peer_id}: peer limit reached");
+                            return;
+                        }
+                        map.insert(peer_id, peer_tx);
+                    }
+                    tracing::info!("joiner connected: {peer_id}");
+
+                    // Only now ask the app for a snapshot for the new joiner.
+                    let _ = update_tx2.send(("__snap_req__".into(), vec![])).await;
+                    emit_peer_count(&update_tx2, &peers2).await;
+
+                    if let Err(e) = host_handle_peer(send, recv, peer_rx, update_tx2.clone(), doc_id2, peers2.clone(), peer_id).await {
                         tracing::debug!("peer {peer_id} disconnected: {e}");
                     }
                     lock_peers(&peers2).remove(&peer_id);
                     tracing::info!("joiner disconnected: {peer_id}");
-                    emit_peer_count(&update_tx3, &peers2).await;
+                    emit_peer_count(&update_tx2, &peers2).await;
                 });
             }
         }
@@ -298,24 +367,17 @@ async fn emit_peer_count(tx: &mpsc::Sender<(String, Vec<u8>)>, peers: &PeerMap) 
     let _ = tx.send(("__peer_count__".into(), count.to_be_bytes().to_vec())).await;
 }
 
+/// Runs only after the HELLO carried a valid join secret; `send`/`recv` are the
+/// already-accepted streams of that authenticated connection.
 async fn host_handle_peer(
-    conn: Connection,
+    mut send: impl AsyncWriteExt + Unpin + Send,
+    mut recv: impl AsyncReadExt + Unpin + Send,
     mut peer_rx: mpsc::Receiver<Vec<u8>>,
     update_tx: mpsc::Sender<(String, Vec<u8>)>,
     doc_id: String,
     peers: PeerMap,
     my_peer_id: EndpointId,
 ) -> Result<()> {
-    // The joiner opens the bi-directional stream and writes TAG_HELLO first
-    // (required by iroh: the opener must write before the acceptor can see the stream).
-    let (mut send, mut recv) = conn.accept_bi().await?;
-
-    // Consume the HELLO, then ask the app for a snapshot to send to the new joiner.
-    let (tag, _) = read_msg(&mut recv).await?;
-    if tag == TAG_HELLO {
-        let _ = update_tx.send(("__snap_req__".into(), vec![])).await;
-    }
-
     let peer_id_str = format!("{my_peer_id}");
 
     loop {
@@ -339,7 +401,9 @@ async fn host_handle_peer(
                                 let mut env = Vec::with_capacity(1 + payload.len());
                                 env.push(TAG_OP);
                                 env.extend_from_slice(&payload);
-                                let _ = tx.try_send(env);
+                                if tx.try_send(env).is_err() {
+                                    tracing::warn!("relay queue full for peer {id}; dropping op");
+                                }
                             }
                         }
                     }
@@ -353,7 +417,9 @@ async fn host_handle_peer(
                                 let mut env = Vec::with_capacity(1 + relayed.len());
                                 env.push(TAG_META);
                                 env.extend_from_slice(&relayed);
-                                let _ = tx.try_send(env);
+                                if tx.try_send(env).is_err() {
+                                    tracing::warn!("relay queue full for peer {id}; dropping meta");
+                                }
                             }
                         }
                     }
@@ -371,6 +437,7 @@ async fn host_handle_peer(
 async fn joiner_run(
     endpoint: Endpoint,
     host_addr: EndpointAddr,
+    secret: [u8; SECRET_LEN],
     update_tx: mpsc::Sender<(String, Vec<u8>)>,
     doc_id: String,
     mut cmd_rx: mpsc::Receiver<NetCmd>,
@@ -392,6 +459,8 @@ async fn joiner_run(
 
     // Joiner opens the bi-directional stream and writes TAG_HELLO first.
     // iroh requires the opener to write before the acceptor can see the stream.
+    // The HELLO payload is the join secret from the session code; the host sends
+    // nothing until it matches.
     let (mut send, mut recv) = match conn.open_bi().await {
         Ok(s)  => s,
         Err(e) => {
@@ -400,7 +469,7 @@ async fn joiner_run(
             return;
         }
     };
-    if let Err(e) = write_msg(&mut send, TAG_HELLO, &[]).await {
+    if let Err(e) = write_msg(&mut send, TAG_HELLO, &secret).await {
         tracing::error!("hello failed: {e}");
         endpoint.close().await;
         return;
@@ -457,7 +526,11 @@ async fn joiner_run(
 
 #[cfg(test)]
 mod tests {
-    use super::{inject_peer_id, read_msg, write_msg, Ticket, MAX_TICKET_BYTES, MAX_WIRE_PAYLOAD, TAG_OP};
+    use super::{
+        ct_eq, inject_peer_id, read_msg, write_msg, Ticket, MAX_TICKET_BYTES, MAX_WIRE_PAYLOAD,
+        SECRET_LEN, TAG_OP,
+    };
+    use serde::{Deserialize, Serialize};
     use tokio::io::AsyncWriteExt;
 
     // ---- Ticket::decode security ----------------------------------------
@@ -483,6 +556,75 @@ mod tests {
         // Empty input: empty cleaned string → postcard decode fails (not a panic).
         let err = Ticket::decode("").unwrap_err();
         assert!(!err.to_string().is_empty());
+    }
+
+    // ---- Ticket shape ---------------------------------------------------
+
+    /// Mirrors the `secret` field of `Ticket`.  `Ticket` itself cannot be built
+    /// in a unit test (it needs a live `EndpointAddr`), so pin down the part of
+    /// the encoding this change added: postcard writes a fixed-size byte array
+    /// inline, with no length prefix, so the secret costs exactly 32 bytes.
+    #[derive(Serialize, Deserialize, PartialEq, Debug)]
+    struct SecretProbe {
+        secret: [u8; SECRET_LEN],
+    }
+
+    #[test]
+    fn ticket_secret_is_32_fixed_bytes() {
+        let probe = SecretProbe { secret: [0xA5; SECRET_LEN] };
+        let bytes = postcard::to_stdvec(&probe).unwrap();
+        assert_eq!(bytes.len(), SECRET_LEN);
+        let back: SecretProbe = postcard::from_bytes(&bytes).unwrap();
+        assert_eq!(back, probe);
+    }
+
+    #[test]
+    fn ticket_decode_rejects_truncated_secret() {
+        // A ticket-shaped blob whose secret is one byte short must fail to
+        // decode rather than deserialise into something usable.
+        let short = postcard::to_stdvec(&[0u8; SECRET_LEN - 1]).unwrap();
+        let mut code = data_encoding::BASE32_NOPAD.encode(&short);
+        code.make_ascii_lowercase();
+        assert!(Ticket::decode(&code).is_err());
+    }
+
+    // ---- Constant-time secret comparison --------------------------------
+
+    #[test]
+    fn ct_eq_accepts_identical_secrets() {
+        let a = [7u8; SECRET_LEN];
+        let b = [7u8; SECRET_LEN];
+        assert!(ct_eq(&a, &b));
+    }
+
+    #[test]
+    fn ct_eq_rejects_single_bit_difference() {
+        let a = [0u8; SECRET_LEN];
+        let mut b = [0u8; SECRET_LEN];
+        b[SECRET_LEN - 1] = 0x01;
+        assert!(!ct_eq(&a, &b));
+        // Differing in the very first byte must be rejected just the same.
+        let mut c = [0u8; SECRET_LEN];
+        c[0] = 0x80;
+        assert!(!ct_eq(&a, &c));
+    }
+
+    #[test]
+    fn ct_eq_rejects_wrong_length_payload() {
+        let secret = [3u8; SECRET_LEN];
+        // Empty payload: what a pre-secret (ALPN /0) joiner would send.
+        assert!(!ct_eq(&[], &secret));
+        // Correct prefix, short: must not be accepted, must not panic.
+        assert!(!ct_eq(&secret[..SECRET_LEN - 1], &secret));
+        // Correct prefix, too long.
+        let mut long = secret.to_vec();
+        long.push(0);
+        assert!(!ct_eq(&long, &secret));
+    }
+
+    #[test]
+    fn ct_eq_empty_slices_are_equal() {
+        assert!(ct_eq(&[], &[]));
     }
 
     // ---- inject_peer_id -------------------------------------------------

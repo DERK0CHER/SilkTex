@@ -28,13 +28,19 @@ static gboolean run_git(const char *cwd, const char *const argv[], char **output
     g_autofree char *stderr_buf = NULL;
     int exit_status = 0;
 
-    gboolean spawned = g_spawn_sync(cwd, (gchar **)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL,
+    /* Runs on a worker thread with no terminal: fail fast instead of hanging on a prompt. */
+    g_auto(GStrv) envp = g_environ_setenv(g_get_environ(), "GIT_TERMINAL_PROMPT", "0", TRUE);
+
+    gboolean spawned = g_spawn_sync(cwd, (gchar **)argv, envp,
+                                    G_SPAWN_SEARCH_PATH | G_SPAWN_STDIN_FROM_DEV_NULL, NULL, NULL,
                                     &stdout_buf, &stderr_buf, &exit_status, error);
     if (!spawned) return FALSE;
 
     if (!g_spawn_check_wait_status(exit_status, error)) {
-        if (error != NULL && *error != NULL && stderr_buf != NULL && *stderr_buf != '\0') {
-            g_prefix_error(error, "%s: ", g_strstrip(stderr_buf));
+        /* e.g. "nothing to commit" is reported on stdout, not stderr */
+        char *detail = (stderr_buf != NULL && *stderr_buf != '\0') ? stderr_buf : stdout_buf;
+        if (error != NULL && *error != NULL && detail != NULL && *detail != '\0') {
+            g_prefix_error(error, "%s: ", g_strstrip(detail));
         }
         return FALSE;
     }
@@ -86,6 +92,16 @@ static char *parse_branch(const char *line)
     return g_strndup(branch, end - branch);
 }
 
+/* Porcelain v1 C-quotes paths containing spaces, control or non-ASCII bytes. */
+static char *unquote_path(const char *path)
+{
+    size_t len = strlen(path);
+    if (len < 2 || path[0] != '"' || path[len - 1] != '"') return g_strdup(path);
+
+    g_autofree char *inner = g_strndup(path + 1, len - 2);
+    return g_strcompress(inner);
+}
+
 static void add_status_file(SilktexGitStatus *status, const char *line)
 {
     if (line == NULL || strlen(line) < 4) return;
@@ -96,7 +112,7 @@ static void add_status_file(SilktexGitStatus *status, const char *line)
 
     const char *path = line + 3;
     const char *rename_target = strstr(path, " -> ");
-    file->path = g_strdup(rename_target != NULL ? rename_target + 4 : path);
+    file->path = unquote_path(rename_target != NULL ? rename_target + 4 : path);
 
     g_ptr_array_add(status->files, file);
 }
@@ -152,7 +168,7 @@ gboolean silktex_git_stage_file(const char *repo_root, const char *path, GError 
 
 gboolean silktex_git_unstage_file(const char *repo_root, const char *path, GError **error)
 {
-    const char *argv[] = {"git", "restore", "--staged", "--", path, NULL};
+    const char *argv[] = {"git", "reset", "-q", "--", path, NULL};
     return run_git(repo_root, argv, NULL, error);
 }
 
