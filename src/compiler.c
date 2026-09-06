@@ -6,6 +6,7 @@
 
 #include "compiler.h"
 #include "configfile.h"
+#include "i18n.h"
 #include <glib/gstdio.h>
 #include <signal.h>
 
@@ -29,7 +30,7 @@ struct _SilktexCompiler {
     char *compile_log;
     int error_lines[BUFSIZ];
 
-    GPid typesetter_pid;
+    GSubprocess *child;
 };
 
 G_DEFINE_FINAL_TYPE (SilktexCompiler, silktex_compiler, G_TYPE_OBJECT)
@@ -43,59 +44,127 @@ static gboolean running_in_flatpak(void)
     return g_getenv("FLATPAK_ID") != NULL;
 }
 
-static gboolean spawn_tex_command(const char *working_dir, GPtrArray *argv, char **stdout_buf,
-                                  char **stderr_buf, int *exit_status, GError **error)
+/* @self: worker-thread caller whose child may be cancelled via
+ * silktex_compiler_cancel()/stop(); NULL for synchronous main-thread runs. */
+static gboolean spawn_tex_command(SilktexCompiler *self, const char *working_dir, GPtrArray *argv,
+                                  char **stdout_buf, char **stderr_buf, int *exit_status,
+                                  GError **error)
 {
     const char *program = (argv && argv->len > 0) ? g_ptr_array_index(argv, 0) : NULL;
+    const char *cwd = working_dir && *working_dir ? working_dir : NULL;
 
-    if (running_in_flatpak() && program && !g_find_program_in_path(program)) {
-        g_autoptr(GString) command = g_string_new(NULL);
-
-        if (working_dir && *working_dir) {
-            g_autofree char *quoted_dir = g_shell_quote(working_dir);
-            g_string_append_printf(command, "cd %s && ", quoted_dir);
+    /* TeX tools are resolved from PATH only; inside Flatpak that is the
+     * org.freedesktop.Sdk.Extension.texlive extension mounted at /app/texlive.
+     * Report a missing tool ourselves so the log says how to fix it. A program
+     * given as a path is left to the spawn, which resolves it against cwd. */
+    if (program != NULL && strchr(program, G_DIR_SEPARATOR) == NULL) {
+        g_autofree char *found = g_find_program_in_path(program);
+        if (found == NULL) {
+            if (running_in_flatpak()) {
+                g_set_error(error, G_SPAWN_ERROR, G_SPAWN_ERROR_NOENT,
+                            _("%s not found. Install the TeX Live extension: flatpak install "
+                              "flathub org.freedesktop.Sdk.Extension.texlive//25.08"),
+                            program);
+            } else {
+                g_set_error(error, G_SPAWN_ERROR, G_SPAWN_ERROR_NOENT,
+                            _("%s not found. Install a TeX distribution (TeX Live or MiKTeX) and "
+                              "make sure it is on PATH."),
+                            program);
+            }
+            return FALSE;
         }
-
-        for (guint i = 0; i + 1 < argv->len; i++) {
-            if (i > 0) g_string_append_c(command, ' ');
-            g_autofree char *quoted_arg = g_shell_quote(g_ptr_array_index(argv, i));
-            g_string_append(command, quoted_arg);
-        }
-
-        gchar *spawn_argv[] = {"flatpak-spawn", "--host", "sh", "-c", command->str, NULL};
-        return g_spawn_sync(NULL, spawn_argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, stdout_buf,
-                            stderr_buf, exit_status, error);
     }
 
-    /* Prefer sandbox tools (TeXLive extension) when available; fall back to host otherwise. */
-    return g_spawn_sync(working_dir && *working_dir ? working_dir : NULL, (gchar **)argv->pdata,
-                        NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, stdout_buf, stderr_buf, exit_status,
-                        error);
+    GSubprocessFlags flags = G_SUBPROCESS_FLAGS_NONE;
+    if (stdout_buf) flags |= G_SUBPROCESS_FLAGS_STDOUT_PIPE;
+    if (stderr_buf) flags |= G_SUBPROCESS_FLAGS_STDERR_PIPE;
+    g_autoptr(GSubprocessLauncher) launcher = g_subprocess_launcher_new(flags);
+    if (cwd) g_subprocess_launcher_set_cwd(launcher, cwd);
+
+    g_autoptr(GSubprocess) proc =
+        g_subprocess_launcher_spawnv(launcher, (const gchar *const *)argv->pdata, error);
+    if (proc == NULL) return FALSE;
+
+    if (self) {
+        g_mutex_lock(&self->compile_mutex);
+        self->child = g_object_ref(proc);
+        g_mutex_unlock(&self->compile_mutex);
+    }
+
+    g_autoptr(GBytes) out_bytes = NULL;
+    g_autoptr(GBytes) err_bytes = NULL;
+    gboolean ok = g_subprocess_communicate(proc, NULL, NULL, stdout_buf ? &out_bytes : NULL,
+                                           stderr_buf ? &err_bytes : NULL, error);
+
+    if (self) {
+        g_mutex_lock(&self->compile_mutex);
+        g_clear_object(&self->child);
+        g_mutex_unlock(&self->compile_mutex);
+    }
+
+    if (!ok) return FALSE;
+
+    if (stdout_buf) {
+        gsize len = 0;
+        const char *data = out_bytes ? g_bytes_get_data(out_bytes, &len) : NULL;
+        *stdout_buf = g_strndup(data ? data : "", len);
+    }
+    if (stderr_buf) {
+        gsize len = 0;
+        const char *data = err_bytes ? g_bytes_get_data(err_bytes, &len) : NULL;
+        *stderr_buf = g_strndup(data ? data : "", len);
+    }
+    if (exit_status) *exit_status = g_subprocess_get_status(proc);
+    return TRUE;
 }
 
-static gboolean emit_compile_finished(gpointer user_data)
+typedef struct {
+    SilktexCompiler *self;
+    char *log;
+    gboolean success;
+} CompileResult;
+
+static void compile_result_free(gpointer data)
 {
-    SilktexCompiler *self = SILKTEX_COMPILER(user_data);
-    g_signal_emit(self, signals[SIGNAL_COMPILE_FINISHED], 0);
-    return G_SOURCE_REMOVE;
+    CompileResult *res = data;
+    g_object_unref(res->self);
+    g_free(res->log);
+    g_free(res);
 }
 
-static gboolean emit_compile_error(gpointer user_data)
+/* Runs on the main thread. compile_log is only ever written here (and in
+ * dispose), so silktex_compiler_get_log() callers never race the worker. */
+static gboolean emit_compile_result(gpointer user_data)
 {
-    SilktexCompiler *self = SILKTEX_COMPILER(user_data);
-    g_signal_emit(self, signals[SIGNAL_COMPILE_ERROR], 0);
+    CompileResult *res = user_data;
+    SilktexCompiler *self = res->self;
+
+    if (res->log != NULL) {
+        g_free(self->compile_log);
+        self->compile_log = g_steal_pointer(&res->log);
+    }
+    g_signal_emit(self, signals[res->success ? SIGNAL_COMPILE_FINISHED : SIGNAL_COMPILE_ERROR], 0);
     return G_SOURCE_REMOVE;
 }
 
 /* Back up PDF/synctex before invoking the typesetter; restore on failure so
  * the preview always shows the last successfully rendered version. */
 static gboolean run_typesetter(SilktexCompiler *self, const char *workfile, const char *outdir,
-                               const char *source_dir)
+                               const char *source_dir, char **log_out)
 {
     g_autofree char *stdout_buf = NULL;
     g_autofree char *stderr_buf = NULL;
+    g_autofree char *typesetter = NULL;
+    gboolean shell_escape, synctex;
     GError *error = NULL;
     int exit_status = 0;
+
+    /* Snapshot settings under the lock: apply_config() may replace them mid-run. */
+    g_mutex_lock(&self->compile_mutex);
+    typesetter = g_strdup(self->typesetter);
+    shell_escape = self->shell_escape;
+    synctex = self->synctex;
+    g_mutex_unlock(&self->compile_mutex);
 
     g_autofree char *basename = g_path_get_basename(workfile);
     char *dot = strrchr(basename, '.');
@@ -125,24 +194,26 @@ static gboolean run_typesetter(SilktexCompiler *self, const char *workfile, cons
     }
 
     GPtrArray *argv = g_ptr_array_new_with_free_func(g_free);
-    g_ptr_array_add(argv, g_strdup(self->typesetter));
+    g_ptr_array_add(argv, g_strdup(typesetter));
     g_ptr_array_add(argv, g_strdup("-interaction=nonstopmode"));
     g_ptr_array_add(argv, g_strdup("-halt-on-error"));
     g_ptr_array_add(argv, g_strdup("-file-line-error"));
-    if (self->shell_escape) g_ptr_array_add(argv, g_strdup("-shell-escape"));
-    if (self->synctex) g_ptr_array_add(argv, g_strdup("-synctex=1"));
+    if (shell_escape) g_ptr_array_add(argv, g_strdup("-shell-escape"));
+    if (synctex) g_ptr_array_add(argv, g_strdup("-synctex=1"));
     g_ptr_array_add(argv, g_strdup_printf("-output-directory=%s", outdir));
     g_ptr_array_add(argv, g_strdup_printf("-jobname=%s", basename));
     g_ptr_array_add(argv, g_strdup(workfile));
     g_ptr_array_add(argv, NULL);
 
     gboolean result =
-        spawn_tex_command(source_dir, argv, &stdout_buf, &stderr_buf, &exit_status, &error);
+        spawn_tex_command(self, source_dir, argv, &stdout_buf, &stderr_buf, &exit_status, &error);
 
     g_ptr_array_unref(argv);
 
     if (!result) {
         g_warning("Failed to run typesetter: %s", error ? error->message : "unknown");
+        *log_out =
+            g_strdup_printf("Failed to run typesetter: %s\n", error ? error->message : "unknown");
         g_clear_error(&error);
         if (g_file_test(backup_pdf, G_FILE_TEST_EXISTS)) {
             g_autoptr(GFile) src = g_file_new_for_path(backup_pdf);
@@ -162,11 +233,9 @@ static gboolean run_typesetter(SilktexCompiler *self, const char *workfile, cons
         return FALSE;
     }
 
-    g_mutex_lock(&self->compile_mutex);
-    g_free(self->compile_log);
+    /* TeX logs may contain raw 8-bit bytes; GtkTextBuffer requires valid UTF-8. */
     const char *primary = (stdout_buf && *stdout_buf) ? stdout_buf : stderr_buf;
-    self->compile_log = g_strdup(primary ? primary : "");
-    g_mutex_unlock(&self->compile_mutex);
+    *log_out = g_utf8_make_valid(primary ? primary : "", -1);
 
     gboolean success = (exit_status == 0);
 
@@ -204,18 +273,13 @@ static gpointer compile_thread_func(gpointer data)
     while (TRUE) {
         g_mutex_lock(&self->compile_mutex);
 
-        while (!self->compile_requested && self->keep_running) {
+        while ((!self->compile_requested || self->paused) && self->keep_running) {
             g_cond_wait(&self->compile_cv, &self->compile_mutex);
         }
 
         if (!self->keep_running) {
             g_mutex_unlock(&self->compile_mutex);
             break;
-        }
-
-        if (self->paused) {
-            g_mutex_unlock(&self->compile_mutex);
-            continue;
         }
 
         self->compile_requested = FALSE;
@@ -229,7 +293,9 @@ static gpointer compile_thread_func(gpointer data)
         g_mutex_unlock(&self->compile_mutex);
 
         if (editor == NULL) {
+            g_mutex_lock(&self->compile_mutex);
             self->compiling = FALSE;
+            g_mutex_unlock(&self->compile_mutex);
             continue;
         }
 
@@ -239,13 +305,10 @@ static gpointer compile_thread_func(gpointer data)
         if (workfile != NULL) {
             g_autofree char *outdir = g_path_get_dirname(workfile);
             g_autofree char *source_dir = silktex_editor_get_source_dir(editor);
-            gboolean success = run_typesetter(self, workfile, outdir, source_dir);
-
-            if (success) {
-                g_idle_add(emit_compile_finished, self);
-            } else {
-                g_idle_add(emit_compile_error, self);
-            }
+            CompileResult *res = g_new0(CompileResult, 1);
+            res->self = g_object_ref(self); /* keep alive until the idle has run */
+            res->success = run_typesetter(self, workfile, outdir, source_dir, &res->log);
+            g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, emit_compile_result, res, compile_result_free);
         }
 
         g_object_unref(editor);
@@ -307,7 +370,7 @@ static void silktex_compiler_init(SilktexCompiler *self)
     g_cond_init(&self->compile_cv);
 
     self->typesetter = g_strdup("pdflatex");
-    self->shell_escape = TRUE;
+    self->shell_escape = FALSE;
     self->synctex = TRUE;
     self->keep_running = FALSE;
     self->paused = FALSE;
@@ -362,6 +425,7 @@ void silktex_compiler_stop(SilktexCompiler *self)
     }
 
     self->keep_running = FALSE;
+    if (self->child != NULL) g_subprocess_send_signal(self->child, SIGTERM);
     g_cond_signal(&self->compile_cv);
     g_mutex_unlock(&self->compile_mutex);
 
@@ -413,9 +477,7 @@ void silktex_compiler_cancel(SilktexCompiler *self)
     g_return_if_fail(SILKTEX_IS_COMPILER(self));
 
     g_mutex_lock(&self->compile_mutex);
-    if (self->typesetter_pid > 0) {
-        kill(self->typesetter_pid, SIGTERM);
-    }
+    if (self->child != NULL) g_subprocess_send_signal(self->child, SIGTERM);
     g_mutex_unlock(&self->compile_mutex);
 }
 
@@ -485,7 +547,7 @@ gboolean silktex_compiler_run_makeindex(SilktexCompiler *self, SilktexEditor *ed
     g_ptr_array_add(argv, NULL);
 
     int exit_status = 0;
-    gboolean result = spawn_tex_command(dirname, argv, NULL, NULL, &exit_status, NULL);
+    gboolean result = spawn_tex_command(NULL, dirname, argv, NULL, NULL, &exit_status, NULL);
     g_ptr_array_unref(argv);
 
     return result && exit_status == 0;
@@ -511,7 +573,7 @@ gboolean silktex_compiler_run_bibtex(SilktexCompiler *self, SilktexEditor *edito
     g_ptr_array_add(argv, NULL);
 
     int exit_status = 0;
-    gboolean result = spawn_tex_command(dirname, argv, NULL, NULL, &exit_status, NULL);
+    gboolean result = spawn_tex_command(NULL, dirname, argv, NULL, NULL, &exit_status, NULL);
     g_ptr_array_unref(argv);
 
     return result && exit_status == 0;

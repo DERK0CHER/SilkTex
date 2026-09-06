@@ -6,7 +6,9 @@
 # build the current checkout as a Flatpak.
 #
 # LaTeX tools come from org.freedesktop.Sdk.Extension.texlive, mounted at
-# /app/texlive and exposed through PATH.
+# /app/texlive and exposed through PATH. There is no host fallback: the
+# sandbox never runs the host's pdflatex. Install the extension with
+#   flatpak install flathub org.freedesktop.Sdk.Extension.texlive//25.08
 app-id: app.silktex.SilkTex
 runtime: org.gnome.Platform
 runtime-version: '50'
@@ -76,6 +78,9 @@ modules:
     buildsystem: meson
     build-options:
       append-path: /usr/lib/sdk/rust-stable/bin
+      # meson invokes cargo for silktex-node; crates are fetched at build time.
+      build-args:
+        - --share=network
     config-opts:
       - --buildtype=debugoptimized
       - --libdir=lib
