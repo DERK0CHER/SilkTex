@@ -534,6 +534,7 @@ static void silktex_prefs_init(SilktexPrefs *self)
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_scheme_light),
                                   _("Light Theme Scheme"));
     adw_combo_row_set_model(self->row_scheme_light, G_LIST_MODEL(scheme_names_light));
+    g_object_unref(scheme_names_light);
     int si_light = scheme_index_for_id(self->scheme_ids_light,
                                        config_get_string("Editor", "style_scheme_light"));
     adw_combo_row_set_selected(self->row_scheme_light, (guint)si_light);
@@ -544,6 +545,7 @@ static void silktex_prefs_init(SilktexPrefs *self)
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_scheme_dark),
                                   _("Dark Theme Scheme"));
     adw_combo_row_set_model(self->row_scheme_dark, G_LIST_MODEL(scheme_names_dark));
+    g_object_unref(scheme_names_dark);
     int si_dark = scheme_index_for_id(self->scheme_ids_dark,
                                       config_get_string("Editor", "style_scheme_dark"));
     adw_combo_row_set_selected(self->row_scheme_dark, (guint)si_dark);
@@ -570,6 +572,7 @@ static void silktex_prefs_init(SilktexPrefs *self)
     self->row_typesetter = ADW_COMBO_ROW(adw_combo_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_typesetter), _("Typesetter"));
     adw_combo_row_set_model(self->row_typesetter, G_LIST_MODEL(ts_list));
+    g_object_unref(ts_list);
 
     const char *cur_ts = config_get_string("Compile", "typesetter");
     static const char *ts_vals[] = {"pdflatex", "xelatex", "lualatex", "latexmk"};
@@ -660,6 +663,7 @@ static void silktex_prefs_dispose(GObject *obj)
     g_clear_object(&self->scheme_ids_dark);
     g_clear_pointer(&self->snippet_entries, g_ptr_array_unref);
     g_clear_pointer(&self->snippet_search_query, g_free);
+    self->snippet_flow_box = NULL; /* owned by the widget tree; gone after dispose */
     G_OBJECT_CLASS(silktex_prefs_parent_class)->dispose(obj);
 }
 
@@ -813,7 +817,7 @@ static void import_gummi_snippets(SilktexPrefs *self, const char *filename)
 
 static void on_import_file_chosen(GObject *src, GAsyncResult *res, gpointer ud)
 {
-    SilktexPrefs *self = SILKTEX_PREFS(ud);
+    g_autoptr(SilktexPrefs) self = SILKTEX_PREFS(ud); /* ref taken in on_snippet_import */
     GError *err = NULL;
     GFile *file = gtk_file_dialog_open_finish(GTK_FILE_DIALOG(src), res, &err);
     if (!file) { g_clear_error(&err); return; }
@@ -855,7 +859,7 @@ static void on_snippet_import(GtkButton *btn, gpointer ud)
     gtk_file_dialog_set_filters(dlg, G_LIST_MODEL(filters));
     g_object_unref(filters);
 
-    gtk_file_dialog_open(dlg, GTK_WINDOW(root), NULL, on_import_file_chosen, self);
+    gtk_file_dialog_open(dlg, GTK_WINDOW(root), NULL, on_import_file_chosen, g_object_ref(self));
     g_object_unref(dlg);
 }
 
@@ -868,8 +872,8 @@ static void on_snippet_save(GtkButton *btn, gpointer ud)
     if (!self->snippets || !self->snippet_entries) return;
     GError *err = NULL;
     if (!snippets_write_file(self, &err)) {
-        g_warning("Failed to save snippets: %s", err->message);
-        g_error_free(err);
+        g_warning("Failed to save snippets: %s", err ? err->message : "unknown");
+        g_clear_error(&err);
     } else {
         silktex_snippets_reload(self->snippets);
     }
@@ -1305,8 +1309,7 @@ static void on_edit_letter_changed(AdwEntryRow *row, GParamSpec *p, gpointer ud)
 static void on_snippet_edit_delete_confirm(AdwAlertDialog *dlg, const char *response, gpointer ud)
 {
     if (g_strcmp0(response, "delete") != 0) return;
-    gpointer *pack = ud;
-    SnippetEditCtx *ctx = pack[0];
+    SnippetEditCtx *ctx = ud;
     on_snippet_remove_at(ctx->prefs, ctx->idx);
     adw_dialog_close(ctx->dialog);
 }
@@ -1325,10 +1328,8 @@ static void on_snippet_edit_delete(GtkButton *btn, gpointer ud)
     adw_alert_dialog_set_response_appearance(confirm, "delete", ADW_RESPONSE_DESTRUCTIVE);
     adw_alert_dialog_set_default_response(confirm, "cancel");
 
-    /* Pack ctx as a single pointer — it stays alive as long as the edit dialog is open */
-    static gpointer pack[1];
-    pack[0] = ctx;
-    g_signal_connect(confirm, "response", G_CALLBACK(on_snippet_edit_delete_confirm), pack);
+    /* ctx stays alive as long as the edit dialog is open */
+    g_signal_connect(confirm, "response", G_CALLBACK(on_snippet_edit_delete_confirm), ctx);
     adw_dialog_present(ADW_DIALOG(confirm), GTK_WIDGET(ctx->dialog));
 }
 
@@ -1649,6 +1650,7 @@ void silktex_prefs_set_snippets(SilktexPrefs *self, SilktexSnippets *snippets)
     self->row_snippet_mod1 = ADW_COMBO_ROW(adw_combo_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_snippet_mod1), _("Modifier 1"));
     adw_combo_row_set_model(self->row_snippet_mod1, G_LIST_MODEL(mod_model_1));
+    g_object_unref(mod_model_1);
     adw_combo_row_set_selected(self->row_snippet_mod1, modifier_choice_index_for(config_get_string(
                                                            "Snippets", "modifier1")));
     g_signal_connect(self->row_snippet_mod1, "notify::selected",
@@ -1657,6 +1659,7 @@ void silktex_prefs_set_snippets(SilktexPrefs *self, SilktexSnippets *snippets)
     self->row_snippet_mod2 = ADW_COMBO_ROW(adw_combo_row_new());
     adw_preferences_row_set_title(ADW_PREFERENCES_ROW(self->row_snippet_mod2), _("Modifier 2"));
     adw_combo_row_set_model(self->row_snippet_mod2, G_LIST_MODEL(mod_model_2));
+    g_object_unref(mod_model_2);
     adw_combo_row_set_selected(self->row_snippet_mod2, modifier_choice_index_for(config_get_string(
                                                            "Snippets", "modifier2")));
     g_signal_connect(self->row_snippet_mod2, "notify::selected",

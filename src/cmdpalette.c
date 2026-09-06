@@ -401,6 +401,10 @@ static gboolean on_search_key_pressed(GtkEventControllerKey *ctrl, guint keyval,
         /* Shift+Enter: activate the highlighted row but keep the palette
          * open, so users can chain multiple insertions (handy for symbols). */
         gboolean keep_open = (state & GDK_SHIFT_MASK) != 0;
+        /* "search-changed" is debounced, so the filter/selection may lag
+         * behind fast typing — sync before acting on the selected row. */
+        on_search_changed(GTK_EDITABLE(gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(ctrl))),
+                          ctx);
         activate_selected(ctx, keep_open);
         return GDK_EVENT_STOP;
     }
@@ -410,7 +414,7 @@ static gboolean on_search_key_pressed(GtkEventControllerKey *ctrl, guint keyval,
         for (;; idx++) {
             GtkListBoxRow *next = gtk_list_box_get_row_at_index(ctx->list, idx);
             if (!next) break;
-            if (gtk_widget_get_visible(GTK_WIDGET(next))) {
+            if (gtk_widget_get_child_visible(GTK_WIDGET(next))) {
                 gtk_list_box_select_row(ctx->list, next);
                 break;
             }
@@ -423,7 +427,7 @@ static gboolean on_search_key_pressed(GtkEventControllerKey *ctrl, guint keyval,
         for (; idx >= 0; idx--) {
             GtkListBoxRow *prev = gtk_list_box_get_row_at_index(ctx->list, idx);
             if (!prev) break;
-            if (gtk_widget_get_visible(GTK_WIDGET(prev))) {
+            if (gtk_widget_get_child_visible(GTK_WIDGET(prev))) {
                 gtk_list_box_select_row(ctx->list, prev);
                 break;
             }
@@ -447,7 +451,8 @@ static GtkWidget *build_row(const CmdEntry *e, int category)
     gtk_widget_set_margin_start(row_box, 8);
     gtk_widget_set_margin_end(row_box, 8);
 
-    GtkWidget *lbl = gtk_label_new(e->label);
+    const char *label = _(e->label);
+    GtkWidget *lbl = gtk_label_new(label);
     gtk_label_set_xalign(GTK_LABEL(lbl), 0.0f);
     gtk_widget_set_hexpand(lbl, TRUE);
     gtk_box_append(GTK_BOX(row_box), lbl);
@@ -461,7 +466,7 @@ static GtkWidget *build_row(const CmdEntry *e, int category)
 
     GtkWidget *row = gtk_list_box_row_new();
     gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), row_box);
-    g_object_set_data(G_OBJECT(row), "cmd-label",       (gpointer)e->label);
+    g_object_set_data(G_OBJECT(row), "cmd-label",       (gpointer)label);
     g_object_set_data(G_OBJECT(row), "cmd-action",      (gpointer)e->action);
     g_object_set_data(G_OBJECT(row), "cmd-shortcut",    (gpointer)e->shortcut);
     g_object_set_data(G_OBJECT(row), "cmd-param",       (gpointer)e->param);

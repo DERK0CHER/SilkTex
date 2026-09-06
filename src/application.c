@@ -10,6 +10,7 @@
 #include "style-schemes.h"
 #include "utils.h"
 #include "i18n.h"
+#include "constants.h"
 
 struct _SilktexApplication {
     AdwApplication parent_instance;
@@ -32,7 +33,7 @@ static void action_about(GSimpleAction *action, GVariant *parameter, gpointer us
     const char *developers[] = {"Bela Georg Barthelmes", NULL};
 
     adw_show_about_dialog(GTK_WIDGET(window), "application-name", "SilkTex", "application-icon",
-                          "app.silktex.SilkTex", "version", "0.9.0", "copyright",
+                          "app.silktex.SilkTex", "version", C_PACKAGE_VERSION, "copyright",
                           "© 2026 Bela Georg Barthelmes", "license-type", GTK_LICENSE_GPL_3_0,
                           "comments", _("A modern LaTeX editor for GNOME"), "website",
                           "https://github.com/DERK0CHER/SilkTex", "developers", developers,

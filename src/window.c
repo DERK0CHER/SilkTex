@@ -1121,6 +1121,10 @@ static void on_tab_changed(AdwTabView *view, GParamSpec *pspec, gpointer user_da
         silktex_searchbar_set_editor(self->searchbar, editor);
         silktex_structure_set_editor(self->structure, editor);
         if (self->auto_compile) silktex_window_restart_compile_timer(self);
+    } else {
+        /* Last tab closed — drop the refs so the dead document's outline/search go away. */
+        silktex_searchbar_set_editor(self->searchbar, NULL);
+        silktex_structure_set_editor(self->structure, NULL);
     }
     silktex_window_git_refresh_state(self);
 }
@@ -1130,6 +1134,27 @@ typedef struct {
     AdwTabPage *page;
     SilktexWindow *win;
 } ClosePageData;
+
+static void on_close_save_response(GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    ClosePageData *d = user_data;
+    GError *error = NULL;
+    gboolean saved = FALSE;
+
+    GFile *file = gtk_file_dialog_save_finish(GTK_FILE_DIALOG(source), result, &error);
+    if (file != NULL) {
+        SilktexEditor *editor = silktex_window_editor_for_page(d->page);
+        if (editor) saved = silktex_editor_save_file(editor, file, &error);
+        g_object_unref(file);
+    }
+    if (!saved && error && !g_error_matches(error, GTK_DIALOG_ERROR, GTK_DIALOG_ERROR_CANCELLED)) {
+        silktex_window_show_toast(d->win, error->message);
+    }
+    g_clear_error(&error);
+
+    adw_tab_view_close_page_finish(d->view, d->page, saved);
+    g_free(d);
+}
 
 static void on_close_dialog_response(AdwAlertDialog *dialog, const char *response,
                                      gpointer user_data)
@@ -1141,10 +1166,21 @@ static void on_close_dialog_response(AdwAlertDialog *dialog, const char *respons
         const char *fname = silktex_editor_get_filename(editor);
         if (fname && *fname) {
             GFile *f = g_file_new_for_path(fname);
-            silktex_editor_save_file(editor, f, NULL);
+            GError *error = NULL;
+            gboolean ok = silktex_editor_save_file(editor, f, &error);
             g_object_unref(f);
+            if (!ok) silktex_window_show_toast(d->win, error ? error->message : _("Save failed"));
+            g_clear_error(&error);
+            adw_tab_view_close_page_finish(d->view, d->page, ok);
+        } else {
+            /* Untitled: ask where to save; close only once the save succeeds. */
+            GtkFileDialog *dialog = gtk_file_dialog_new();
+            gtk_file_dialog_set_title(dialog, _("Save LaTeX Document"));
+            gtk_file_dialog_set_modal(dialog, TRUE);
+            configure_tex_save_dialog(dialog, d->win, editor);
+            gtk_file_dialog_save(dialog, GTK_WINDOW(d->win), NULL, on_close_save_response, d);
+            return; /* d is freed in on_close_save_response */
         }
-        adw_tab_view_close_page_finish(d->view, d->page, TRUE);
     } else if (g_strcmp0(response, "discard") == 0) {
         adw_tab_view_close_page_finish(d->view, d->page, TRUE);
     } else {
@@ -1337,6 +1373,7 @@ static void silktex_window_dispose(GObject *object)
     g_clear_pointer(&self->last_tex_save_dir, g_free);
     g_clear_object(&self->compiler);
     g_clear_object(&self->snippets);
+    g_clear_object(&self->log_buf);
 
     G_OBJECT_CLASS(silktex_window_parent_class)->dispose(object);
 }
@@ -1372,6 +1409,7 @@ static void silktex_window_class_init(SilktexWindowClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_git_menu);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_collab);
     gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_save);
+    gtk_widget_class_bind_template_child(widget_class, SilktexWindow, btn_log);
 }
 
 void silktex_window_install_chrome_css(void)
