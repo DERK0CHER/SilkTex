@@ -18,13 +18,21 @@
  *
  *   node → C
  *     {"event":"session_ready","doc_id":"...","session_id":"<id>"}
- *     {"event":"remote_op","doc_id":"...","retain":<n>,"insert":"<s>"}
- *     {"event":"remote_op","doc_id":"...","retain":<n>,"delete":<n>}
+ *     {"event":"remote_op","doc_id":"...","retain":<n>,"insert":"<s>","base_seq":<n>}
+ *     {"event":"remote_op","doc_id":"...","retain":<n>,"delete":<n>,"base_seq":<n>}
  *     {"event":"snapshot","doc_id":"...","content":"<tex>"}
  *     {"event":"peer_count","doc_id":"...","count":<n>}
  *     {"event":"remote_cursor","doc_id":"...","peer_id":"...","offset":<n>}
  *     {"event":"peer_name","peer_id":"...","name":"<display name>"}
  *     {"event":"error","msg":"<text>"}
+ *
+ * Convergence: every op we send carries an implicit sequence number (1, 2, …)
+ * and stays queued in C.pending until the node confirms it folded the op into
+ * its document. That confirmation is "base_seq" on a remote op: the number of
+ * our own ops the node had already applied when it computed that op's offsets.
+ * Anything still queued is an edit the remote offsets do not know about, so a
+ * remote op is transformed past each remaining queue entry before it touches
+ * the buffer (see silktex_collab_transform_op).
  */
 
 #include "collab.h"
@@ -99,12 +107,16 @@ typedef struct {
 
     gboolean          in_session;
     gboolean          session_pending;
+    gboolean          hosting;         /* TRUE if we created the session    */
     gboolean          applying;        /* TRUE while writing a remote op    */
     int               peer_count;
 
     GHashTable       *peers;           /* peer_id → PeerState*              */
     int               next_color_idx;  /* round-robin color assignment      */
     guint             cursor_debounce; /* GSource ID for cursor broadcast   */
+
+    guint64           local_seq;       /* ops sent so far this session      */
+    GQueue           *pending;         /* PendingOp*, oldest first          */
 
     /* Window the collab UI lives in (weak — owns the tab view we annotate). */
     SilktexWindow *window;
@@ -198,7 +210,7 @@ static void ensure_peer_tag(PeerState *ps)
 
 static void update_peer_cursor(PeerState *ps, int offset)
 {
-    if (!C.buf) return;
+    if (!C.buf || offset < 0) return;
 
     ensure_peer_tag(ps);
     if (!ps->tag) return;
@@ -260,6 +272,134 @@ static void invalidate_peer_tags(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Unacknowledged local ops + operational transform                    */
+/* ------------------------------------------------------------------ */
+
+/* Offsets are character counts in a text buffer, so they are nowhere near
+ * G_MAXINT; clamping to a quarter of it keeps every intermediate sum below
+ * the overflow point without ever touching a realistic value. */
+#define COLLAB_OFFSET_MAX (G_MAXINT / 4)
+
+/* A healthy node acknowledges through base_seq on every remote op, so the
+ * queue stays a handful of entries deep. The cap only bites if the node
+ * wedges: we then drop the oldest entries rather than grow without bound. */
+#define COLLAB_PENDING_MAX 4096
+
+typedef struct {
+    guint64 seq;
+    int     retain;
+    int     insert_len;  /* characters, not bytes */
+    int     delete_len;
+} PendingOp;
+
+static int collab_clamp_offset(int v)
+{
+    if (v < 0)                 return 0;
+    if (v > COLLAB_OFFSET_MAX) return COLLAB_OFFSET_MAX;
+    return v;
+}
+
+gboolean silktex_collab_transform_op(int *r_retain, int *r_delete,
+                                     int l_retain, int l_insert_len, int l_delete_len)
+{
+    if (!r_retain || !r_delete) return TRUE;
+
+    int rr = collab_clamp_offset(*r_retain);
+    int rd = collab_clamp_offset(*r_delete);
+    int lr = collab_clamp_offset(l_retain);
+    int li = collab_clamp_offset(l_insert_len);
+    int ld = collab_clamp_offset(l_delete_len);
+
+    int l_lo = lr, l_hi = lr + ld;
+
+    /* Conflict policy — the delete wins over a concurrent insert that lands
+     * strictly inside it. Two halves of one rule, applied consistently:
+     *   · a remote insertion point strictly inside the local deletion is
+     *     dropped (this return value), and
+     *   · a local insertion strictly inside the remote deletion is swallowed
+     *     by growing that deletion (see the `rd += li` branch below).
+     * Boundaries are never "inside": an insert exactly at the start of a
+     * deletion lands before it, one exactly at its end lands after it, and
+     * both survive. */
+    gboolean keep_insert = !(ld > 0 && l_lo < rr && rr < l_hi);
+
+    /* ── local delete ── */
+    int before = MIN(l_hi, rr) - l_lo;          /* removed before the remote start */
+    if (before < 0) before = 0;
+
+    int ov_lo   = MAX(rr, l_lo);                /* removed inside the remote range */
+    int ov_hi   = MIN(rr + rd, l_hi);
+    int overlap = ov_hi - ov_lo;
+    if (overlap < 0) overlap = 0;
+
+    rr -= before;                               /* start clamps to the local start */
+    rd -= overlap;
+    if (rr < 0) rr = 0;
+    if (rd < 0) rd = 0;
+
+    /* ── local insert ──
+     * A local op is always a pure insert or a pure delete (the two
+     * GtkTextBuffer signals), so when li > 0 the block above was a no-op and
+     * l_lo and rr are still offsets into the same, shared document state. */
+    if (li > 0) {
+        if (l_lo <= rr) {
+            /* Tie at equal offsets: the local text goes first, so the remote
+             * position steps over it. The matching rule on the other side is
+             * that a local insert at an equal offset does not move — that is
+             * what makes the two orderings agree. */
+            rr += li;
+        } else if (l_lo < rr + rd) {
+            rd += li;
+        }
+        /* l_lo >= rr + rd: entirely after the remote range — no change. */
+    }
+
+    *r_retain = collab_clamp_offset(rr);
+    *r_delete = collab_clamp_offset(rd);
+    return keep_insert;
+}
+
+/* Forget everything we sent: called whenever the session (and with it the
+ * node's counter) restarts. */
+static void collab_reset_pending(void)
+{
+    if (C.pending) {
+        g_queue_free_full(C.pending, g_free);
+        C.pending = NULL;
+    }
+    C.local_seq = 0;
+}
+
+static void collab_queue_local_op(int retain, int insert_len, int delete_len)
+{
+    if (!C.pending) C.pending = g_queue_new();
+
+    PendingOp *p   = g_new0(PendingOp, 1);
+    p->seq         = C.local_seq;
+    p->retain      = retain;
+    p->insert_len  = insert_len;
+    p->delete_len  = delete_len;
+    g_queue_push_tail(C.pending, p);
+
+    while (C.pending->length > COLLAB_PENDING_MAX) {
+        g_warning_once("collab: node is not acknowledging ops; dropping the "
+                       "oldest unacknowledged edits");
+        g_free(g_queue_pop_head(C.pending));
+    }
+}
+
+/* Drop the ops the node has already folded into the state it diffed against. */
+static void collab_ack_through(guint64 base_seq)
+{
+    if (!C.pending) return;
+    while (C.pending->head) {
+        PendingOp *p = C.pending->head->data;
+        if (p->seq > base_seq) break;
+        g_free(g_queue_pop_head(C.pending));
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /* Sending                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -275,9 +415,17 @@ static void collab_send(const char *json)
     }
 }
 
+/* TRUE while local edits must be mirrored to the node: during a session, and
+ * while hosting one that is still starting — the node already holds our
+ * content, so edits typed before session_ready would otherwise desync it. */
+static gboolean collab_mirroring(void)
+{
+    return C.in_session || (C.session_pending && C.hosting);
+}
+
 static void collab_send_op(int retain, const char *insert, int delete_count)
 {
-    if (!C.in_session || !C.doc_id) return;
+    if (!collab_mirroring() || !C.doc_id) return;
 
     JsonBuilder *b = json_builder_new();
     json_builder_begin_object(b);
@@ -295,11 +443,19 @@ static void collab_send_op(int retain, const char *insert, int delete_count)
     json_builder_end_object(b);
 
     JsonGenerator *gen = json_generator_new();
-    json_generator_set_root(gen, json_builder_get_root(b));
+    g_autoptr(JsonNode) root = json_builder_get_root(b);
+    json_generator_set_root(gen, root);
     g_autofree char *str = json_generator_to_data(gen, NULL);
     collab_send(str);
     g_object_unref(gen);
     g_object_unref(b);
+
+    /* The node numbers the ops it receives in the same order; remember this
+     * one until a remote op's base_seq says it has been folded in. */
+    C.local_seq++;
+    collab_queue_local_op(retain,
+                          insert ? (int)g_utf8_strlen(insert, -1) : 0,
+                          delete_count > 0 ? delete_count : 0);
 }
 
 static void collab_send_name(void)
@@ -316,7 +472,8 @@ static void collab_send_name(void)
     json_builder_end_object(b);
 
     JsonGenerator *gen = json_generator_new();
-    json_generator_set_root(gen, json_builder_get_root(b));
+    g_autoptr(JsonNode) root = json_builder_get_root(b);
+    json_generator_set_root(gen, root);
     g_autofree char *str = json_generator_to_data(gen, NULL);
     collab_send(str);
     g_object_unref(gen);
@@ -342,7 +499,8 @@ static gboolean send_cursor_debounced(gpointer ud)
     json_builder_end_object(b);
 
     JsonGenerator *gen = json_generator_new();
-    json_generator_set_root(gen, json_builder_get_root(b));
+    g_autoptr(JsonNode) root = json_builder_get_root(b);
+    json_generator_set_root(gen, root);
     g_autofree char *str = json_generator_to_data(gen, NULL);
     collab_send(str);
     g_object_unref(gen);
@@ -356,10 +514,16 @@ static gboolean send_cursor_debounced(gpointer ud)
 
 static void apply_remote_op(int retain, const char *insert, int delete_count)
 {
-    if (!C.editor) return;
+    if (!C.editor || retain < 0) return;
 
     GtkSourceBuffer *sbuf = silktex_editor_get_buffer(C.editor);
     GtkTextBuffer   *buf  = GTK_TEXT_BUFFER(sbuf);
+
+    /* Last safety net: a transformed op must never address past the buffer. */
+    int n_chars = gtk_text_buffer_get_char_count(buf);
+    if (retain > n_chars) retain = n_chars;
+    if (delete_count < 0) delete_count = 0;
+    if (delete_count > n_chars - retain) delete_count = n_chars - retain;
 
     C.applying = TRUE;
     gtk_text_buffer_begin_irreversible_action(buf);
@@ -391,11 +555,23 @@ static void on_node_line(GObject *src, GAsyncResult *res, gpointer ud)
         g_data_input_stream_read_line_finish_utf8(G_DATA_INPUT_STREAM(src), res, &len, &err);
 
     if (!line) {
-        if (err && !g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED))
-            g_warning("collab: node stream closed: %s", err->message);
+        if (g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+            /* do_leave_session already tore the node down and reset state
+             * (and the window may be gone by now) — nothing to touch. */
+            g_clear_error(&err);
+            return;
+        }
+        if (err) g_warning("collab: node stream closed: %s", err->message);
+        /* The node exited on its own: drop our handles so the next session
+         * respawns it instead of writing into a dead pipe. */
+        g_clear_object(&C.cancel);
+        g_clear_object(&C.reader);
+        g_clear_object(&C.proc);
+        C.writer          = NULL;
         C.session_pending = FALSE;
         C.in_session      = FALSE;
         C.peer_count      = 0;
+        collab_reset_pending();
         clear_all_peer_cursors();
         collab_update_ui();
         g_clear_error(&err);
@@ -411,6 +587,7 @@ static void on_node_line(GObject *src, GAsyncResult *res, gpointer ud)
     JsonObject *obj   = json_node_get_object(root);
     const char *event = json_object_has_member(obj, "event")
         ? json_object_get_string_member(obj, "event") : "";
+    if (!event) goto done; /* non-string "event" member */
 
     if (g_str_equal(event, "remote_op")) {
         int         retain = json_object_has_member(obj, "retain")
@@ -419,14 +596,41 @@ static void on_node_line(GObject *src, GAsyncResult *res, gpointer ud)
                                  ? json_object_get_string_member(obj, "insert") : NULL;
         int         del    = json_object_has_member(obj, "delete")
                                  ? (int)json_object_get_int_member(obj, "delete") : 0;
+
+        if (json_object_has_member(obj, "base_seq")) {
+            gint64 base = json_object_get_int_member(obj, "base_seq");
+            collab_ack_through(base < 0 ? 0 : (guint64)base);
+        } else {
+            /* Node predates base_seq: it cannot tell us what it has folded in,
+             * so assume everything and fall back to the untransformed path. */
+            g_warning_once("collab: silktex-node does not report base_seq; "
+                           "concurrent edits may drift");
+            collab_ack_through(G_MAXUINT64);
+        }
+
+        /* Whatever is still queued is an edit the node had not seen when it
+         * computed these offsets — replay the remote op past each of them. */
+        if (C.pending) {
+            for (GList *l = C.pending->head; l; l = l->next) {
+                PendingOp *p = l->data;
+                if (!silktex_collab_transform_op(&retain, &del, p->retain,
+                                                 p->insert_len, p->delete_len))
+                    ins = NULL; /* insertion point was swallowed by a local delete */
+            }
+        }
         apply_remote_op(retain, ins, del);
 
     } else if (g_str_equal(event, "snapshot")) {
         const char *content = json_object_has_member(obj, "content")
                                   ? json_object_get_string_member(obj, "content") : NULL;
         if (content && C.editor) {
+            GtkTextBuffer *buf = GTK_TEXT_BUFFER(silktex_editor_get_buffer(C.editor));
             C.applying = TRUE;
+            /* Irreversible: an undo of the snapshot load would be echoed
+             * to peers as a delete + insert of our pre-join content. */
+            gtk_text_buffer_begin_irreversible_action(buf);
             silktex_editor_set_text(C.editor, content, -1);
+            gtk_text_buffer_end_irreversible_action(buf);
             C.applying = FALSE;
         }
 
@@ -502,7 +706,7 @@ static void on_insert_text(GtkTextBuffer *buf, GtkTextIter *loc, const char *tex
                            int byte_len, gpointer ud)
 {
     (void)buf; (void)ud;
-    if (C.applying || !C.in_session) return;
+    if (C.applying || !collab_mirroring()) return;
     int retain = gtk_text_iter_get_offset(loc);
     g_autofree char *safe = g_strndup(text, (gsize)byte_len);
     collab_send_op(retain, safe, 0);
@@ -512,7 +716,7 @@ static void on_delete_range(GtkTextBuffer *buf, GtkTextIter *start, GtkTextIter 
                             gpointer ud)
 {
     (void)buf; (void)ud;
-    if (C.applying || !C.in_session) return;
+    if (C.applying || !collab_mirroring()) return;
     int s   = gtk_text_iter_get_offset(start);
     int del = gtk_text_iter_get_offset(end) - s;
     if (del > 0) collab_send_op(s, NULL, del);
@@ -600,7 +804,9 @@ static void do_create_session(void)
     if (!C.editor || !collab_start_node()) return;
 
     C.session_pending = TRUE;
+    C.hosting         = TRUE;
     C.peer_count      = 0;
+    collab_reset_pending();
     clear_all_peer_cursors();
     collab_update_ui();
 
@@ -617,7 +823,8 @@ static void do_create_session(void)
     json_builder_end_object(b);
 
     JsonGenerator *gen = json_generator_new();
-    json_generator_set_root(gen, json_builder_get_root(b));
+    g_autoptr(JsonNode) root = json_builder_get_root(b);
+    json_generator_set_root(gen, root);
     g_autofree char *str = json_generator_to_data(gen, NULL);
     collab_send(str);
     g_object_unref(gen);
@@ -630,7 +837,9 @@ static void do_join_session(const char *session_id)
     if (!collab_start_node() || !session_id || !*session_id) return;
 
     C.session_pending = TRUE;
+    C.hosting         = FALSE;
     C.peer_count      = 0;
+    collab_reset_pending();
     clear_all_peer_cursors();
     collab_update_ui();
 
@@ -645,7 +854,8 @@ static void do_join_session(const char *session_id)
     json_builder_end_object(b);
 
     JsonGenerator *gen = json_generator_new();
-    json_generator_set_root(gen, json_builder_get_root(b));
+    g_autoptr(JsonNode) root = json_builder_get_root(b);
+    json_generator_set_root(gen, root);
     g_autofree char *str = json_generator_to_data(gen, NULL);
     collab_send(str);
     g_object_unref(gen);
@@ -671,6 +881,7 @@ static void do_leave_session(void)
     g_clear_object(&C.proc);
     C.writer = NULL;
 
+    collab_reset_pending();
     clear_all_peer_cursors();
 
     C.in_session      = FALSE;
@@ -817,7 +1028,8 @@ static void on_join_btn_clicked(GtkButton *btn, gpointer ud)
 {
     (void)btn; (void)ud;
     if (!C.join_entry) return;
-    const char *sid = gtk_editable_get_text(C.join_entry);
+    g_autofree char *sid = g_strdup(gtk_editable_get_text(C.join_entry));
+    if (sid) g_strstrip(sid); /* pasted codes often carry whitespace */
     if (sid && *sid) {
         do_join_session(sid);
         gtk_editable_set_text(C.join_entry, "");
@@ -1137,4 +1349,18 @@ void silktex_collab_shutdown(void)
         g_object_remove_weak_pointer(G_OBJECT(C.window), (gpointer *)&C.window);
         C.window = NULL;
     }
+    /* The widgets below die with the window; drop them so a late callback
+     * can't reach collab_update_ui with dangling pointers. */
+    C.icon_stack       = NULL;
+    C.btn_spinner      = NULL;
+    C.peers_badge      = NULL;
+    C.name_entry       = NULL;
+    C.status_label     = NULL;
+    C.status_spinner   = NULL;
+    C.id_revealer      = NULL;
+    C.session_id_entry = NULL;
+    C.join_revealer    = NULL;
+    C.join_entry       = NULL;
+    C.leave_revealer   = NULL;
+    C.primary_btn      = NULL;
 }

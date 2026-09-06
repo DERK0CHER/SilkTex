@@ -10,6 +10,8 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow       = "1"
+# CSPRNG for the per-session join secret carried in the session code.
+getrandom    = "0.4"
 loro         = "1.10.8"
 serde        = { version = "1", features = ["derive"] }
 serde_json   = "1"
@@ -20,3 +22,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 iroh         = "0.98.2"
 postcard     = { version = "1", features = ["alloc"] }
 data-encoding = "2"
+
+[profile.release]
+# Turn silent integer wraparound (e.g. offset arithmetic on untrusted input) into a
+# panic instead of a wrong result. Deliberately NOT panic = "abort": the update task
+# is isolated by tokio, and aborting would kill the whole collaboration session.
+overflow-checks = true

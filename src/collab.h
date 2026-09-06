@@ -39,4 +39,23 @@ gboolean silktex_collab_is_bound_editor (SilktexEditor *editor);
  * "Leave Session" toast button can hang up without driving the popover. */
 void silktex_collab_leave_session (void);
 
+/* Operational transform: rewrite ONE remote op so that it still applies
+ * correctly to a buffer that has already had ONE concurrent local op applied
+ * — a local op the remote side had not seen when it computed its offsets.
+ *
+ * A remote op means "at *r_retain, delete *r_delete characters, then insert
+ * the op's text at that same position". A local op means "at l_retain,
+ * delete l_delete_len characters, then insert l_insert_len characters".
+ * All units are characters (GtkTextIter offsets), never bytes.
+ *
+ * On return *r_retain / *r_delete are expressed against the buffer as it
+ * looks AFTER the local op. Returns FALSE when the remote insertion point
+ * fell strictly inside the local deletion — the local delete wins that
+ * conflict, so the caller must drop the remote op's inserted text.
+ *
+ * Pure: no GTK types, no globals, no allocation. Exposed for unit tests. */
+gboolean silktex_collab_transform_op (int *r_retain, int *r_delete,
+                                      int l_retain, int l_insert_len,
+                                      int l_delete_len);
+
 G_END_DECLS
