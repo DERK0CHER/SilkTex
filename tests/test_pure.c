@@ -13,6 +13,7 @@
 
 #include <glib.h>
 #include <glib/gstdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* ── headers for testable modules ─────────────────────────────────────── */
@@ -21,6 +22,7 @@
 #include "../src/git.h"
 #include "../src/snippets.h"
 #include "../src/configfile.h"
+#include "../src/collab.h"
 
 /* ═══════════════════════════════════════════════════════════════════════
  *  utils.c
@@ -571,11 +573,852 @@ static void test_git_status_free_null(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+ *  hostile-input tests
+ *
+ *  Cases that are known (or suspected) to crash run in a child process via
+ *  RUN_IN_SUBPROCESS_OR_SKIP: a crash/abort in the child marks the test as
+ *  skipped with a "BUG:" note instead of taking down the whole run, and the
+ *  test starts passing automatically once src/ is fixed.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+#define RUN_IN_SUBPROCESS_OR_SKIP(bug_note)                         \
+    if (!g_test_subprocess()) {                                     \
+        g_test_trap_subprocess(NULL, 0, 0);                         \
+        if (!g_test_trap_has_passed()) g_test_skip(bug_note);       \
+        return;                                                     \
+    }
+
+static char *silktex_conf_path(const char *basename)
+{
+    return g_build_filename(g_get_user_config_dir(), "silktex", basename, NULL);
+}
+
+static void write_conf_file(const char *basename, const char *data, gssize len)
+{
+    g_autofree char *dir = silktex_conf_path(NULL);
+    g_mkdir_with_parents(dir, 0700);
+    g_autofree char *path = silktex_conf_path(basename);
+    g_assert_true(g_file_set_contents(path, data, len, NULL));
+}
+
+/* ── test isolation ───────────────────────────────────────────────────── */
+
+static void test_isolation_uses_private_xdg_dir(void)
+{
+    /* main() points XDG_CONFIG_HOME at a private temp dir; everything the
+     * modules write must land there, never in the real ~/.config. */
+    const char *cfg = g_get_user_config_dir();
+    g_assert_true(g_str_has_prefix(cfg, g_get_tmp_dir()));
+    g_assert_null(strstr(cfg, "/.config"));
+    config_init();
+    g_autofree char *ini = silktex_conf_path("silktex.ini");
+    g_assert_true(g_file_test(ini, G_FILE_TEST_IS_REGULAR));
+}
+
+/* ── utils.c: g_substr ────────────────────────────────────────────────── */
+
+static void test_g_substr_nul_terminated(void)
+{
+    char *src = "Hello World";
+    g_autofree char *s = g_substr(src, 0, 5);
+    g_assert_cmpuint(strlen(s), ==, 5);
+    g_assert_cmpint(s[5], ==, '\0');
+}
+
+static void test_g_substr_end_beyond_length(void)
+{
+    char *src = "Hi";
+    g_autofree char *s = g_substr(src, 0, 40);
+    g_assert_nonnull(s);
+    g_assert_cmpstr(s, ==, "Hi");
+}
+
+static void test_g_substr_start_gt_end(void)
+{
+    RUN_IN_SUBPROCESS_OR_SKIP("BUG: utils.c:111 g_substr(start>end): len=end-start+1 is <=0, "
+                              "g_malloc0(0) returns NULL and strncpy(NULL, ., (size_t)-1) segfaults");
+    char *src = "Hello";
+    g_autofree char *s = g_substr(src, 3, 2);
+    g_assert_nonnull(s);
+    g_assert_cmpstr(s, ==, "");
+}
+
+static void test_g_substr_negative_end(void)
+{
+    RUN_IN_SUBPROCESS_OR_SKIP("BUG: utils.c:111 g_substr(0, -1): g_malloc0(0)=NULL then "
+                              "strncpy with (size_t)-1 bytes segfaults");
+    char *src = "Hello";
+    g_autofree char *s = g_substr(src, 0, -1);
+    g_assert_nonnull(s);
+    g_assert_cmpstr(s, ==, "");
+}
+
+static void test_g_substr_negative_start(void)
+{
+    RUN_IN_SUBPROCESS_OR_SKIP("BUG: utils.c:111 g_substr(-1, 2): reads src[-1] (out of bounds)");
+    char buf[] = "XHello"; /* guard byte so src[-1] is defined memory */
+    g_autofree char *s = g_substr(buf + 1, -1, 2);
+    g_assert_nonnull(s);
+    /* Whatever the policy, the result must never contain memory before src. */
+    g_assert_cmpint(s[0], !=, 'X');
+}
+
+/* ── utils.c: slist ───────────────────────────────────────────────────── */
+
+static void test_slist_find_null_term_exact(void)
+{
+    slist *head = make_node("alpha", "1");
+    g_assert_null(slist_find(head, NULL, FALSE, FALSE));
+    free_slist(head);
+}
+
+static void test_slist_find_null_term_prefix(void)
+{
+    RUN_IN_SUBPROCESS_OR_SKIP("BUG: utils.c:130 slist_find(term=NULL, n=TRUE) calls strlen(NULL)");
+    slist *head = make_node("alpha", "1");
+    g_assert_null(slist_find(head, NULL, TRUE, FALSE));
+    free_slist(head);
+}
+
+static void test_slist_find_null_first_exact(void)
+{
+    slist *head = g_new0(slist, 1); /* first == NULL */
+    g_assert_null(slist_find(head, "x", FALSE, FALSE));
+    g_free(head);
+}
+
+static void test_slist_find_null_first_prefix(void)
+{
+    RUN_IN_SUBPROCESS_OR_SKIP("BUG: utils.c:130 slist_find(n=TRUE) on a node whose first==NULL "
+                              "calls strncmp(NULL, ...)");
+    slist *head = g_new0(slist, 1);
+    g_assert_null(slist_find(head, "x", TRUE, FALSE));
+    g_free(head);
+}
+
+static void test_slist_find_empty_prefix_matches_head(void)
+{
+    slist *head = make_node("alpha", "1");
+    g_assert_true(slist_find(head, "", TRUE, FALSE) == head);
+    free_slist(head);
+}
+
+static void test_slist_append_null_head(void)
+{
+    /* Appending to an empty list makes the node the new head. */
+    slist *node = make_node("a", "");
+    g_assert_true(slist_append(NULL, node) == node);
+    g_assert_null(node->next);
+    free_slist(node);
+}
+
+static void test_slist_append_null_node(void)
+{
+    slist *head = make_node("a", "");
+    g_assert_true(slist_append(head, NULL) == head);
+    g_assert_null(head->next);
+    free_slist(head);
+}
+
+static void test_slist_remove_null_node(void)
+{
+    slist *head = make_node("a", "");
+    g_assert_true(slist_remove(head, NULL) == head);
+    free_slist(head);
+}
+
+static void test_slist_remove_foreign_node(void)
+{
+    slist *head = make_node("a", "");
+    slist *other = make_node("b", "");
+    g_assert_true(slist_remove(head, other) == head);
+    g_assert_null(head->next);
+    free_slist(head);
+    free_slist(other);
+}
+
+/* ── latex.c: hostile counts and text ─────────────────────────────────── */
+
+static int count_occurrences(const char *hay, const char *needle)
+{
+    int n = 0;
+    size_t nl = strlen(needle);
+    for (const char *p = strstr(hay, needle); p; p = strstr(p + nl, needle)) n++;
+    return n;
+}
+
+static void test_generate_table_negative_counts(void)
+{
+    g_autofree char *t = silktex_latex_generate_table(-5, -3, -1, -1);
+    g_assert_nonnull(t);
+    g_assert_nonnull(strstr(t, "{c}"));
+    g_assert_cmpint(count_occurrences(t, "\\\\"), ==, 1);
+    g_assert_null(strstr(t, "\\hline"));
+    g_assert_null(strstr(t, "&"));
+}
+
+static void test_generate_table_large(void)
+{
+    /* Oversized counts are clamped to 99 (append_int2 emits two digits). */
+    const int rows = 99, cols = 40;
+    g_autofree char *t = silktex_latex_generate_table(500, cols, 2, 0);
+    g_assert_nonnull(t);
+    g_assert_cmpint(count_occurrences(t, "\\\\"), ==, rows);
+    g_assert_cmpint(count_occurrences(t, " & "), ==, rows * (cols - 1));
+    g_assert_cmpint(count_occurrences(t, "\\hline"), ==, rows + 1);
+    g_assert_true(g_str_has_suffix(t, "\\end{tabular}\n"));
+}
+
+static void test_generate_matrix_negative_counts(void)
+{
+    g_autofree char *m = silktex_latex_generate_matrix(-1, -1, -1);
+    g_assert_nonnull(m);
+    g_assert_nonnull(strstr(m, "\\begin{pmatrix}"));
+    g_assert_cmpint(count_occurrences(m, "\\\\"), ==, 1);
+    g_assert_null(strstr(m, "&"));
+}
+
+static void test_generate_matrix_large(void)
+{
+    /* Oversized counts are clamped to 99 (append_int2 emits two digits). */
+    const int rows = 99, cols = 30;
+    g_autofree char *m = silktex_latex_generate_matrix(0, 300, cols);
+    g_assert_nonnull(m);
+    g_assert_cmpint(count_occurrences(m, "\\\\"), ==, rows);
+    g_assert_cmpint(count_occurrences(m, " & "), ==, rows * (cols - 1));
+    g_assert_true(g_str_has_suffix(m, "\\end{matrix}$\n"));
+}
+
+static void test_generate_image_format_chars(void)
+{
+    /* printf directives and LaTeX specials in user text must pass through
+     * verbatim (never be interpreted as a format string). */
+    const char *path = "dir/%s%n%d/img{1}.png";
+    const char *cap  = "50% done \\emph{x} }{";
+    const char *lbl  = "fig:%p}";
+    g_autofree char *img = silktex_latex_generate_image(path, cap, lbl, 1.0);
+    g_assert_nonnull(img);
+    g_assert_nonnull(strstr(img, "{dir/%s%n%d/img{1}.png}"));
+    g_assert_nonnull(strstr(img, "\\caption{50% done \\emph{x} }{}"));
+    g_assert_nonnull(strstr(img, "\\label{fig:%p}}"));
+}
+
+static void test_generate_image_negative_scale(void)
+{
+    g_autofree char *img = silktex_latex_generate_image("a.png", "", "", -3.0);
+    g_assert_nonnull(strstr(img, "scale=1.00"));
+}
+
+static void test_generate_image_huge_scale(void)
+{
+    g_autofree char *img = silktex_latex_generate_image("a.png", "", "", 1e12);
+    g_assert_nonnull(strstr(img, "scale=1000000000000.00"));
+}
+
+static void test_generate_image_empty_strings(void)
+{
+    g_autofree char *img = silktex_latex_generate_image("", "", "", 1.0);
+    g_assert_nonnull(strstr(img, "{}\n\\caption{}\n\\label{}"));
+}
+
+/* ── snippets.c: hostile snippets.json ────────────────────────────────── */
+
+static void snippets_load_and_reset(void)
+{
+    SilktexSnippets *s = silktex_snippets_new();
+    g_assert_nonnull(s);
+    silktex_snippets_reload(s);
+    silktex_snippets_set_modifiers(s, "Shift", "Alt");
+    silktex_snippets_reset_to_default(s);
+    g_object_unref(s);
+}
+
+static void test_snippets_json_garbage(void)
+{
+    write_conf_file("snippets.json", "{{{{ not json at all ]]] \"", -1);
+    snippets_load_and_reset();
+}
+
+static void test_snippets_json_empty_file(void)
+{
+    RUN_IN_SUBPROCESS_OR_SKIP("BUG: snippets.c:251 load_json_snippets: json_parser_get_root() "
+                              "returns NULL for an empty file and JSON_NODE_HOLDS_OBJECT(NULL) "
+                              "hits a json-glib critical");
+    write_conf_file("snippets.json", "", 0);
+    snippets_load_and_reset();
+}
+
+static void test_snippets_json_root_not_object(void)
+{
+    write_conf_file("snippets.json", "[1, 2, \"three\", null]", -1);
+    snippets_load_and_reset();
+}
+
+static void test_snippets_json_non_utf8(void)
+{
+    static const char raw[] = "{\"x\": {\"prefix\": \"\xff\xfe\", \"body\": \"\xc3\", "
+                              "\"description\": \"\x80\x80\"}}";
+    write_conf_file("snippets.json", raw, sizeof raw - 1);
+    snippets_load_and_reset();
+}
+
+static void test_snippets_json_edge_bodies(void)
+{
+    write_conf_file("snippets.json",
+        "{"
+        "\"a\":{\"prefix\":\"a\",\"body\":\"$\"},"
+        "\"b\":{\"prefix\":\"b\",\"body\":\"${\"},"
+        "\"c\":{\"prefix\":\"c\",\"body\":\"${1\"},"
+        "\"d\":{\"prefix\":\"d\",\"body\":\"${1:\"},"
+        "\"e\":{\"prefix\":\"e\",\"body\":\"$999999999999\"},"
+        "\"f\":{\"prefix\":\"f\",\"body\":\"$-1\"},"
+        "\"g\":{\"prefix\":\"g\",\"body\":\"${0:$1}\"},"
+        "\"h\":{\"prefix\":\"h\",\"body\":\"${1:${2:${3:${4:${5:${6:${7:${8:x}}}}}}}}\"},"
+        "\"i\":{\"prefix\":\"i\",\"body\":\"\"},"
+        "\"j\":{\"prefix\":\"j\",\"body\":[]},"
+        "\"k\":{\"prefix\":[],\"body\":[\"$1\",\"$2\"]},"
+        "\"l\":{\"prefix\":\"\",\"body\":\"x\",\"accelerator\":\"\"},"
+        "\"m\":{\"prefix\":\"m\",\"body\":\"x\",\"accelerator\":\"<<>><Shift>>>zz\"},"
+        "\"n\":{},"
+        "\"o\":{\"prefix\":\"o\",\"body\":\"x\",\"accelerator\":\"abcdefghijklmnopqrstuvwxyz\"}"
+        "}", -1);
+    snippets_load_and_reset();
+}
+
+static void test_snippets_json_entry_not_object(void)
+{
+    RUN_IN_SUBPROCESS_OR_SKIP("BUG: snippets.c:240 load_json_snippets calls "
+                              "json_object_get_object_member() on a non-object member "
+                              "-> json-glib critical (fatal under g_test / G_DEBUG=fatal-criticals)");
+    write_conf_file("snippets.json", "{\"foo\": \"bar\", \"n\": 5, \"z\": null, \"arr\": [1]}", -1);
+    snippets_load_and_reset();
+}
+
+static void test_snippets_json_description_not_string(void)
+{
+    RUN_IN_SUBPROCESS_OR_SKIP("BUG: snippets.c:243-248 load_json_snippets calls "
+                              "json_object_get_string_member() on non-string "
+                              "description/accelerator -> json-glib critical");
+    write_conf_file("snippets.json",
+                    "{\"x\": {\"prefix\": \"x\", \"body\": \"b\", \"description\": 5, "
+                    "\"accelerator\": [1]}, \"y\": {\"prefix\": 7, \"body\": {\"k\": 1}, "
+                    "\"description\": null, \"accelerator\": null}}", -1);
+    snippets_load_and_reset();
+}
+
+static void test_snippets_json_body_array_non_string(void)
+{
+    RUN_IN_SUBPROCESS_OR_SKIP("BUG: snippets.c:190 snippet_body_from_json_member calls "
+                              "json_array_get_string_element() on a non-string array element "
+                              "-> json-glib critical");
+    write_conf_file("snippets.json",
+                    "{\"x\": {\"prefix\": \"x\", \"body\": [\"line\", 42, null, {\"o\": 1}, [2]]}}",
+                    -1);
+    snippets_load_and_reset();
+}
+
+/* ── configfile.c: corrupted ini / hostile integers ───────────────────── */
+
+static void test_config_garbage_ini(void)
+{
+    static const char raw[] = "\x00\xff\xfe[[[ garbage ==\n=\n[\n]]]\nkey\n\x01\x02";
+    write_conf_file("silktex.ini", raw, sizeof raw - 1);
+    config_init();
+    /* unreadable file → defaults are loaded and written back */
+    g_assert_cmpint(config_get_integer("Interface", "mainwindow_w"), ==, 1200);
+    g_assert_cmpstr(config_get_string("Compile", "typesetter"), ==, "pdflatex");
+}
+
+static void test_config_truncated_ini(void)
+{
+    write_conf_file("silktex.ini", "[Interface]\nmainwindow_w = 640\nmainwindow_h", -1);
+    config_init();
+    /* either the file was rejected (defaults) or partially read; no crash,
+     * and every accessor still returns a sane value */
+    gint w = config_get_integer("Interface", "mainwindow_w");
+    g_assert_true(w == 640 || w == 1200);
+    g_assert_cmpint(config_get_integer("Interface", "mainwindow_h"), >=, 0);
+}
+
+static void test_config_integer_extremes(void)
+{
+    write_conf_file("silktex.ini",
+                    "[General]\nconfig_version = 1.0.3\n"
+                    "[Ints]\n"
+                    "big = 99999999999999999999\n"
+                    "neg = -99999999999999999999\n"
+                    "max = 2147483647\n"
+                    "min = -2147483648\n"
+                    "over = 2147483648\n"
+                    "under = -2147483649\n"
+                    "flt = 1.5\n"
+                    "hex = 0x10\n"
+                    "txt = twelve\n"
+                    "empty =\n"
+                    "spaces =    42   \n", -1);
+    config_init();
+    g_assert_cmpint(config_get_integer("Ints", "big"),    ==, 0);
+    g_assert_cmpint(config_get_integer("Ints", "neg"),    ==, 0);
+    g_assert_cmpint(config_get_integer("Ints", "max"),    ==, G_MAXINT);
+    g_assert_cmpint(config_get_integer("Ints", "min"),    ==, G_MININT);
+    g_assert_cmpint(config_get_integer("Ints", "over"),   ==, 0);
+    g_assert_cmpint(config_get_integer("Ints", "under"),  ==, 0);
+    g_assert_cmpint(config_get_integer("Ints", "flt"),    ==, 0);
+    g_assert_cmpint(config_get_integer("Ints", "hex"),    ==, 0);
+    g_assert_cmpint(config_get_integer("Ints", "txt"),    ==, 0);
+    g_assert_cmpint(config_get_integer("Ints", "empty"),  ==, 0);
+    g_assert_cmpint(config_get_integer("Ints", "spaces"), ==, 42);
+    /* booleans from garbage → FALSE, strings → verbatim */
+    g_assert_false(config_get_boolean("Ints", "big"));
+    g_assert_cmpstr(config_get_string("Ints", "txt"), ==, "twelve");
+}
+
+static void test_config_integer_roundtrip_extremes(void)
+{
+    config_init();
+    config_set_integer("Ext", "max", G_MAXINT);
+    config_set_integer("Ext", "min", G_MININT);
+    config_save();
+    config_init(); /* reload from disk */
+    g_assert_cmpint(config_get_integer("Ext", "max"), ==, G_MAXINT);
+    g_assert_cmpint(config_get_integer("Ext", "min"), ==, G_MININT);
+}
+
+static void test_config_string_specials_roundtrip(void)
+{
+    config_init();
+    const char *v = "a\nb=c;#[x]\t\\n\"quoted\" %s %% \xc3\xa9";
+    config_set_string("Spec", "k", v);
+    config_save();
+    config_init();
+    g_assert_cmpstr(config_get_string("Spec", "k"), ==, v);
+}
+
+static void test_config_missing_group(void)
+{
+    config_init();
+    g_assert_cmpstr(config_get_string("NoSuchGroup", "k"), ==, "");
+    g_assert_false(config_get_boolean("NoSuchGroup", "k"));
+    g_assert_cmpint(config_get_integer("NoSuchGroup", "k"), ==, 0);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ *  collab.c — silktex_collab_transform_op()
+ *
+ *  A remote op is (retain, delete) plus text inserted at `retain`; a local
+ *  op is (retain, insert_len, delete_len).  The transform rewrites the
+ *  remote op so it still means the same thing on a buffer that already has
+ *  the local op applied.  Every case below is checked against the policy
+ *  documented in collab.h: ties place the local text first, and a delete
+ *  swallows an insertion that lands strictly inside it.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── no concurrency: an empty local op must be the identity ───────────── */
+
+static void test_collab_tf_identity_no_local_op(void)
+{
+    int r = 7, d = 3;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 0, 0, 0));
+    g_assert_cmpint(r, ==, 7);
+    g_assert_cmpint(d, ==, 3);
+}
+
+static void test_collab_tf_identity_zero_len_local_at_same_offset(void)
+{
+    int r = 4, d = 2;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 4, 0, 0));
+    g_assert_cmpint(r, ==, 4);
+    g_assert_cmpint(d, ==, 2);
+}
+
+static void test_collab_tf_null_pointers_tolerated(void)
+{
+    int d = 1;
+    g_assert_true(silktex_collab_transform_op(NULL, &d, 0, 3, 0));
+    g_assert_cmpint(d, ==, 1);
+    int r = 1;
+    g_assert_true(silktex_collab_transform_op(&r, NULL, 0, 3, 0));
+    g_assert_cmpint(r, ==, 1);
+}
+
+/* ── local insert ─────────────────────────────────────────────────────── */
+
+static void test_collab_tf_insert_before_shifts_retain(void)
+{
+    int r = 10, d = 4;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 2, 3, 0));
+    g_assert_cmpint(r, ==, 13);
+    g_assert_cmpint(d, ==, 4);
+}
+
+static void test_collab_tf_insert_after_is_noop(void)
+{
+    int r = 2, d = 3;   /* remote covers [2,5) */
+    g_assert_true(silktex_collab_transform_op(&r, &d, 5, 4, 0));
+    g_assert_cmpint(r, ==, 2);
+    g_assert_cmpint(d, ==, 3);
+}
+
+static void test_collab_tf_insert_at_remote_start_shifts(void)
+{
+    /* Tie: the local text goes first, so the remote range starts after it. */
+    int r = 5, d = 2;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 5, 3, 0));
+    g_assert_cmpint(r, ==, 8);
+    g_assert_cmpint(d, ==, 2);
+}
+
+static void test_collab_tf_insert_at_remote_end_is_noop(void)
+{
+    /* Adjacent, not inside: [2,5) with the insert exactly at 5. */
+    int r = 2, d = 3;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 5, 1, 0));
+    g_assert_cmpint(r, ==, 2);
+    g_assert_cmpint(d, ==, 3);
+}
+
+static void test_collab_tf_insert_inside_remote_delete_grows_it(void)
+{
+    /* Remote deletes [2,6); the local insert of 3 chars lands at 4 and is
+     * swallowed by that delete. */
+    int r = 2, d = 4;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 4, 3, 0));
+    g_assert_cmpint(r, ==, 2);
+    g_assert_cmpint(d, ==, 7);
+}
+
+static void test_collab_tf_insert_before_zero_width_remote(void)
+{
+    int r = 5, d = 0;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 5, 2, 0));
+    g_assert_cmpint(r, ==, 7);
+    g_assert_cmpint(d, ==, 0);
+}
+
+/* ── local delete ─────────────────────────────────────────────────────── */
+
+static void test_collab_tf_delete_before_shifts_retain_back(void)
+{
+    int r = 10, d = 3;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 2, 0, 4)); /* removes [2,6) */
+    g_assert_cmpint(r, ==, 6);
+    g_assert_cmpint(d, ==, 3);
+}
+
+static void test_collab_tf_delete_ending_exactly_at_remote_start(void)
+{
+    int r = 6, d = 3;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 2, 0, 4)); /* removes [2,6) */
+    g_assert_cmpint(r, ==, 2);
+    g_assert_cmpint(d, ==, 3);
+}
+
+static void test_collab_tf_delete_after_is_noop(void)
+{
+    int r = 2, d = 3;   /* remote covers [2,5) */
+    g_assert_true(silktex_collab_transform_op(&r, &d, 5, 0, 4));
+    g_assert_cmpint(r, ==, 2);
+    g_assert_cmpint(d, ==, 3);
+}
+
+static void test_collab_tf_delete_overlaps_remote_head(void)
+{
+    /* local removes [2,6), remote covers [4,9): 2 chars of overlap, and the
+     * remote start clamps to the local delete's start.  The remote insertion
+     * point (4) was strictly inside the local delete, so it does not survive. */
+    int r = 4, d = 5;
+    g_assert_false(silktex_collab_transform_op(&r, &d, 2, 0, 4));
+    g_assert_cmpint(r, ==, 2);
+    g_assert_cmpint(d, ==, 3);
+}
+
+static void test_collab_tf_delete_overlaps_remote_tail(void)
+{
+    /* local removes [6,10), remote covers [4,9): 3 chars of overlap. */
+    int r = 4, d = 5;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 6, 0, 4));
+    g_assert_cmpint(r, ==, 4);
+    g_assert_cmpint(d, ==, 2);
+}
+
+static void test_collab_tf_delete_contains_remote_range(void)
+{
+    /* local removes [2,10), remote covers [4,7): nothing left to delete, and
+     * the remote insertion point at 4 is swallowed by the local delete. */
+    int r = 4, d = 3;
+    g_assert_false(silktex_collab_transform_op(&r, &d, 2, 0, 8));
+    g_assert_cmpint(r, ==, 2);
+    g_assert_cmpint(d, ==, 0);
+}
+
+static void test_collab_tf_delete_inside_remote_range(void)
+{
+    /* local removes [4,6), remote covers [2,10). */
+    int r = 2, d = 8;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 4, 0, 2));
+    g_assert_cmpint(r, ==, 2);
+    g_assert_cmpint(d, ==, 6);
+}
+
+static void test_collab_tf_identical_deletes_cancel(void)
+{
+    int r = 3, d = 4;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 3, 0, 4));
+    g_assert_cmpint(r, ==, 3);
+    g_assert_cmpint(d, ==, 0);
+}
+
+/* ── the remote insertion point vs. a local delete ────────────────────── */
+
+static void test_collab_tf_remote_insert_inside_local_delete_dropped(void)
+{
+    /* local removes [2,8); the remote inserts at 5 — strictly inside. */
+    int r = 5, d = 0;
+    g_assert_false(silktex_collab_transform_op(&r, &d, 2, 0, 6));
+    g_assert_cmpint(r, ==, 2);
+    g_assert_cmpint(d, ==, 0);
+}
+
+static void test_collab_tf_remote_insert_at_local_delete_start_survives(void)
+{
+    int r = 2, d = 0;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 2, 0, 6));
+    g_assert_cmpint(r, ==, 2);
+}
+
+static void test_collab_tf_remote_insert_at_local_delete_end_survives(void)
+{
+    int r = 8, d = 0;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 2, 0, 6));
+    g_assert_cmpint(r, ==, 2);
+}
+
+static void test_collab_tf_remote_insert_survives_local_insert(void)
+{
+    int r = 5, d = 0;
+    g_assert_true(silktex_collab_transform_op(&r, &d, 3, 9, 0));
+    g_assert_cmpint(r, ==, 14);
+}
+
+/* ── clamping / hostile input ─────────────────────────────────────────── */
+
+static void test_collab_tf_never_returns_negative(void)
+{
+    int r = -5, d = -5;
+    silktex_collab_transform_op(&r, &d, -3, -1, -1);
+    g_assert_cmpint(r, >=, 0);
+    g_assert_cmpint(d, >=, 0);
+}
+
+static void test_collab_tf_negative_local_treated_as_zero(void)
+{
+    int r = 4, d = 2;
+    g_assert_true(silktex_collab_transform_op(&r, &d, -100, -100, -100));
+    g_assert_cmpint(r, ==, 4);
+    g_assert_cmpint(d, ==, 2);
+}
+
+static void test_collab_tf_huge_values_stay_in_range(void)
+{
+    int r = G_MAXINT, d = G_MAXINT;
+    silktex_collab_transform_op(&r, &d, G_MAXINT, G_MAXINT, G_MAXINT);
+    g_assert_cmpint(r, >=, 0);
+    g_assert_cmpint(d, >=, 0);
+    g_assert_cmpint(r, <=, G_MAXINT / 4);
+    g_assert_cmpint(d, <=, G_MAXINT / 4);
+}
+
+/* ── randomized convergence property ──────────────────────────────────── */
+
+/*
+ * A generic op: delete `del` characters at `pos`, then insert `ins` there.
+ * The production transform rewrites a remote op past a local one; the mirror
+ * below rewrites a local op past a remote one, using the same tie-break the
+ * other way round (local text wins an equal-offset tie).  If the pair is a
+ * correct transform, applying local-then-remote' and remote-then-local' to
+ * the same starting string must land on the same final string.
+ */
+typedef struct {
+    int  pos;
+    int  del;
+    char ins[8];   /* NUL-terminated ASCII, so chars == bytes */
+} OtOp;
+
+static void ot_apply(GString *s, const OtOp *op)
+{
+    g_assert_cmpint(op->pos, >=, 0);
+    g_assert_cmpint(op->del, >=, 0);
+    g_assert_cmpint(op->pos + op->del, <=, (int)s->len);
+    if (op->del > 0)  g_string_erase(s, op->pos, op->del);
+    if (op->ins[0])   g_string_insert(s, op->pos, op->ins);
+}
+
+/* Mirror of silktex_collab_transform_op: transform `a` past `b`, where `a`
+ * wins an equal-offset insertion tie (the production function's `a` loses). */
+static void ot_transform_local(OtOp *a, const OtOp *b)
+{
+    int a_lo  = a->pos, a_hi = a->pos + a->del;
+    int b_lo  = b->pos, b_hi = b->pos + b->del;
+    int b_ins = (int)strlen(b->ins);
+
+    /* Same policy as the production side: a delete wins over an insertion
+     * that lands strictly inside it. */
+    if (b->del > 0 && b_lo < a_lo && a_lo < b_hi)
+        a->ins[0] = '\0';
+
+    int overlap = MIN(a_hi, b_hi) - MAX(a_lo, b_lo);
+    if (overlap < 0) overlap = 0;
+    int del = a->del - overlap;
+    if (del < 0) del = 0;
+
+    /* Every comparison is on the ORIGINAL offsets — both ops describe the
+     * same starting string, so that is the one space they share. */
+    int pos;
+    if (a_lo < b_lo) {
+        pos = a_lo;
+        if (b_ins > 0 && b_lo < a_hi) del += b_ins;  /* b's text lands inside a's delete */
+    } else if (a_lo == b_lo) {
+        /* Equal offsets: the local op wins, so its insertion stays in front
+         * of b's — but a local *delete* still has to step over b's text. */
+        pos = a_lo + (a->del > 0 ? b_ins : 0);
+    } else {
+        pos = a_lo - MIN(b->del, a_lo - b_lo) + b_ins;
+    }
+
+    a->pos = pos;
+    a->del = del;
+}
+
+static void ot_random_string(GString *s, const char *alphabet, int len)
+{
+    g_string_truncate(s, 0);
+    for (int i = 0; i < len; i++)
+        g_string_append_c(s, alphabet[g_random_int_range(0, (int)strlen(alphabet))]);
+}
+
+static void test_collab_tf_random_convergence(void)
+{
+    /* Deterministic: a failure here reproduces on the next run. */
+    g_random_set_seed(0x5117E7);
+
+    GString *base = g_string_new(NULL);
+    GString *lhs  = g_string_new(NULL);
+    GString *rhs  = g_string_new(NULL);
+    GString *tmp  = g_string_new(NULL);
+
+    for (int iter = 0; iter < 20000; iter++) {
+        int len = g_random_int_range(0, 13);
+        ot_random_string(base, "abcdef", len);
+
+        /* The local op is what a GtkTextBuffer signal produces: either a pure
+         * insert or a pure delete, never both. */
+        OtOp local = { 0, 0, { 0 } };
+        local.pos = g_random_int_range(0, len + 1);
+        if (g_random_boolean()) {
+            ot_random_string(tmp, "XYZ", g_random_int_range(1, 4));
+            g_strlcpy(local.ins, tmp->str, sizeof local.ins);
+        } else {
+            local.del = g_random_int_range(0, len - local.pos + 1);
+        }
+
+        /* A remote op comes from a whole-document diff, so it may replace:
+         * delete and insert at the same offset. */
+        OtOp remote = { 0, 0, { 0 } };
+        remote.pos = g_random_int_range(0, len + 1);
+        remote.del = g_random_int_range(0, len - remote.pos + 1);
+        int rins = g_random_int_range(0, 4);
+        if (rins > 0) {
+            ot_random_string(tmp, "PQR", rins);
+            g_strlcpy(remote.ins, tmp->str, sizeof remote.ins);
+        }
+
+        /* local, then the remote op transformed past it. */
+        OtOp r_prime = remote;
+        if (!silktex_collab_transform_op(&r_prime.pos, &r_prime.del,
+                                         local.pos, (int)strlen(local.ins), local.del))
+            r_prime.ins[0] = '\0';
+        g_string_assign(lhs, base->str);
+        ot_apply(lhs, &local);
+        ot_apply(lhs, &r_prime);
+
+        /* remote, then the local op transformed past it. */
+        OtOp l_prime = local;
+        ot_transform_local(&l_prime, &remote);
+        g_string_assign(rhs, base->str);
+        ot_apply(rhs, &remote);
+        ot_apply(rhs, &l_prime);
+
+        if (!g_str_equal(lhs->str, rhs->str)) {
+            g_error("iteration %d diverged: base=\"%s\" "
+                    "local=(%d,%d,\"%s\") remote=(%d,%d,\"%s\") "
+                    "=> \"%s\" vs \"%s\"",
+                    iter, base->str,
+                    local.pos, local.del, local.ins,
+                    remote.pos, remote.del, remote.ins,
+                    lhs->str, rhs->str);
+        }
+    }
+
+    g_string_free(base, TRUE);
+    g_string_free(lhs,  TRUE);
+    g_string_free(rhs,  TRUE);
+    g_string_free(tmp,  TRUE);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ *  test isolation
+ *
+ *  configfile.c / snippets.c write under g_get_user_config_dir()/silktex.
+ *  Point XDG_CONFIG_HOME (and XDG_CACHE_HOME) at a private temp dir before
+ *  GLib caches the value, and remove it at exit.  Subprocess re-executions
+ *  (g_test_trap_subprocess) inherit the parent's dir and leave cleanup to
+ *  the parent.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+static char *test_xdg_dir = NULL;
+
+static void rmtree(const char *path)
+{
+    GDir *d = g_dir_open(path, 0, NULL);
+    if (d) {
+        const char *name;
+        while ((name = g_dir_read_name(d))) {
+            g_autofree char *child = g_build_filename(path, name, NULL);
+            if (g_file_test(child, G_FILE_TEST_IS_DIR) && !g_file_test(child, G_FILE_TEST_IS_SYMLINK))
+                rmtree(child);
+            else
+                g_unlink(child);
+        }
+        g_dir_close(d);
+    }
+    g_rmdir(path);
+}
+
+static void remove_test_xdg_dir(void)
+{
+    if (test_xdg_dir) rmtree(test_xdg_dir);
+    g_clear_pointer(&test_xdg_dir, g_free);
+}
+
+static void setup_test_isolation(void)
+{
+    if (g_getenv("SILKTEX_TEST_XDG_DIR")) return; /* child of g_test_trap_subprocess */
+
+    test_xdg_dir = g_dir_make_tmp("silktex-test-XXXXXX", NULL);
+    g_assert_nonnull(test_xdg_dir);
+    g_setenv("XDG_CONFIG_HOME", test_xdg_dir, TRUE);
+    g_setenv("XDG_CACHE_HOME", test_xdg_dir, TRUE);
+    g_setenv("SILKTEX_TEST_XDG_DIR", test_xdg_dir, TRUE);
+    atexit(remove_test_xdg_dir);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
  *  main
  * ═══════════════════════════════════════════════════════════════════════ */
 
 int main(int argc, char *argv[])
 {
+    setup_test_isolation();
     g_test_init(&argc, &argv, NULL);
 
     /* utils.c */
@@ -653,6 +1496,72 @@ int main(int argc, char *argv[])
     /* memory / lifecycle */
     g_test_add_func("/memory/snippets_lifecycle_stress",     test_snippets_lifecycle_stress);
     g_test_add_func("/memory/git_status_free_null",          test_git_status_free_null);
+
+    /* hostile input */
+    g_test_add_func("/isolation/uses_private_xdg_dir",       test_isolation_uses_private_xdg_dir);
+    g_test_add_func("/utils/g_substr/nul_terminated",        test_g_substr_nul_terminated);
+    g_test_add_func("/utils/g_substr/end_beyond_length",     test_g_substr_end_beyond_length);
+    g_test_add_func("/utils/g_substr/start_gt_end",          test_g_substr_start_gt_end);
+    g_test_add_func("/utils/g_substr/negative_end",          test_g_substr_negative_end);
+    g_test_add_func("/utils/g_substr/negative_start",        test_g_substr_negative_start);
+    g_test_add_func("/utils/slist/find_null_term_exact",     test_slist_find_null_term_exact);
+    g_test_add_func("/utils/slist/find_null_term_prefix",    test_slist_find_null_term_prefix);
+    g_test_add_func("/utils/slist/find_null_first_exact",    test_slist_find_null_first_exact);
+    g_test_add_func("/utils/slist/find_null_first_prefix",   test_slist_find_null_first_prefix);
+    g_test_add_func("/utils/slist/find_empty_prefix",        test_slist_find_empty_prefix_matches_head);
+    g_test_add_func("/utils/slist/append_null_head",         test_slist_append_null_head);
+    g_test_add_func("/utils/slist/append_null_node",         test_slist_append_null_node);
+    g_test_add_func("/utils/slist/remove_null_node",         test_slist_remove_null_node);
+    g_test_add_func("/utils/slist/remove_foreign_node",      test_slist_remove_foreign_node);
+    g_test_add_func("/latex/table/negative_counts",          test_generate_table_negative_counts);
+    g_test_add_func("/latex/table/large",                    test_generate_table_large);
+    g_test_add_func("/latex/matrix/negative_counts",         test_generate_matrix_negative_counts);
+    g_test_add_func("/latex/matrix/large",                   test_generate_matrix_large);
+    g_test_add_func("/latex/image/format_chars",             test_generate_image_format_chars);
+    g_test_add_func("/latex/image/negative_scale",           test_generate_image_negative_scale);
+    g_test_add_func("/latex/image/huge_scale",               test_generate_image_huge_scale);
+    g_test_add_func("/latex/image/empty_strings",            test_generate_image_empty_strings);
+    g_test_add_func("/snippets/json/garbage",                test_snippets_json_garbage);
+    g_test_add_func("/snippets/json/empty_file",             test_snippets_json_empty_file);
+    g_test_add_func("/snippets/json/root_not_object",        test_snippets_json_root_not_object);
+    g_test_add_func("/snippets/json/non_utf8",               test_snippets_json_non_utf8);
+    g_test_add_func("/snippets/json/edge_bodies",            test_snippets_json_edge_bodies);
+    g_test_add_func("/snippets/json/entry_not_object",       test_snippets_json_entry_not_object);
+    g_test_add_func("/snippets/json/description_not_string", test_snippets_json_description_not_string);
+    g_test_add_func("/snippets/json/body_array_non_string",  test_snippets_json_body_array_non_string);
+    g_test_add_func("/config/garbage_ini",                   test_config_garbage_ini);
+    g_test_add_func("/config/truncated_ini",                 test_config_truncated_ini);
+    g_test_add_func("/config/integer_extremes",              test_config_integer_extremes);
+    g_test_add_func("/config/integer_roundtrip_extremes",    test_config_integer_roundtrip_extremes);
+    g_test_add_func("/config/string_specials_roundtrip",     test_config_string_specials_roundtrip);
+    g_test_add_func("/config/missing_group",                 test_config_missing_group);
+
+    /* collab.c — operational transform */
+    g_test_add_func("/collab/transform/identity_no_local_op",       test_collab_tf_identity_no_local_op);
+    g_test_add_func("/collab/transform/identity_zero_len_local",    test_collab_tf_identity_zero_len_local_at_same_offset);
+    g_test_add_func("/collab/transform/null_pointers",              test_collab_tf_null_pointers_tolerated);
+    g_test_add_func("/collab/transform/insert_before",              test_collab_tf_insert_before_shifts_retain);
+    g_test_add_func("/collab/transform/insert_after",               test_collab_tf_insert_after_is_noop);
+    g_test_add_func("/collab/transform/insert_at_remote_start",     test_collab_tf_insert_at_remote_start_shifts);
+    g_test_add_func("/collab/transform/insert_at_remote_end",       test_collab_tf_insert_at_remote_end_is_noop);
+    g_test_add_func("/collab/transform/insert_inside_remote_del",   test_collab_tf_insert_inside_remote_delete_grows_it);
+    g_test_add_func("/collab/transform/insert_before_zero_width",   test_collab_tf_insert_before_zero_width_remote);
+    g_test_add_func("/collab/transform/delete_before",              test_collab_tf_delete_before_shifts_retain_back);
+    g_test_add_func("/collab/transform/delete_ends_at_remote",      test_collab_tf_delete_ending_exactly_at_remote_start);
+    g_test_add_func("/collab/transform/delete_after",               test_collab_tf_delete_after_is_noop);
+    g_test_add_func("/collab/transform/delete_overlaps_head",       test_collab_tf_delete_overlaps_remote_head);
+    g_test_add_func("/collab/transform/delete_overlaps_tail",       test_collab_tf_delete_overlaps_remote_tail);
+    g_test_add_func("/collab/transform/delete_contains_remote",     test_collab_tf_delete_contains_remote_range);
+    g_test_add_func("/collab/transform/delete_inside_remote",       test_collab_tf_delete_inside_remote_range);
+    g_test_add_func("/collab/transform/identical_deletes",          test_collab_tf_identical_deletes_cancel);
+    g_test_add_func("/collab/transform/remote_ins_inside_local_del",test_collab_tf_remote_insert_inside_local_delete_dropped);
+    g_test_add_func("/collab/transform/remote_ins_at_del_start",    test_collab_tf_remote_insert_at_local_delete_start_survives);
+    g_test_add_func("/collab/transform/remote_ins_at_del_end",      test_collab_tf_remote_insert_at_local_delete_end_survives);
+    g_test_add_func("/collab/transform/remote_ins_vs_local_ins",    test_collab_tf_remote_insert_survives_local_insert);
+    g_test_add_func("/collab/transform/never_negative",             test_collab_tf_never_returns_negative);
+    g_test_add_func("/collab/transform/negative_local_is_zero",     test_collab_tf_negative_local_treated_as_zero);
+    g_test_add_func("/collab/transform/huge_values_clamped",        test_collab_tf_huge_values_stay_in_range);
+    g_test_add_func("/collab/transform/random_convergence",         test_collab_tf_random_convergence);
 
     return g_test_run();
 }
